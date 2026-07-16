@@ -116,6 +116,18 @@ def get_chart_data(
     )
 
 
+@router.get("/api/overview")
+def get_overview(session: Session = Depends(get_session)):
+    """Letzter Zählerstand + Datum je aktivem System (für die Startseiten-Kacheln)."""
+    systems = session.exec(select(System).where(System.aktiv == True)).all()  # noqa: E712
+    out = {}
+    for s in systems:
+        latest = influx.latest_reading(s.id)
+        if latest and latest.get("value") is not None:
+            out[s.id] = {"value": latest["value"], "datum": latest["datum"].isoformat()}
+    return out
+
+
 @router.get("/api/systems/{system_id}/report.pdf")
 def get_report(
     system_id: str,

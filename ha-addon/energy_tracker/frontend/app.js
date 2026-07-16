@@ -65,15 +65,15 @@ function typeIcon(typ) {
    Chart-Komponente – reiner Renderer (Datasets kommen fertig vom Parent)
    ========================================================================= */
 const EnergyChart = {
-  props: { labels: Array, datasets: Array, chartType: String },
+  props: { labels: Array, datasets: Array, chartType: String, hasY2: Boolean, y2Label: String },
   template: `<div class="chart-box"><canvas ref="cv"></canvas></div>`,
   mounted() { this.schedule(); },
   beforeUnmount() { this.destroy(); },
   watch: {
-    // Jede Änderung -> ein gebündelter, sauberer Neuaufbau (kein fehleranfälliges update()).
     labels() { this.schedule(); },
     datasets() { this.schedule(); },
     chartType() { this.schedule(); },
+    hasY2() { this.schedule(); },
   },
   methods: {
     destroy() {
@@ -84,7 +84,6 @@ const EnergyChart = {
       }
     },
     schedule() {
-      // Mehrere Prop-Änderungen desselben Ticks zu genau EINEM Rebuild bündeln.
       if (this._pending) return;
       this._pending = true;
       this.$nextTick(() => { this._pending = false; this.build(); });
@@ -93,6 +92,21 @@ const EnergyChart = {
       const cv = this.$refs.cv;
       if (!cv || typeof Chart === "undefined") return;
       this.destroy();
+      const scales = {
+        x: {
+          grid: { color: "#e2e8ee" },
+          ticks: { maxRotation: 90, minRotation: 90, autoSkip: false, font: { size: 9 } },
+        },
+        y: { grid: { color: "#e2e8ee" }, ticks: { font: { size: 11 } }, beginAtZero: false, position: "left" },
+      };
+      if (this.hasY2) {
+        scales.y2 = {
+          position: "right", beginAtZero: true,
+          grid: { drawOnChartArea: false },
+          ticks: { font: { size: 11 } },
+          title: { display: !!this.y2Label, text: this.y2Label, font: { size: 10 } },
+        };
+      }
       new Chart(cv.getContext("2d"), {
         type: this.chartType || "line",
         data: { labels: this.labels, datasets: this.datasets },
@@ -104,10 +118,7 @@ const EnergyChart = {
             legend: { display: this.datasets.length > 1, position: "bottom", labels: { boxWidth: 12, font: { size: 12 } } },
             tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y)}` } },
           },
-          scales: {
-            x: { grid: { color: "#e2e8ee" }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font: { size: 11 } } },
-            y: { grid: { color: "#e2e8ee" }, ticks: { font: { size: 11 } }, beginAtZero: false },
-          },
+          scales,
         },
       });
     },
@@ -188,16 +199,23 @@ const SystemDetail = {
         pointBackgroundColor: ptColor, pointRadius: ptRad, borderWidth: 2, tension: 0.25,
         fill: this.chartType === "line", spanGaps: true,
       }];
+      const overlayUnits = new Set();
       overlays.forEach((cd) => {
         const m = toMap(cd);
+        overlayUnits.add(cd.unit);
         datasets.push({
-          label: cd.name, data: labels.map((l) => (l in m ? m[l] : null)),
+          label: `${cd.name} (${cd.unit})`, data: labels.map((l) => (l in m ? m[l] : null)),
           borderColor: cd.color, backgroundColor: cd.color + "18",
           pointRadius: this.chartType === "bar" ? 0 : 2, borderWidth: 1.5,
           borderDash: [5, 4], tension: 0.25, fill: false, spanGaps: true,
+          yAxisID: "y2",   // eigene rechte Achse (unterschiedliche Größenordnung/Einheit)
         });
       });
-      return { labels, datasets };
+      return {
+        labels, datasets,
+        hasY2: overlays.length > 0,
+        y2Label: [...overlayUnits].join(" / "),
+      };
     },
     filtered() {
       let rows = this.readings.slice();
@@ -249,7 +267,10 @@ const SystemDetail = {
       const q = this.fromParam ? `?from=${this.fromParam}` : "";
       for (const id of this.overlayIds) {
         if (!this.overlayData[id]) {
-          try { this.overlayData[id] = await api(`/api/systems/${id}/chart-data${q}`); } catch (_) {}
+          try {
+            const cd = await api(`/api/systems/${id}/chart-data${q}`);
+            this.overlayData = { ...this.overlayData, [id]: cd };  // neue Referenz -> sicher reaktiv
+          } catch (_) {}
         }
       }
     },
@@ -379,7 +400,7 @@ const SystemDetail = {
             </button>
           </div>
         </div>
-        <energy-chart :labels="chart.labels" :datasets="chart.datasets" :chart-type="chartType" />
+        <energy-chart :labels="chart.labels" :datasets="chart.datasets" :chart-type="chartType" :has-y2="chart.hasY2" :y2-label="chart.y2Label" />
         <div class="legend-hint">
           <span><span class="dot" :style="{background: chartData ? chartData.color : '#0e7c86'}"></span>{{ modeLabel }}</span>
           <span><span class="dot" style="background:#d9820a"></span>Ausreißer (Ø + 2σ)</span>
@@ -403,6 +424,7 @@ const SystemDetail = {
       </div>
 
       <div class="card" v-else>
+        <div class="table-scroll">
         <table>
           <thead>
             <tr>
@@ -429,6 +451,7 @@ const SystemDetail = {
             </tr>
           </tbody>
         </table>
+        </div>
         <div class="pager" v-if="pageCount > 1">
           <button class="btn btn-sm" :disabled="page<=1" @click="page--">‹ Zurück</button>
           <span>Seite {{ page }} / {{ pageCount }}</span>
@@ -501,6 +524,7 @@ createApp({
     toast: null,
     palette: PALETTE,
     types: SYSTEM_TYPES,
+    latest: {},                // system_id -> { value, datum }
   }),
   computed: {
     visibleSystems() { return this.systems.filter((s) => this.showArchived || s.aktiv); },
@@ -509,12 +533,14 @@ createApp({
   },
   async mounted() { await this.load(); },
   methods: {
-    fmt, typeIcon,
+    fmt, typeIcon, fmtDate,
     notify(msg, type = "ok") { this.toast = { msg, type }; setTimeout(() => (this.toast = null), 3200); },
     async load() {
       this.loading = true;
-      try { this.systems = await api("/api/systems?include_archived=true"); }
-      catch (e) { this.notify(e.message, "err"); }
+      try {
+        this.systems = await api("/api/systems?include_archived=true");
+        try { this.latest = await api("/api/overview"); } catch (_) { this.latest = {}; }
+      } catch (e) { this.notify(e.message, "err"); }
       finally { this.loading = false; }
     },
     open(s) { this.selected = s.id; this.view = "detail"; window.scrollTo(0, 0); },
@@ -593,9 +619,16 @@ createApp({
           <span class="swatch" :style="{background: s.farbe}"></span>
           <div class="t-type">{{ typeIcon(s.typ) }} {{ s.typ }}</div>
           <div class="t-name">{{ s.name }}</div>
-          <div class="t-meta">Einheit: {{ s.einheit }}<span v-if="!s.aktiv"> · archiviert</span></div>
+          <div class="readout" v-if="latest[s.id]">
+            <span class="val num">{{ fmt(latest[s.id].value, 1) }}</span>
+            <span class="unit">{{ s.einheit }}</span>
+          </div>
+          <div class="t-meta">
+            <template v-if="latest[s.id]">Stand: {{ fmtDate(latest[s.id].datum) }}</template>
+            <template v-else>Einheit: {{ s.einheit }} · noch keine Werte</template>
+            <span v-if="!s.aktiv"> · archiviert</span>
+          </div>
         </div>
-        <div class="tile tile-add" @click="newSystem">＋ System anlegen</div>
       </div>
     </template>
 

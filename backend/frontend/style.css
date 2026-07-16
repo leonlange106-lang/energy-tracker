@@ -167,7 +167,8 @@ body {
 }
 .seg button:last-child { border-right: none; }
 .seg button.active { background: var(--accent); color: #fff; }
-.chart-box { position: relative; height: 340px; }
+.chart-box { position: relative; height: 380px; }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .legend-hint { font-size: 12px; color: var(--ink-soft); margin-top: 10px; display: flex; gap: 16px; flex-wrap: wrap; }
 .legend-hint .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: baseline; }
 
@@ -229,9 +230,10 @@ td.r { text-align: right; }
 /* ---------- Responsive ---------- */
 @media (max-width: 640px) {
   .detail-head { flex-direction: column; }
-  .chart-box { height: 260px; }
+  .chart-box { height: 300px; }
   thead th, tbody td { padding: 9px 8px; }
   .col-note { display: none; }
+  .table-scroll table { min-width: 460px; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .001ms !important; transition: none !important; }
