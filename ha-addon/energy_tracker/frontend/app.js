@@ -67,57 +67,49 @@ function typeIcon(typ) {
 const EnergyChart = {
   props: { labels: Array, datasets: Array, chartType: String },
   template: `<div class="chart-box"><canvas ref="cv"></canvas></div>`,
-  data: () => ({ chart: null }),
-  mounted() { this.build(); },
+  mounted() { this.schedule(); },
   beforeUnmount() { this.destroy(); },
   watch: {
-    // Alle Prop-Änderungen eines Ticks werden gebündelt -> genau EIN Update/Rebuild.
-    labels() { this.schedule(false); },
-    datasets() { this.schedule(false); },
-    chartType() { this.schedule(true); },
+    // Jede Änderung -> ein gebündelter, sauberer Neuaufbau (kein fehleranfälliges update()).
+    labels() { this.schedule(); },
+    datasets() { this.schedule(); },
+    chartType() { this.schedule(); },
   },
   methods: {
-    schedule(typeChanged) {
-      if (typeChanged) this._rebuild = true;
+    destroy() {
+      const cv = this.$refs.cv;
+      if (cv && typeof Chart !== "undefined") {
+        const existing = Chart.getChart(cv);   // offizieller Weg: JEDE Instanz am Canvas killen
+        if (existing) existing.destroy();
+      }
+    },
+    schedule() {
+      // Mehrere Prop-Änderungen desselben Ticks zu genau EINEM Rebuild bündeln.
       if (this._pending) return;
       this._pending = true;
-      this.$nextTick(() => {
-        this._pending = false;
-        if (!this.chart || this._rebuild) { this._rebuild = false; this.build(); }
-        else this.refresh();
-      });
+      this.$nextTick(() => { this._pending = false; this.build(); });
     },
-    options() {
-      return {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        plugins: {
-          legend: { display: this.datasets.length > 1, position: "bottom", labels: { boxWidth: 12, font: { size: 12 } } },
-          tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y)}` } },
-        },
-        scales: {
-          x: { grid: { color: "#e2e8ee" }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font: { size: 11 } } },
-          y: { grid: { color: "#e2e8ee" }, ticks: { font: { size: 11 } }, beginAtZero: false },
-        },
-      };
-    },
-    destroy() { if (this.chart) { this.chart.destroy(); this.chart = null; } },
     build() {
+      const cv = this.$refs.cv;
+      if (!cv || typeof Chart === "undefined") return;
       this.destroy();
-      if (typeof Chart === "undefined") return;
-      this.chart = new Chart(this.$refs.cv.getContext("2d"), {
+      new Chart(cv.getContext("2d"), {
         type: this.chartType || "line",
         data: { labels: this.labels, datasets: this.datasets },
-        options: this.options(),
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { display: this.datasets.length > 1, position: "bottom", labels: { boxWidth: 12, font: { size: 12 } } },
+            tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y)}` } },
+          },
+          scales: {
+            x: { grid: { color: "#e2e8ee" }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font: { size: 11 } } },
+            y: { grid: { color: "#e2e8ee" }, ticks: { font: { size: 11 } }, beginAtZero: false },
+          },
+        },
       });
-    },
-    refresh() {
-      if (!this.chart) { this.build(); return; }
-      this.chart.data.labels = this.labels;
-      this.chart.data.datasets = this.datasets;
-      this.chart.options.plugins.legend.display = this.datasets.length > 1;
-      this.chart.update();
     },
   },
 };
@@ -261,6 +253,11 @@ const SystemDetail = {
         }
       }
     },
+    toggleOverlay(id) {
+      const i = this.overlayIds.indexOf(id);
+      if (i >= 0) this.overlayIds.splice(i, 1);
+      else this.overlayIds.push(id);
+    },
     setSort(k) { if (this.sortKey === k) this.sortDir = this.sortDir === "asc" ? "desc" : "asc"; else { this.sortKey = k; this.sortDir = "desc"; } },
     arrow(k) { return this.sortKey === k ? (this.sortDir === "asc" ? "↑" : "↓") : ""; },
 
@@ -374,9 +371,13 @@ const SystemDetail = {
           <div class="seg">
             <button v-for="r in [['week','Woche'],['month','Monat'],['year','Jahr'],['all','Alles']]" :key="r[0]" :class="{active: range===r[0]}" @click="range=r[0]">{{ r[1] }}</button>
           </div>
-          <select class="select" multiple v-model="overlayIds" v-if="overlayOptions.length" :size="1" style="min-width:150px" title="Systeme überlagern">
-            <option v-for="s in overlayOptions" :key="s.id" :value="s.id">+ {{ s.name }}</option>
-          </select>
+          <div class="seg" v-if="overlayOptions.length" style="flex-wrap:wrap">
+            <button v-for="s in overlayOptions" :key="s.id"
+                    :class="{active: overlayIds.includes(s.id)}"
+                    @click="toggleOverlay(s.id)" :title="'System überlagern: ' + s.name">
+              + {{ s.name }}
+            </button>
+          </div>
         </div>
         <energy-chart :labels="chart.labels" :datasets="chart.datasets" :chart-type="chartType" />
         <div class="legend-hint">
