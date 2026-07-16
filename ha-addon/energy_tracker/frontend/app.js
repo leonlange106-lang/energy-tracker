@@ -32,6 +32,22 @@ async function api(path, opts = {}) {
   return res.status === 204 ? null : res.json();
 }
 const today = () => new Date().toISOString().slice(0, 10);
+
+// Ingress-sicherer Download: holt die Datei im authentifizierten Kontext (fetch mit
+// Session-Cookie) und bietet sie als lokalen Blob an. Kein externer Browser -> kein 401.
+async function fetchBlobDownload(path, filename) {
+  const res = await fetch(path.replace(/^\//, ""));
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+}
 function fmt(n, dec = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "–";
   return Number(n).toLocaleString("de-DE", { minimumFractionDigits: dec, maximumFractionDigits: dec });
@@ -96,7 +112,7 @@ const SystemDetail = {
     // Chart-Steuerung
     mode: "consumption",       // value | consumption | per_day
     chartType: "line",         // line | bar
-    range: "year",             // week | month | year | all
+    range: "all",              // week | month | year | all
     overlayIds: [],
     overlayData: {},
     allSystems: [],
@@ -254,10 +270,15 @@ const SystemDetail = {
 
     /* Import */
     openImport() { this.importFile = null; this.importResult = null; this.showImport = true; },
-    downloadTemplate() { window.location.href = "api/import/template"; },
+    downloadTemplate() {
+      fetchBlobDownload("api/import/template", "import_template.csv")
+        .catch((e) => this.notify("Download fehlgeschlagen: " + e.message, "err"));
+    },
     openReport() {
       const q = this.fromParam ? `?from=${this.fromParam}` : "";
-      window.open(`api/systems/${this.system.id}/report.pdf${q}`, "_blank");
+      const name = this.system.name.replace(/\s+/g, "_");
+      fetchBlobDownload(`api/systems/${this.system.id}/report.pdf${q}`, `energie-bericht_${name}.pdf`)
+        .catch((e) => this.notify("PDF fehlgeschlagen: " + e.message, "err"));
     },
     onFile(e) { this.importFile = e.target.files[0] || null; },
     async runImport() {

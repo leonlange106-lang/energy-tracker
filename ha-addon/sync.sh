@@ -1,7 +1,9 @@
 #!/usr/bin/env sh
 # Kopiert den aktuellen App-Stand ins Add-on-Paket. Aus dem Repo-Root ausführen:
 #   sh ha-addon/sync.sh
+# Ziel-Ordner vorher entfernen, sonst verschachtelt 'cp -r' bei bestehendem Ziel.
 set -e
+rm -rf ha-addon/energy_tracker/app ha-addon/energy_tracker/frontend
 cp -r backend/app ha-addon/energy_tracker/app
 cp -r backend/frontend ha-addon/energy_tracker/frontend
 cp backend/requirements.txt ha-addon/energy_tracker/requirements.txt
