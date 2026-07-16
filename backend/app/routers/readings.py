@@ -1,0 +1,115 @@
+"""Ablesungen = Zeitreihen in InfluxDB. Plus abgeleitete Stats & Chart-Data."""
+from datetime import date
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlmodel import Session
+
+from .. import influx, logic
+from ..database import get_session
+from ..models import System
+from ..schemas import ChartData, ReadingCreate, ReadingRead, StatsRead
+
+router = APIRouter(tags=["readings"])
+
+
+def _require_system(system_id: str, session: Session) -> System:
+    system = session.get(System, system_id)
+    if not system:
+        raise HTTPException(404, "System nicht gefunden")
+    return system
+
+
+@router.get("/api/systems/{system_id}/readings", response_model=list[ReadingRead])
+def list_readings(
+    system_id: str,
+    from_: Optional[date] = Query(None, alias="from"),
+    to: Optional[date] = Query(None),
+    limit: Optional[int] = Query(None, ge=1, le=100000),
+    session: Session = Depends(get_session),
+):
+    _require_system(system_id, session)
+    raw = influx.query_readings(system_id, start=from_, stop=to, limit=limit)
+    enriched = logic.mark_outliers(logic.compute_intervals(raw))
+    return enriched
+
+
+@router.post("/api/systems/{system_id}/readings", response_model=ReadingRead, status_code=201)
+def create_reading(
+    system_id: str, payload: ReadingCreate, session: Session = Depends(get_session)
+):
+    system = _require_system(system_id, session)
+
+    # Plausibilität: Wert darf nicht kleiner als letzter bekannter Wert sein (außer Zählertausch)
+    if not payload.meter_replaced:
+        latest = influx.latest_reading(system_id)
+        if latest and latest["value"] is not None and payload.value < latest["value"]:
+            raise HTTPException(
+                422,
+                f"Wert {payload.value} < letzter Wert {latest['value']}. "
+                f"Bei Zählertausch 'meter_replaced' setzen.",
+            )
+
+    rid = influx.write_reading(
+        system_id=system_id,
+        system_type=system.typ,
+        datum=payload.datum,
+        value=payload.value,
+        cost=payload.cost,
+        meter_replaced=payload.meter_replaced,
+        note=payload.note,
+    )
+    return ReadingRead(
+        id=rid,
+        system_id=system_id,
+        datum=influx._to_utc_dt(payload.datum),
+        value=payload.value,
+        cost=payload.cost,
+        meter_replaced=payload.meter_replaced,
+        note=payload.note,
+    )
+
+
+@router.delete("/api/readings/{reading_id}", status_code=204)
+def delete_reading(reading_id: str):
+    try:
+        system_id, ts_ns = influx.decode_reading_id(reading_id)
+    except Exception:
+        raise HTTPException(400, "Ungültige reading_id")
+    influx.delete_reading(system_id, ts_ns)
+
+
+@router.get("/api/systems/{system_id}/stats", response_model=StatsRead)
+def get_stats(
+    system_id: str,
+    from_: Optional[date] = Query(None, alias="from"),
+    to: Optional[date] = Query(None),
+    session: Session = Depends(get_session),
+):
+    _require_system(system_id, session)
+    raw = influx.query_readings(system_id, start=from_, stop=to)
+    enriched = logic.mark_outliers(logic.compute_intervals(raw))
+    return logic.compute_stats(enriched)
+
+
+@router.get("/api/systems/{system_id}/chart-data", response_model=ChartData)
+def get_chart_data(
+    system_id: str,
+    from_: Optional[date] = Query(None, alias="from"),
+    to: Optional[date] = Query(None),
+    session: Session = Depends(get_session),
+):
+    system = _require_system(system_id, session)
+    raw = influx.query_readings(system_id, start=from_, stop=to)
+    enriched = logic.mark_outliers(logic.compute_intervals(raw))
+    return ChartData(
+        system_id=system_id,
+        name=system.name,
+        unit=system.einheit,
+        color=system.farbe,
+        labels=[e["datum"].date().isoformat() for e in enriched],
+        values=[e["value"] for e in enriched],
+        consumption=[e["consumption"] for e in enriched],
+        consumption_per_day=[e["consumption_per_day"] for e in enriched],
+        outliers=[e["is_outlier"] for e in enriched],
+    )
