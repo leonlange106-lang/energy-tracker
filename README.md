@@ -5,6 +5,7 @@ Self-hosted Energie-/Verbrauchs-Tracking (Strom, Gas, Wasser, PV, …).
 
 ## Schnellstart
 👉 Komplette, laienverständliche Installation auf Proxmox: **[`DEPLOY_PROXMOX.md`](./DEPLOY_PROXMOX.md)**
+👉 Integration als Home-Assistant-Add-on (Ingress, Sidebar/App): **[`HA_ADDON.md`](./HA_ADDON.md)**
 
 Kurzform (Docker vorausgesetzt):
 ```bash
@@ -45,7 +46,7 @@ energy-tracker/
 ```
 
 ## Frontend-Features
-Kachel-Menü aller Systeme · Systemverwaltung (anlegen/bearbeiten/archivieren, Typ-abhängige Zusatzfelder) · Werterfassung (Datum vorbelegt, Zählertausch-Checkbox, Plausibilitätsprüfung) · sortier-/filterbare Werte-Tabelle mit Pagination · Chart (Linie/Balken, Zeitraum Woche/Monat/Jahr/alle, mehrere Systeme überlagern, **Ausreißer farbig markiert**) · Statistik-Kacheln · CSV-Import + Vorlage-Download. Responsive fürs Handy am Zähler.
+Kachel-Menü aller Systeme · Systemverwaltung (anlegen/bearbeiten/archivieren, Typ-abhängige Zusatzfelder) · Werterfassung (Datum vorbelegt, Zählertausch-Checkbox, Plausibilitätsprüfung) · sortier-/filterbare Werte-Tabelle mit Pagination · Chart (Linie/Balken, Zeitraum Woche/Monat/Jahr/alle, mehrere Systeme überlagern, **Ausreißer farbig markiert**) · Statistik-Kacheln · **PDF-Bericht** (Statistik + Chart + Tabelle) · CSV-Import + Vorlage-Download. Responsive fürs Handy am Zähler.
 
 ## Datenmodell (Hybrid)
 | Store | Inhalt | Warum |

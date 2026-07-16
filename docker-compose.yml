@@ -16,9 +16,10 @@ services:
     volumes:
       - influx-data:/var/lib/influxdb2
       - influx-config:/etc/influxdb2
-    # InfluxDB-UI/-Port nur lokal am Host. Für Home Assistant o. Ä. auf "8086:8086" ändern.
+    # InfluxDB fürs LAN geöffnet, damit das HA-Add-on (anderer Host) drankommt.
+    # Token-geschützt; nur im Heimnetz erreichbar.
     ports:
-      - "127.0.0.1:8086:8086"
+      - "8086:8086"
     mem_limit: 512m
     healthcheck:
       test: ["CMD", "influx", "ping"]
