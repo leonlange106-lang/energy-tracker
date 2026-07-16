@@ -9,7 +9,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Flowable,
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Flowable, PageBreak,
 )
 from reportlab.graphics.shapes import Drawing, PolyLine, Line, Circle, String, Rect
 
@@ -81,22 +81,22 @@ class ConsumptionChart(Flowable):
         self.canv.restoreState()
 
 
-def build_report_pdf(system: dict, enriched: list[dict], stats: dict,
-                     from_label: Optional[str], to_label: Optional[str]) -> bytes:
-    buf = BytesIO()
-    doc = SimpleDocTemplate(
-        buf, pagesize=A4,
-        leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm,
-        title=f"Energie-Bericht – {system['name']}",
-    )
+def _styles():
     styles = getSampleStyleSheet()
-    h1 = ParagraphStyle("h1", parent=styles["Title"], fontSize=18, textColor=INK, spaceAfter=2, alignment=0)
-    sub = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, textColor=INK_SOFT)
-    h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=11, textColor=INK, spaceBefore=12, spaceAfter=6)
+    return {
+        "base": styles,
+        "h1": ParagraphStyle("h1", parent=styles["Title"], fontSize=18, textColor=INK, spaceAfter=2, alignment=0),
+        "sub": ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, textColor=INK_SOFT),
+        "h2": ParagraphStyle("h2", parent=styles["Heading2"], fontSize=11, textColor=INK, spaceBefore=12, spaceAfter=6),
+    }
+
+
+def _system_flowables(system: dict, enriched: list[dict], stats: dict, sty: dict,
+                      from_label: Optional[str], to_label: Optional[str]) -> list:
+    styles, h1, sub, h2 = sty["base"], sty["h1"], sty["sub"], sty["h2"]
     unit = system["einheit"]
     story = []
 
-    # Kopf
     story.append(Paragraph(f"Energie-Bericht · {system['name']}", h1))
     zeitraum = "gesamter Zeitraum" if not from_label else f"ab {from_label}"
     if to_label:
@@ -106,7 +106,6 @@ def build_report_pdf(system: dict, enriched: list[dict], stats: dict,
         sub))
     story.append(Spacer(1, 10))
 
-    # Statistik-Kacheln (3x2 Grid)
     def cell(label, value, subv=""):
         block = f'<font size="7" color="#5b6b7b">{label.upper()}</font><br/>' \
                 f'<font size="13" color="#172533">{value}</font>'
@@ -133,18 +132,15 @@ def build_report_pdf(system: dict, enriched: list[dict], stats: dict,
     ]))
     story.append(st)
 
-    # Chart
     story.append(Paragraph("Verbrauch / Tag", h2))
     story.append(ConsumptionChart(enriched, width=174 * mm, height=60 * mm))
     story.append(Paragraph(
         '<font size="7" color="#5b6b7b">Amber = Ausreißer (Ø + 2× Standardabweichung)</font>',
         styles["Normal"]))
 
-    # Werte-Tabelle
     story.append(Paragraph("Ablesungen", h2))
-    header = ["Datum", "Zählerstand", "Verbrauch", "Kosten", "Notiz"]
-    rows = [header]
-    for e in reversed(enriched):  # neueste oben
+    rows = [["Datum", "Zählerstand", "Verbrauch", "Kosten", "Notiz"]]
+    for e in reversed(enriched):
         flags = []
         if e.get("meter_replaced"):
             flags.append("Tausch")
@@ -152,9 +148,7 @@ def build_report_pdf(system: dict, enriched: list[dict], stats: dict,
             flags.append("Ausreißer")
         cons = _fmt(e["consumption"]) + (f"  [{', '.join(flags)}]" if flags else "")
         rows.append([
-            _fmt_date(e["datum"]),
-            _fmt(e["value"], 1),
-            cons,
+            _fmt_date(e["datum"]), _fmt(e["value"], 1), cons,
             "–" if e.get("cost") is None else _fmt(e["cost"]),
             (e.get("note") or "")[:40],
         ])
@@ -170,6 +164,38 @@ def build_report_pdf(system: dict, enriched: list[dict], stats: dict,
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     story.append(tbl)
+    return story
 
+
+def build_report_pdf(system: dict, enriched: list[dict], stats: dict,
+                     from_label: Optional[str], to_label: Optional[str]) -> bytes:
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm,
+        title=f"Energie-Bericht – {system['name']}",
+    )
+    doc.build(_system_flowables(system, enriched, stats, _styles(), from_label, to_label))
+    return buf.getvalue()
+
+
+def build_combined_report_pdf(sections: list[dict], from_label: Optional[str],
+                              to_label: Optional[str]) -> bytes:
+    """sections: Liste von {system, enriched, stats} -> ein PDF, ein Abschnitt je System."""
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm,
+        title="Energie-Gesamtbericht",
+    )
+    sty = _styles()
+    story = []
+    for i, sec in enumerate(sections):
+        if i > 0:
+            story.append(PageBreak())
+        story += _system_flowables(sec["system"], sec["enriched"], sec["stats"], sty, from_label, to_label)
+    if not sections:
+        story.append(Paragraph("Keine aktiven Systeme vorhanden.", sty["h2"]))
     doc.build(story)
     return buf.getvalue()
+

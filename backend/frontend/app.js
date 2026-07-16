@@ -68,29 +68,56 @@ const EnergyChart = {
   props: { labels: Array, datasets: Array, chartType: String },
   template: `<div class="chart-box"><canvas ref="cv"></canvas></div>`,
   data: () => ({ chart: null }),
-  mounted() { this.render(); },
-  beforeUnmount() { if (this.chart) this.chart.destroy(); },
-  watch: { labels: "render", datasets: "render", chartType: "render" },
+  mounted() { this.build(); },
+  beforeUnmount() { this.destroy(); },
+  watch: {
+    // Alle Prop-Änderungen eines Ticks werden gebündelt -> genau EIN Update/Rebuild.
+    labels() { this.schedule(false); },
+    datasets() { this.schedule(false); },
+    chartType() { this.schedule(true); },
+  },
   methods: {
-    render() {
-      if (this.chart) this.chart.destroy();
+    schedule(typeChanged) {
+      if (typeChanged) this._rebuild = true;
+      if (this._pending) return;
+      this._pending = true;
+      this.$nextTick(() => {
+        this._pending = false;
+        if (!this.chart || this._rebuild) { this._rebuild = false; this.build(); }
+        else this.refresh();
+      });
+    },
+    options() {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: this.datasets.length > 1, position: "bottom", labels: { boxWidth: 12, font: { size: 12 } } },
+          tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y)}` } },
+        },
+        scales: {
+          x: { grid: { color: "#e2e8ee" }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font: { size: 11 } } },
+          y: { grid: { color: "#e2e8ee" }, ticks: { font: { size: 11 } }, beginAtZero: false },
+        },
+      };
+    },
+    destroy() { if (this.chart) { this.chart.destroy(); this.chart = null; } },
+    build() {
+      this.destroy();
+      if (typeof Chart === "undefined") return;
       this.chart = new Chart(this.$refs.cv.getContext("2d"), {
         type: this.chartType || "line",
         data: { labels: this.labels, datasets: this.datasets },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false },
-          plugins: {
-            legend: { display: this.datasets.length > 1, position: "bottom", labels: { boxWidth: 12, font: { size: 12 } } },
-            tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y)}` } },
-          },
-          scales: {
-            x: { grid: { color: "#e2e8ee" }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font: { size: 11 } } },
-            y: { grid: { color: "#e2e8ee" }, ticks: { font: { size: 11 } }, beginAtZero: false },
-          },
-        },
+        options: this.options(),
       });
+    },
+    refresh() {
+      if (!this.chart) { this.build(); return; }
+      this.chart.data.labels = this.labels;
+      this.chart.data.datasets = this.datasets;
+      this.chart.options.plugins.legend.display = this.datasets.length > 1;
+      this.chart.update();
     },
   },
 };
@@ -491,6 +518,10 @@ createApp({
     },
     open(s) { this.selected = s.id; this.view = "detail"; window.scrollTo(0, 0); },
     back() { this.view = "menu"; this.selected = null; this.load(); },
+    openCombinedReport() {
+      fetchBlobDownload("api/report.pdf", "energie-gesamtbericht.pdf")
+        .catch((e) => this.notify("PDF fehlgeschlagen: " + e.message, "err"));
+    },
 
     /* System anlegen / bearbeiten */
     newSystem() {
@@ -535,6 +566,7 @@ createApp({
       </div>
       <button v-if="view==='detail'" class="crumb" @click="back">‹ Alle Systeme</button>
       <div class="spacer"></div>
+      <button v-if="view==='menu' && systems.length" class="btn btn-sm" @click="openCombinedReport">⇩ Gesamt-PDF</button>
       <button v-if="view==='menu'" class="btn btn-primary btn-sm" @click="newSystem">＋ System</button>
     </div>
   </div>

@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from .. import influx, logic, report
 from ..database import get_session
@@ -139,4 +139,34 @@ def get_report(
         content=pdf,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{fname}"'},
+    )
+
+
+@router.get("/api/report.pdf")
+def get_combined_report(
+    from_: Optional[date] = Query(None, alias="from"),
+    to: Optional[date] = Query(None),
+    session: Session = Depends(get_session),
+):
+    systems = session.exec(
+        select(System).where(System.aktiv == True).order_by(System.name)  # noqa: E712
+    ).all()
+    sections = []
+    for system in systems:
+        raw = influx.query_readings(system.id, start=from_, stop=to)
+        enriched = logic.mark_outliers(logic.compute_intervals(raw))
+        sections.append({
+            "system": {"name": system.name, "typ": system.typ, "einheit": system.einheit},
+            "enriched": enriched,
+            "stats": logic.compute_stats(enriched),
+        })
+    pdf = report.build_combined_report_pdf(
+        sections,
+        from_label=from_.strftime("%d.%m.%Y") if from_ else None,
+        to_label=to.strftime("%d.%m.%Y") if to else None,
+    )
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="energie-gesamtbericht.pdf"'},
     )
