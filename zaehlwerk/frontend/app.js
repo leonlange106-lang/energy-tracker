@@ -440,6 +440,66 @@ const SystemDetail = {
       canvas.getContext("2d").drawImage(video, 0, (ch - cropH) / 2, cw, cropH, 0, 0, cw, cropH);
       this.runOcr(canvas);
     },
+    preprocessForOcr(src) {
+      // Hochskalieren + Graustufen + Kontrast-Threshold. Polarität automatisch:
+      // helle LCD-Ziffern auf dunklem Grund werden invertiert (Tesseract will dunkel auf hell).
+      const scale = Math.max(1, Math.min(3, 1400 / src.width));
+      const c = document.createElement("canvas");
+      c.width = Math.round(src.width * scale);
+      c.height = Math.round(src.height * scale);
+      const ctx = c.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(src, 0, 0, c.width, c.height);
+      const img = ctx.getImageData(0, 0, c.width, c.height);
+      const d = img.data;
+      // Graustufen + Mittelwert
+      let sum = 0;
+      const n = d.length / 4;
+      for (let i = 0; i < d.length; i += 4) {
+        const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        d[i] = d[i + 1] = d[i + 2] = g;
+        sum += g;
+      }
+      const mean = sum / n;
+      // Threshold + Polaritätszählung
+      let dark = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = d[i] < mean * 0.92 ? 0 : 255;
+        d[i] = d[i + 1] = d[i + 2] = v;
+        if (v === 0) dark++;
+      }
+      // Mehr dunkel als hell -> Ziffern sind vermutlich hell (LCD) -> invertieren
+      if (dark > n / 2) {
+        for (let i = 0; i < d.length; i += 4) {
+          const v = 255 - d[i];
+          d[i] = d[i + 1] = d[i + 2] = v;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      return c;
+    },
+    pickOcrCandidate(text) {
+      // Ziffernfolgen extrahieren; Leerzeichen INNERHALB von Folgen zusammenziehen
+      // (Tesseract trennt Zaehlwerks-Rollen/LCD-Gruppen gern mit Spaces)
+      const joined = text.replace(/(\d)[ \t]+(?=\d)/g, "$1");
+      const raw = joined.match(/\d+[.,]?\d*/g) || [];
+      if (!raw.length) return null;
+      const last = this.latestValue;  // letzter bekannter Stand (kann null sein)
+      const cands = raw.map((m) => {
+        const num = parseFloat(m.replace(",", "."));
+        const digits = m.replace(/[.,]/g, "").length;
+        let score = digits;                                  // mehr Ziffern = besser ...
+        if (digits > 8) score -= 100;                        // ... aber >8 = Seriennummer o.ä., kein Zählwerk
+        if (last !== null && isFinite(num)) {
+          if (num >= last && num <= last + 100000) score += 100;   // plausibel: >= letzter Stand
+          else if (num < last) score -= 50;                        // kleiner als letzter Stand
+          else score -= 30;                                        // absurd weit drüber
+        }
+        return { m, num, score };
+      });
+      cands.sort((a, b) => b.score - a.score);
+      return cands[0].m;
+    },
     async runOcr(canvas) {
       this.scanBusy = true;
       this.scanStatus = "Texterkennung läuft …";
@@ -454,17 +514,17 @@ const SystemDetail = {
           });
           this.scanStatus = "Texterkennung läuft …";
         }
-        const result = await Tesseract.recognize(canvas, "eng", {
-          tessedit_char_whitelist: "0123456789.,",
+        const prepped = this.preprocessForOcr(canvas);
+        const result = await Tesseract.recognize(prepped, "eng", {
+          tessedit_char_whitelist: "0123456789., ",
         });
-        const matches = (result.data.text.match(/\d+[.,]?\d*/g) || [])
-          .sort((a, b) => b.length - a.length);
-        if (matches.length) {
-          this.reading.value = matches[0].replace(",", ".");
-          this.notify("Erkannt: " + matches[0] + " – bitte prüfen!", "ok");
+        const best = this.pickOcrCandidate(result.data.text);
+        if (best) {
+          this.reading.value = best.replace(",", ".");
+          this.notify("Erkannt: " + best + " – bitte prüfen!", "ok");
           this.closeScanner();
         } else {
-          this.scanStatus = "Nichts erkannt – näher ran, mehr Licht, nochmal versuchen.";
+          this.scanStatus = "Nichts erkannt – Zählwerk formatfüllend in den Rahmen, mehr Licht, nochmal versuchen.";
         }
       } catch (e) {
         this.scanStatus = "Fehler: " + e.message;

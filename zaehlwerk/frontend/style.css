@@ -363,6 +363,7 @@ td.r { text-align: right; }
   position: absolute; left: 12px; top: 15px; padding: 0 4px; pointer-events: none;
   font-size: 16px; color: var(--md-on-surface-variant); background: var(--md-surface-c-high);
   transition: all var(--dur-short) var(--ease-emph-decel);
+  max-width: calc(100% - 20px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tf-input:focus + .tf-label,
 .tf-input:not(:placeholder-shown) + .tf-label {
@@ -384,8 +385,9 @@ td.r { text-align: right; }
 .settings-actions .btn { justify-content: flex-start; width: 100%; border-radius: 16px; height: 46px; }
 
 /* ---------- Scanner ---------- */
-.input-scan { display: flex; gap: 8px; align-items: flex-start; }
-.input-scan .tf { flex: 1; margin-bottom: 0; }
+.input-scan { display: flex; gap: 8px; align-items: center; }
+.input-scan .tf { flex: 1; margin-bottom: 0; min-width: 0; }
+.input-scan .tf-input { min-width: 0; }
 .modal-scan { max-width: 560px; }
 .scan-stage { position: relative; background: #000; border-radius: 16px; overflow: hidden; }
 .scan-stage video { display: block; width: 100%; max-height: 340px; object-fit: cover; }
@@ -431,6 +433,7 @@ td.r { text-align: right; }
   .wrap { padding-bottom: 170px; }
 }
 @media (max-width: 640px) {
+  .field-row { flex-direction: column; gap: 0; }
   .detail-head { flex-direction: column; align-items: flex-start; }
   .chart-box { height: 300px; }
   thead th, tbody td { padding: 10px 8px; }
