@@ -1,14 +1,21 @@
-"""Ableitungen aus den rohen Ablesungen (Logik analog zum bestehenden Sheets-/PDF-Bericht).
+"""Ableitungen aus den rohen Ablesungen.
 
-REGEL Zählertausch: Ist eine Ablesung meter_replaced=True, startet der neue Zähler IMMER bei 0.
-Der Verbrauch dieses Intervalls entspricht damit exakt dem abgelesenen Wert selbst.
+REGEL Zählertausch: meter_replaced=True -> neuer Zähler startet IMMER bei 0,
+der Verbrauch des Intervalls ist exakt der abgelesene Wert selbst.
+Guard: Verbrauch wird nie negativ (fehlerhafte Daten werden auf None gesetzt
+statt Statistiken zu verfälschen).
+
+KOSTEN: Explizit erfasste Kosten haben Vorrang. Fehlen sie und ist ein
+Durchschnittspreis (€/Einheit) am System hinterlegt, wird geschätzt:
+cost_effective = consumption * preis. Geschätzte Werte werden markiert.
 """
 import statistics
 from typing import Optional
 
 
-def compute_intervals(readings: list[dict]) -> list[dict]:
-    """readings: chronologisch aufsteigend. Reichert um consumption / consumption_per_day an."""
+def compute_intervals(readings: list[dict], price: Optional[float] = None) -> list[dict]:
+    """readings: chronologisch aufsteigend. Reichert an um consumption,
+    consumption_per_day, cost_effective, cost_estimated."""
     out: list[dict] = []
     for i, r in enumerate(readings):
         e = dict(r)
@@ -18,17 +25,28 @@ def compute_intervals(readings: list[dict]) -> list[dict]:
             prev = readings[i - 1]
             days = (r["datum"] - prev["datum"]).total_seconds() / 86400
             if r.get("meter_replaced"):
-                cons = float(r["value"])                    # neuer Zähler startet immer bei 0
+                cons = float(r["value"])                    # neuer Zähler ab 0
             else:
                 cons = float(r["value"]) - float(prev["value"])
+            if cons < 0:
+                cons = None                                 # Datenfehler -> nicht verfälschen
             e["consumption"] = cons
-            e["consumption_per_day"] = (cons / days) if days > 0 else cons
+            e["consumption_per_day"] = (cons / days) if (cons is not None and days > 0) else cons
+        # Kosten: explizit > geschätzt (Preis) > None
+        if e.get("cost") is not None:
+            e["cost_effective"] = float(e["cost"])
+            e["cost_estimated"] = False
+        elif price and e["consumption"] is not None:
+            e["cost_effective"] = e["consumption"] * price
+            e["cost_estimated"] = True
+        else:
+            e["cost_effective"] = None
+            e["cost_estimated"] = False
         out.append(e)
     return out
 
 
 def outlier_threshold(enriched: list[dict]) -> Optional[float]:
-    """Schwelle = Ø + 2×Standardabweichung der Tageswerte (wie im PDF-Bericht)."""
     vals = [e["consumption_per_day"] for e in enriched if e["consumption_per_day"] is not None]
     if len(vals) < 2:
         return None
@@ -47,10 +65,10 @@ def compute_stats(enriched: list[dict]) -> dict:
     cons_vals = [e["consumption"] for e in enriched if e["consumption"] is not None]
     per_days = [
         (e["consumption_per_day"], e["datum"])
-        for e in enriched
-        if e["consumption_per_day"] is not None
+        for e in enriched if e["consumption_per_day"] is not None
     ]
-    costs = [e["cost"] for e in enriched if e.get("cost") is not None]
+    costs = [e["cost_effective"] for e in enriched if e.get("cost_effective") is not None]
+    any_estimated = any(e.get("cost_estimated") for e in enriched)
 
     total_consumption = sum(cons_vals) if cons_vals else 0.0
     total_cost = sum(costs) if costs else 0.0
@@ -65,10 +83,8 @@ def compute_stats(enriched: list[dict]) -> dict:
 
     min_pd = max_pd = min_dt = max_dt = None
     if per_days:
-        min_item = min(per_days, key=lambda x: x[0])
-        max_item = max(per_days, key=lambda x: x[0])
-        min_pd, min_dt = min_item
-        max_pd, max_dt = max_item
+        min_pd, min_dt = min(per_days, key=lambda x: x[0])
+        max_pd, max_dt = max(per_days, key=lambda x: x[0])
 
     return {
         "total_consumption": round(total_consumption, 3),
@@ -83,4 +99,5 @@ def compute_stats(enriched: list[dict]) -> dict:
         "max_per_day_datum": max_dt,
         "outlier_threshold": outlier_threshold(enriched),
         "reading_count": len(enriched),
+        "cost_estimated": any_estimated,
     }

@@ -9,7 +9,7 @@ from .config import settings
 from .database import init_db
 from .routers import imports, readings, systems
 
-app = FastAPI(title="Zählwerk API", version="2.0.0")
+app = FastAPI(title="Zählwerk API", version="2.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,7 +30,7 @@ def _startup():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": app.version, "db": settings.sqlite_path}
 
 
 # Frontend statisch mit ausliefern (ein Prozess, ein Port)

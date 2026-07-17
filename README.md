@@ -9,7 +9,14 @@ Self-hosted Verbrauchs- & Zählerstands-Tracking (Strom, Gas, Wasser, PV, …).
 👉 Updates: `.\deploy.ps1 -Zip "...\energy-tracker.zip"` (Ein-Klick-Push).
 
 ## Features
-Startseite mit letztem Stand **und Fälligkeits-Warnung** (prognostiziertes Ablesedatum) · Systemverwaltung (Typ-Zusatzfelder, Archivieren) · Werterfassung (Zählertausch, Plausibilität) · sortier-/filterbare Tabelle (mobil scrollbar) · Chart (Linie/Balken, Zeiträume, Overlay mit 2. Achse, Gradient-Fläche, Ausreißer, Segmente bei Zählertausch) · Statistik inkl. Jahres-Prognose und Gas-kWh-Zusatz · PDF-Bericht (einzeln + Gesamt, mit Verlaufsflächen) · CSV-Import/-Export · Dark Mode.
+Startseite mit letztem Stand **und Fälligkeits-Warnung** (Intervall pro System konfigurierbar, sonst Median-Prognose) · Systemverwaltung (Typ-Zusatzfelder, Archivieren) · Werterfassung (Zählertausch, Plausibilität) · sortier-/filterbare Tabelle (mobil scrollbar) · Chart (Linie/Balken, Zeiträume, Overlay mit 2. Achse, Gradient-Fläche, Ausreißer, Segmente bei Zählertausch) · Statistik inkl. Jahres-Prognose und Gas-kWh-Zusatz · PDF-Bericht (einzeln + Gesamt, mit Verlaufsflächen) · CSV-Import/-Export · Dark Mode · **Ø-Preis pro System** (automatische Kostenschätzung, als ≈ markiert) · **OCR-Scanner** (Zählerstand per Kamera, tesseract.js) · Mobile-Akkordeon-Tabelle.
+
+## Technik-Notizen (v2.2)
+- **DB in `/config`** (addon_config) → liegt automatisch im normalen HA-Backup. Auto-Migration von `/share` und `/data`.
+- **SQLite WAL-Modus** + busy_timeout 15 s → keine `database is locked`-Fehler bei parallelen Zugriffen.
+- **`/dashboard`-Endpoint**: readings + stats + chart in einem Request/einer Berechnung (vorher 3).
+- **Overview ohne N+1**: ein Query für alle Systeme.
+- **Negativ-Guard**: fehlerhafte Zählerstände erzeugen nie negative Verbräuche (werden als Lücke behandelt).
 
 ## Struktur (HA-Add-on-Repository)
 ```

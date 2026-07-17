@@ -48,10 +48,19 @@ def _query_readings(session: Session, system_id: str,
     return out
 
 
-def _enriched(session: Session, system_id: str,
+def _price(system: System) -> Optional[float]:
+    """Durchschnittspreis €/Einheit aus den System-Zusatzfeldern (Fallback-Kosten)."""
+    try:
+        p = float((system.zusatzfelder or {}).get("preis") or 0)
+        return p if p > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _enriched(session: Session, system: System,
               from_: Optional[date] = None, to: Optional[date] = None) -> list[dict]:
-    raw = _query_readings(session, system_id, from_, to)
-    return logic.mark_outliers(logic.compute_intervals(raw))
+    raw = _query_readings(session, system.id, from_, to)
+    return logic.mark_outliers(logic.compute_intervals(raw, price=_price(system)))
 
 
 def _latest(session: Session, system_id: str) -> Optional[Reading]:
@@ -69,8 +78,8 @@ def list_readings(
     limit: Optional[int] = Query(None, ge=1, le=100000),
     session: Session = Depends(get_session),
 ):
-    _require_system(system_id, session)
-    enriched = _enriched(session, system_id, from_, to)
+    system = _require_system(system_id, session)
+    enriched = _enriched(session, system, from_, to)
     if limit:
         enriched = enriched[-limit:]
     return enriched
@@ -117,8 +126,8 @@ def get_stats(
     to: Optional[date] = Query(None),
     session: Session = Depends(get_session),
 ):
-    _require_system(system_id, session)
-    return logic.compute_stats(_enriched(session, system_id, from_, to))
+    system = _require_system(system_id, session)
+    return logic.compute_stats(_enriched(session, system, from_, to))
 
 
 @router.get("/api/systems/{system_id}/chart-data", response_model=ChartData)
@@ -129,7 +138,7 @@ def get_chart_data(
     session: Session = Depends(get_session),
 ):
     system = _require_system(system_id, session)
-    enriched = _enriched(session, system_id, from_, to)
+    enriched = _enriched(session, system, from_, to)
     return ChartData(
         system_id=system_id,
         name=system.name,
@@ -144,28 +153,70 @@ def get_chart_data(
     )
 
 
+@router.get("/api/systems/{system_id}/dashboard")
+def get_dashboard(
+    system_id: str,
+    from_: Optional[date] = Query(None, alias="from"),
+    to: Optional[date] = Query(None),
+    session: Session = Depends(get_session),
+):
+    """Kombiniert readings + stats + chart-data in EINEM Request/EINER Berechnung."""
+    system = _require_system(system_id, session)
+    enriched = _enriched(session, system, from_, to)
+    stats = logic.compute_stats(enriched)
+    chart = {
+        "system_id": system_id, "name": system.name, "unit": system.einheit,
+        "color": system.farbe,
+        "labels": [e["datum"].date().isoformat() for e in enriched],
+        "values": [e["value"] for e in enriched],
+        "consumption": [e["consumption"] for e in enriched],
+        "consumption_per_day": [e["consumption_per_day"] for e in enriched],
+        "outliers": [e["is_outlier"] for e in enriched],
+        "meter_replaced": [bool(e.get("meter_replaced")) for e in enriched],
+    }
+    readings = [{**e, "datum": e["datum"].isoformat()} for e in enriched]
+    return {"readings": readings, "stats": stats, "chart": chart}
+
+
 @router.get("/api/overview")
 def get_overview(session: Session = Depends(get_session)):
-    """Letzter Stand + Datum je aktivem System, plus prognostiziertes nächstes Ablesedatum."""
+    """Letzter Stand + Fälligkeit je aktivem System. EIN Query für alle (kein N+1).
+    Fälligkeit: konfiguriertes Intervall (zusatzfelder.ablese_intervall_tage) hat Vorrang,
+    sonst Median der bisherigen Intervalle."""
     systems = session.exec(select(System).where(System.aktiv == True)).all()  # noqa: E712
+    ids = [s.id for s in systems]
+    if not ids:
+        return {}
+    all_rows = session.exec(
+        select(Reading).where(Reading.system_id.in_(ids)).order_by(Reading.datum)
+    ).all()
+    by_system: dict[str, list[Reading]] = {}
+    for r in all_rows:
+        by_system.setdefault(r.system_id, []).append(r)
+
     out = {}
     now = datetime.now()
     for s in systems:
-        rows = session.exec(
-            select(Reading).where(Reading.system_id == s.id).order_by(Reading.datum)
-        ).all()
+        rows = by_system.get(s.id, [])
         if not rows or rows[-1].value is None:
             continue
         last = rows[-1]
         entry = {"value": last.value, "datum": last.datum.isoformat()}
-        # Prognose nächstes Ablesedatum = letztes Datum + Median der bisherigen Intervalle
-        if len(rows) >= 2:
+        # konfiguriertes Intervall?
+        interval = None
+        try:
+            iv = float((s.zusatzfelder or {}).get("ablese_intervall_tage") or 0)
+            interval = iv if iv > 0 else None
+        except (TypeError, ValueError):
+            interval = None
+        if interval is None and len(rows) >= 2:
             gaps = [(rows[i].datum - rows[i - 1].datum).days for i in range(1, len(rows))]
             gaps = [g for g in gaps if g > 0]
-            if gaps:
-                nxt = last.datum + timedelta(days=median(gaps))
-                entry["next_expected"] = nxt.date().isoformat()
-                entry["overdue_days"] = (now - nxt).days   # >0 überfällig, <0 noch Zeit
+            interval = median(gaps) if gaps else None
+        if interval:
+            nxt = last.datum + timedelta(days=interval)
+            entry["next_expected"] = nxt.date().isoformat()
+            entry["overdue_days"] = (now - nxt).days
         out[s.id] = entry
     return out
 
@@ -209,7 +260,7 @@ def get_report(
     session: Session = Depends(get_session),
 ):
     system = _require_system(system_id, session)
-    enriched = _enriched(session, system_id, from_, to)
+    enriched = _enriched(session, system, from_, to)
     pdf = report.build_report_pdf(
         system={"name": system.name, "typ": system.typ, "einheit": system.einheit},
         enriched=enriched,
@@ -233,7 +284,7 @@ def get_combined_report(
     ).all()
     sections = []
     for system in systems:
-        enriched = _enriched(session, system.id, from_, to)
+        enriched = _enriched(session, system, from_, to)
         sections.append({
             "system": {"name": system.name, "typ": system.typ, "einheit": system.einheit},
             "enriched": enriched,

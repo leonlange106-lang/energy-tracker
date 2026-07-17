@@ -1,5 +1,5 @@
 name: "Zählwerk"
-version: "2.1.0"
+version: "2.2.0"
 slug: "zaehlwerk"
 description: "Verbrauchs- & Zählerstands-Tracking (Strom, Gas, Wasser, PV). Standalone, nur SQLite."
 url: "https://github.com/leonlange106-lang/energy-tracker"
@@ -10,6 +10,8 @@ ingress: true
 ingress_port: 8000
 panel_icon: "mdi:gauge"
 panel_title: "Zählwerk"
-# Persistente DB in /share -> überlebt Add-on-Updates und -Wechsel
+# addon_config -> /config: DB liegt damit automatisch im normalen HA-Backup.
+# share bleibt lesbar gemappt, damit die Alt-DB einmalig migriert werden kann.
 map:
+  - addon_config:rw
   - share:rw

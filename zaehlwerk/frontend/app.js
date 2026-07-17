@@ -31,6 +31,11 @@ const SYSTEM_TYPES = [
   { v: "PV-Einspeisung", unit: "kWh", icon: "⬆" },
   { v: "Custom",         unit: "",    icon: "▦" },
 ];
+// Felder, die es bei JEDEM System gibt (Kosten-Fallback + Fälligkeit)
+const COMMON_FIELDS = [
+  { key: "preis", label: "Ø-Preis €/Einheit (für Kostenschätzung, optional)", type: "number" },
+  { key: "ablese_intervall_tage", label: "Ablese-Intervall in Tagen (für Fälligkeit, optional)", type: "number" },
+];
 const EXTRA_FIELDS = {
   "Gas":            [{ key: "brennwert", label: "Brennwert (kWh/m³)", type: "number" },
                      { key: "zustandszahl", label: "Zustandszahl (Standard 0,95)", type: "number" }],
@@ -185,6 +190,7 @@ const SystemDetail = {
     overlayData: {},
     allSystems: [],
     // Tabelle
+    expandedId: null,
     sortKey: "datum",
     sortDir: "desc",
     filter: "",
@@ -193,6 +199,9 @@ const SystemDetail = {
     perPage: 15,
     // Modals
     showReading: false,
+    showScanner: false,
+    scanBusy: false,
+    scanStatus: "",
     showImport: false,
     reading: null,
     importFile: null,
@@ -321,13 +330,11 @@ const SystemDetail = {
     async loadAll() { this.loading = true; await this.loadDynamic(); this.loading = false; },
     async loadDynamic() {
       const q = this.fromParam ? `?from=${this.fromParam}` : "";
-      const [readings, stats, chartData] = await Promise.all([
-        api(`/api/systems/${this.system.id}/readings${q}`),
-        api(`/api/systems/${this.system.id}/stats${q}`),
-        api(`/api/systems/${this.system.id}/chart-data${q}`),
-      ]);
-      this.readings = readings; this.stats = stats; this.chartData = chartData;
+      // Ein kombinierter Request statt drei (eine Berechnung im Backend)
+      const d = await api(`/api/systems/${this.system.id}/dashboard${q}`);
+      this.readings = d.readings; this.stats = d.stats; this.chartData = d.chart;
       this.page = 1;
+      this.expandedId = null;
       await this.loadOverlays();
     },
     async loadOverlays() {
@@ -346,6 +353,7 @@ const SystemDetail = {
       if (i >= 0) this.overlayIds.splice(i, 1);
       else this.overlayIds.push(id);
     },
+    toggleRow(id) { this.expandedId = this.expandedId === id ? null : id; },
     setSort(k) { if (this.sortKey === k) this.sortDir = this.sortDir === "asc" ? "desc" : "asc"; else { this.sortKey = k; this.sortDir = "desc"; } },
     arrow(k) { return this.sortKey === k ? (this.sortDir === "asc" ? "↑" : "↓") : ""; },
 
@@ -354,6 +362,70 @@ const SystemDetail = {
       this.reading = { datum: today(), value: null, cost: null, meter_replaced: false, note: "" };
       this.showReading = true;
     },
+    /* ---------- OCR-Scanner (tesseract.js, lazy) ---------- */
+    async openScanner() {
+      this.showScanner = true;
+      this.scanStatus = "Kamera wird gestartet …";
+      this.$nextTick(async () => {
+        try {
+          this._stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment", width: { ideal: 1920 } }, audio: false,
+          });
+          this.$refs.scanVideo.srcObject = this._stream;
+          await this.$refs.scanVideo.play();
+          this.scanStatus = "Zählerstand mittig ins Feld halten, dann auslösen.";
+        } catch (e) {
+          this.scanStatus = "Kamera nicht verfügbar: " + e.message;
+        }
+      });
+    },
+    closeScanner() {
+      if (this._stream) { this._stream.getTracks().forEach((t) => t.stop()); this._stream = null; }
+      this.showScanner = false; this.scanBusy = false;
+    },
+    async captureScan() {
+      const video = this.$refs.scanVideo;
+      if (!video || !video.videoWidth) return;
+      this.scanBusy = true;
+      this.scanStatus = "Texterkennung läuft …";
+      try {
+        // Mittleren Streifen ausschneiden (dort liegt das Zählwerk) -> weniger Störtext
+        const cw = video.videoWidth, ch = video.videoHeight;
+        const cropH = Math.round(ch * 0.28);
+        const canvas = document.createElement("canvas");
+        canvas.width = cw; canvas.height = cropH;
+        canvas.getContext("2d").drawImage(video, 0, (ch - cropH) / 2, cw, cropH, 0, 0, cw, cropH);
+        // tesseract.js erst bei Bedarf laden (~2 MB) – blockiert die App sonst nie
+        if (typeof Tesseract === "undefined") {
+          this.scanStatus = "Lade Texterkennung (einmalig) …";
+          await new Promise((res, rej) => {
+            const sc = document.createElement("script");
+            sc.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+            sc.onload = res; sc.onerror = () => rej(new Error("tesseract.js nicht ladbar (offline?)"));
+            document.head.appendChild(sc);
+          });
+          this.scanStatus = "Texterkennung läuft …";
+        }
+        const result = await Tesseract.recognize(canvas, "eng", {
+          tessedit_char_whitelist: "0123456789.,",
+        });
+        // Längste Ziffernfolge (mit optionalem Dezimalteil) herausziehen
+        const matches = (result.data.text.match(/\d+[.,]?\d*/g) || [])
+          .sort((a, b) => b.length - a.length);
+        if (matches.length) {
+          this.reading.value = matches[0].replace(",", ".");
+          this.notify("Erkannt: " + matches[0] + " – bitte prüfen!", "ok");
+          this.closeScanner();
+        } else {
+          this.scanStatus = "Nichts erkannt – näher ran, mehr Licht, nochmal auslösen.";
+        }
+      } catch (e) {
+        this.scanStatus = "Fehler: " + e.message;
+      } finally {
+        this.scanBusy = false;
+      }
+    },
+
     async saveReading() {
       if (this.reading.value === null || this.reading.value === "") { this.notify("Zählerwert fehlt", "err"); return; }
       this.busy = true;
@@ -447,8 +519,8 @@ const SystemDetail = {
       <div class="stats" v-if="stats">
         <div class="stat"><div class="s-label">Gesamtverbrauch</div><div class="s-val num">{{ fmt(stats.total_consumption) }}<span class="u">{{ system.einheit }}</span></div></div>
         <div class="stat"><div class="s-label">Ø / Tag</div><div class="s-val num">{{ fmt(stats.avg_per_day, 3) }}<span class="u">{{ system.einheit }}</span></div></div>
-        <div class="stat"><div class="s-label">Gesamtkosten</div><div class="s-val num">{{ fmt(stats.total_cost) }}<span class="u">€</span></div></div>
-        <div class="stat"><div class="s-label">Kosten / Einheit</div><div class="s-val num">{{ fmt(stats.cost_per_unit, 4) }}<span class="u">€</span></div></div>
+        <div class="stat"><div class="s-label">Gesamtkosten <span v-if="stats.cost_estimated" class="s-tag">≈ inkl. Schätzung</span></div><div class="s-val num">{{ stats.cost_estimated ? '≈ ' : '' }}{{ fmt(stats.total_cost) }}<span class="u">€</span></div></div>
+        <div class="stat"><div class="s-label">Kosten / Einheit <span v-if="stats.cost_estimated" class="s-tag">≈</span></div><div class="s-val num">{{ fmt(stats.cost_per_unit, 4) }}<span class="u">€</span></div></div>
         <div class="stat"><div class="s-label">Max / Tag</div><div class="s-val num">{{ fmt(stats.max_per_day, 3) }}</div><div class="s-sub">{{ fmtDate(stats.max_per_day_datum) }}</div></div>
         <div class="stat"><div class="s-label">Min / Tag</div><div class="s-val num">{{ fmt(stats.min_per_day, 3) }}</div><div class="s-sub">{{ fmtDate(stats.min_per_day_datum) }}</div></div>
         <div class="stat" v-if="gasKwh"><div class="s-label">Gesamt in kWh <span class="s-tag">Zusatz</span></div><div class="s-val num">{{ fmt(gasKwh.total) }}<span class="u">kWh</span></div><div class="s-sub">Brennwert × Zustandszahl = {{ fmt(gasKwh.faktor, 3) }}</div></div>
@@ -512,18 +584,31 @@ const SystemDetail = {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="r in paged" :key="r.id">
+            <template v-for="r in paged" :key="r.id">
+            <tr class="row-main" :class="{expanded: expandedId===r.id}" @click="toggleRow(r.id)">
               <td>{{ fmtDate(r.datum) }}</td>
               <td class="r num">{{ fmt(r.value, 1) }}</td>
               <td class="r num">
                 {{ fmt(r.consumption) }}
                 <span v-if="r.meter_replaced" class="tag tag-swap">Tausch</span>
                 <span v-if="r.is_outlier" class="tag tag-out">Ausreißer</span>
+                <span class="chevron" aria-hidden="true">{{ expandedId===r.id ? '▾' : '▸' }}</span>
               </td>
-              <td class="r num">{{ r.cost === null ? '–' : fmt(r.cost) }}</td>
+              <td class="r num col-cost">{{ r.cost_effective === null || r.cost_effective === undefined ? '–' : (r.cost_estimated ? '≈ ' : '') + fmt(r.cost_effective) }}</td>
               <td class="col-note">{{ r.note || '' }}</td>
-              <td class="r"><button class="btn btn-ghost btn-sm" @click="deleteReading(r)">✕</button></td>
+              <td class="r col-del"><button class="btn btn-ghost btn-sm" @click.stop="deleteReading(r)">✕</button></td>
             </tr>
+            <tr v-if="expandedId===r.id" class="row-detail">
+              <td colspan="6">
+                <div class="detail-grid">
+                  <div><span class="dg-label">Kosten</span><span class="num">{{ r.cost_effective === null || r.cost_effective === undefined ? '–' : (r.cost_estimated ? '≈ ' : '') + fmt(r.cost_effective) + ' €' }}<span v-if="r.cost_estimated" class="hint-inline"> (geschätzt via Ø-Preis)</span></span></div>
+                  <div><span class="dg-label">Verbrauch/Tag</span><span class="num">{{ fmt(r.consumption_per_day, 3) }}</span></div>
+                  <div v-if="r.note"><span class="dg-label">Notiz</span><span>{{ r.note }}</span></div>
+                  <div><button class="btn btn-sm btn-danger-outline" @click.stop="deleteReading(r)">✕ Ablesung löschen</button></div>
+                </div>
+              </td>
+            </tr>
+            </template>
           </tbody>
         </table>
         </div>
@@ -542,7 +627,12 @@ const SystemDetail = {
         <div class="modal-body">
           <div class="field-row">
             <div class="field"><label>Datum</label><input class="input" type="date" v-model="reading.datum" /></div>
-            <div class="field"><label>Zählerstand ({{ system.einheit }})</label><input class="input" type="number" step="any" v-model="reading.value" /></div>
+            <div class="field"><label>Zählerstand ({{ system.einheit }})</label>
+              <div class="input-scan">
+                <input class="input" type="number" step="any" v-model="reading.value" />
+                <button class="btn btn-sm" @click="openScanner" title="Zählerstand per Kamera scannen">📷</button>
+              </div>
+            </div>
           </div>
           <div class="field"><label>Kosten € (optional)</label><input class="input" type="number" step="any" v-model="reading.cost" /></div>
           <div class="field">
@@ -554,6 +644,25 @@ const SystemDetail = {
         <div class="modal-foot">
           <button class="btn" @click="showReading=false">Abbrechen</button>
           <button class="btn btn-primary" :disabled="busy" @click="saveReading">Speichern</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- OVERLAY: OCR-Scanner -->
+    <div class="overlay" v-if="showScanner" @click.self="closeScanner">
+      <div class="modal modal-scan">
+        <div class="modal-head"><h3>📷 Zählerstand scannen</h3></div>
+        <div class="modal-body">
+          <div class="scan-stage">
+            <video ref="scanVideo" playsinline muted></video>
+            <div class="scan-frame"></div>
+          </div>
+          <div class="hint" style="margin-top:8px">{{ scanStatus }}</div>
+          <div class="hint">Beta: Erkennung per Tesseract-OCR im Browser. Ergebnis immer prüfen – mechanische Rollen-Zählwerke mit halb gedrehten Ziffern sind fehleranfällig.</div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" @click="closeScanner">Abbrechen</button>
+          <button class="btn btn-primary" :disabled="scanBusy" @click="captureScan">{{ scanBusy ? 'Erkenne …' : 'Auslösen' }}</button>
         </div>
       </div>
     </div>
@@ -605,7 +714,7 @@ createApp({
   computed: {
     visibleSystems() { return this.systems.filter((s) => this.showArchived || s.aktiv); },
     selectedSystem() { return this.systems.find((s) => s.id === this.selected) || null; },
-    formExtra() { return this.sysForm ? EXTRA_FIELDS[this.sysForm.typ] || [] : []; },
+    formExtra() { return this.sysForm ? [...(EXTRA_FIELDS[this.sysForm.typ] || []), ...COMMON_FIELDS] : []; },
     themeMode() { return themeStore.mode; },
   },
   async mounted() { await this.load(); },

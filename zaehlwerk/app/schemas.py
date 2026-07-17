@@ -58,6 +58,8 @@ class ReadingRead(BaseModel):
     consumption: Optional[float] = None
     consumption_per_day: Optional[float] = None
     is_outlier: bool = False
+    cost_effective: Optional[float] = None
+    cost_estimated: bool = False
 
 
 # ---------- Statistik / Chart ----------
@@ -74,6 +76,7 @@ class StatsRead(BaseModel):
     max_per_day_datum: Optional[datetime] = None
     outlier_threshold: Optional[float] = None
     reading_count: int = 0
+    cost_estimated: bool = False
 
 
 class ChartData(BaseModel):
