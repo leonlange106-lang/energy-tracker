@@ -4,8 +4,19 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.4.0";
+const APP_VERSION = "2.5.1";
 const APP_CHANGELOG = [
+  { v: "2.5.1", d: "17.07.2026", items: [
+    "OCR anhand echter Zählerfotos kalibriert: adaptiver Otsu-Threshold, PSM-6-Segmentierung, Mehrfach-Pass",
+    "Realistischere Scanner-Hinweise (Beta)",
+  ]},
+  { v: "2.5.0", d: "17.07.2026", items: [
+    "HA-Benachrichtigung bei überfälliger Ablesung (persistent, verschwindet nach Ablesung automatisch)",
+    "Gesamt-Export: alle Systeme als CSV + Systemkonfiguration in einem ZIP",
+    "Einheiten-Umrechnung für HA-Sensoren (Wh/kWh/MWh, L/m³) mit wählbarer Quelleinheit",
+    "Löschen-Buttons ans UI-Design angeglichen (Pill-Form)",
+    "Chart: X-Labels dünnen ab 40 Punkten automatisch aus",
+  ]},
   { v: "2.4.0", d: "17.07.2026", items: [
     "Löschen überarbeitet: 3-Sekunden-Halten mit Fortschritts-Outline + Bestätigung",
     "Systeme endgültig löschbar (Falschanlage) inkl. aller Ablesungen",
@@ -59,7 +70,24 @@ const COMMON_FIELDS = [
   { key: "preis", label: "Ø-Preis €/Einheit (für Kostenschätzung, optional)", type: "number" },
   { key: "ablese_intervall_tage", label: "Ablese-Intervall in Tagen (für Fälligkeit, optional)", type: "number" },
   { key: "ha_entity", label: "HA-Entity Zählerstand (optional, z. B. sensor.stromzaehler)", type: "text" },
+  { key: "ha_unit", label: "Einheit des HA-Sensors (leer = wie von HA gemeldet)", type: "select",
+    options: ["", "Wh", "kWh", "MWh", "L", "m³"] },
 ];
+
+/* ---------- Einheiten-Umrechnung (HA-Sensor -> Systemeinheit) ---------- */
+const UNIT_FACTORS = {
+  energie: { "wh": 0.001, "kwh": 1, "mwh": 1000 },        // Basis kWh
+  volumen: { "l": 0.001, "dm³": 0.001, "dm3": 0.001, "m³": 1, "m3": 1 },  // Basis m³
+};
+function normUnit(u) { return String(u || "").trim().toLowerCase().replace("m3", "m³"); }
+function convertUnit(value, fromU, toU) {
+  const f = normUnit(fromU), t = normUnit(toU);
+  if (!f || !t || f === t) return { value, converted: false };
+  for (const cat of Object.values(UNIT_FACTORS)) {
+    if (f in cat && t in cat) return { value: value * cat[f] / cat[t], converted: true };
+  }
+  return null;  // inkompatibel (z. B. Wh -> m³)
+}
 const EXTRA_FIELDS = {
   "Gas":            [{ key: "brennwert", label: "Brennwert (kWh/m³)", type: "number" },
                      { key: "zustandszahl", label: "Zustandszahl (Standard 0,95)", type: "number" }],
@@ -125,7 +153,7 @@ const HoldButton = {
           @pointerdown.stop.prevent="start" @pointerup="cancel" @pointerleave="cancel"
           @pointercancel="cancel" @contextmenu.prevent @click.stop.prevent>
     <svg class="hold-ring" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      <rect x="3" y="3" width="94" height="94" :rx="round ? 50 : 22" pathLength="100" />
+      <rect x="3" y="3" width="94" height="94" :rx="round ? 50 : 16" ry="50" pathLength="100" />
     </svg>
     <span class="hold-inner"><slot></slot></span>
   </button>`,
@@ -191,7 +219,11 @@ const EnergyChart = {
       });
 
       const scales = {
-        x: { grid: { color: grid }, ticks: { color: tick, maxRotation: 90, minRotation: 90, autoSkip: false, font: { size: 9 } } },
+        x: { grid: { color: grid }, ticks: {
+          color: tick, maxRotation: 90, minRotation: 90, font: { size: 9 },
+          // <=40 Punkte: jedes Datum (wie gehabt); darüber automatisch ausdünnen
+          autoSkip: this.labels.length > 40, maxTicksLimit: this.labels.length > 40 ? 40 : undefined,
+        } },
         y: { grid: { color: grid }, ticks: { color: tick, font: { size: 11 } }, beginAtZero: false, position: "left" },
       };
       if (this.hasY2) {
@@ -434,10 +466,17 @@ const SystemDetail = {
     async fetchHaValue() {
       try {
         const r = await api(`/api/ha/state/${encodeURIComponent(this.haEntity)}`);
-        const v = parseFloat(String(r.state).replace(",", "."));
-        if (!isFinite(v)) throw new Error(`Entity liefert '${r.state}' – kein numerischer Zählerstand`);
+        const raw = parseFloat(String(r.state).replace(",", "."));
+        if (!isFinite(raw)) throw new Error(`Entity liefert '${r.state}' – kein numerischer Zählerstand`);
+        // Quelleinheit: konfigurierte Einheit schlägt HA-Meldung; Ziel: Systemeinheit
+        const srcUnit = (this.system.zusatzfelder || {}).ha_unit || r.unit || this.system.einheit;
+        const res = convertUnit(raw, srcUnit, this.system.einheit);
+        if (res === null) throw new Error(`Einheit '${srcUnit}' ist nicht nach '${this.system.einheit}' umrechenbar`);
+        const v = Math.round(res.value * 1000) / 1000;
         this.reading.value = v;
-        this.notify(`Übernommen: ${fmt(v)} ${r.unit || ""} (${r.name || this.haEntity})`, "ok");
+        this.notify(res.converted
+          ? `Übernommen: ${fmt(raw)} ${srcUnit} → ${fmt(v)} ${this.system.einheit} (${r.name || this.haEntity})`
+          : `Übernommen: ${fmt(v)} ${this.system.einheit} (${r.name || this.haEntity})`, "ok");
       } catch (e) { this.notify(e.message, "err"); }
     },
 
@@ -552,8 +591,7 @@ const SystemDetail = {
       this.runOcr(canvas);
     },
     preprocessForOcr(src) {
-      // Hochskalieren + Graustufen + Kontrast-Threshold. Polarität automatisch:
-      // helle LCD-Ziffern auf dunklem Grund werden invertiert (Tesseract will dunkel auf hell).
+      // Hochskalieren + Graustufen + Otsu-Threshold (empirisch auf echten Zählerfotos kalibriert).
       const scale = Math.max(1, Math.min(3, 1400 / src.width));
       const c = document.createElement("canvas");
       c.width = Math.round(src.width * scale);
@@ -563,23 +601,36 @@ const SystemDetail = {
       ctx.drawImage(src, 0, 0, c.width, c.height);
       const img = ctx.getImageData(0, 0, c.width, c.height);
       const d = img.data;
-      // Graustufen + Mittelwert
-      let sum = 0;
       const n = d.length / 4;
+      // Graustufen + Histogramm
+      const hist = new Array(256).fill(0);
       for (let i = 0; i < d.length; i += 4) {
-        const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        const g = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0;
         d[i] = d[i + 1] = d[i + 2] = g;
-        sum += g;
+        hist[g]++;
       }
-      const mean = sum / n;
-      // Threshold + Polaritätszählung
+      // Otsu-Schwelle (maximiert die Zwischenklassen-Varianz) – adaptiv statt fixem Faktor
+      let sumAll = 0;
+      for (let t = 0; t < 256; t++) sumAll += t * hist[t];
+      let sumB = 0, wB = 0, best = 0, thr = 128;
+      for (let t = 0; t < 256; t++) {
+        wB += hist[t];
+        if (wB === 0) continue;
+        const wF = n - wB;
+        if (wF === 0) break;
+        sumB += t * hist[t];
+        const mB = sumB / wB, mF = (sumAll - sumB) / wF;
+        const between = wB * wF * (mB - mF) * (mB - mF);
+        if (between > best) { best = between; thr = t; }
+      }
+      // Binarisieren + Polarität bestimmen
       let dark = 0;
       for (let i = 0; i < d.length; i += 4) {
-        const v = d[i] < mean * 0.92 ? 0 : 255;
+        const v = d[i] <= thr ? 0 : 255;
         d[i] = d[i + 1] = d[i + 2] = v;
         if (v === 0) dark++;
       }
-      // Mehr dunkel als hell -> Ziffern sind vermutlich hell (LCD) -> invertieren
+      // Mehr dunkel als hell -> Ziffern vermutlich hell (LCD) -> invertieren (Tesseract will dunkel/hell)
       if (dark > n / 2) {
         for (let i = 0; i < d.length; i += 4) {
           const v = 255 - d[i];
@@ -634,10 +685,18 @@ const SystemDetail = {
           this.scanStatus = "Texterkennung läuft …";
         }
         const prepped = this.preprocessForOcr(canvas);
-        const r1 = await Tesseract.recognize(prepped, "eng", {
-          tessedit_char_whitelist: "0123456789., kWhm",
-        });
-        let best = this.pickOcrCandidate(r1.data.text);
+        // Mehrere Segmentierungs-Modi: PSM 6 (Block) traf im Kalibriertest am besten,
+        // PSM 11 (sparse) und 7 (Zeile) als Ergänzung. Bester Kandidat per Scoring.
+        let best = null;
+        for (const psm of ["6", "11", "7"]) {
+          const r = await Tesseract.recognize(prepped, "eng", {
+            tessedit_char_whitelist: "0123456789., kWhm³",
+            tessedit_pageseg_mode: psm,
+          });
+          const cand = this.pickOcrCandidate(r.data.text);
+          if (cand && (!best || cand.score > best.score)) best = cand;
+          if (best && best.fromKwh && best.score > 200) break;   // klarer Treffer -> fertig
+        }
 
         // Kein Treffer aus der kWh-Zeile? -> LCD vermutlich 7-Segment, Spezial-Modell versuchen
         if (!best || !best.fromKwh) {
@@ -646,6 +705,7 @@ const SystemDetail = {
             const r2 = await Tesseract.recognize(prepped, "letsgodigital", {
               langPath: "https://cdn.jsdelivr.net/gh/arturaugusto/display_ocr@master/letsgodigital",
               gzip: false,
+              tessedit_pageseg_mode: "7",
             });
             const b2 = this.pickOcrCandidate(r2.data.text, 40);
             if (b2 && (!best || b2.score > best.score)) best = b2;
@@ -911,7 +971,7 @@ const SystemDetail = {
           <input ref="galleryFile" type="file" accept="image/*" style="display:none" @change="onScanFile" />
           <div class="hint" style="margin-top:8px">{{ scanStatus }}</div>
           <button v-if="!scanFileMode" class="crumb" style="margin-top:6px" @click="scanFileMode=true; closeStreamOnly()">Stream klappt nicht? → Stattdessen natives Foto nutzen</button>
-          <div class="hint">Beta: Erkennung per Tesseract-OCR im Browser. Ergebnis immer prüfen – mechanische Rollen-Zählwerke mit halb gedrehten Ziffern sind fehleranfällig.</div>
+          <div class="hint"><strong>Beta.</strong> Für beste Ergebnisse: Zählwerk <strong>formatfüllend</strong> und <strong>gerade</strong> in den Rahmen, gutes Licht, keine Spiegelung. Am zuverlässigsten bei geraden schwarz-weißen Rollenzählwerken. Digitale LCD-Displays und runde/schräge Zähler sind fehleranfällig – Wert immer prüfen.</div>
         </div>
         <div class="modal-foot">
           <button class="btn" @click="closeScanner">Abbrechen</button>
@@ -987,6 +1047,11 @@ createApp({
     },
     open(s) { this.selected = s.id; this.view = "detail"; window.scrollTo(0, 0); },
     back() { this.view = "menu"; this.selected = null; this.load(); },
+    exportAll() {
+      fetchBlobDownload("api/export.zip", "zaehlwerk-backup.zip")
+        .then(() => this.notify("Backup erstellt (alle Systeme + Konfiguration)", "ok"))
+        .catch((e) => this.notify("Export fehlgeschlagen: " + e.message, "err"));
+    },
     openCombinedReport() {
       fetchBlobDownload("api/report.pdf", "zaehlwerk-gesamtbericht.pdf")
         .catch((e) => this.notify("PDF fehlgeschlagen: " + e.message, "err"));
@@ -1171,7 +1236,10 @@ createApp({
         </div>
         <div class="field" v-for="f in formExtra" :key="f.key">
           <label>{{ f.label }}</label>
-          <input class="input" :type="f.type" v-model="sysForm.zusatzfelder[f.key]" />
+          <select v-if="f.type==='select'" class="select" style="width:100%" v-model="sysForm.zusatzfelder[f.key]">
+            <option v-for="o in f.options" :key="o" :value="o">{{ o === '' ? '– automatisch –' : o }}</option>
+          </select>
+          <input v-else class="input" :type="f.type" v-model="sysForm.zusatzfelder[f.key]" />
         </div>
         <div class="field" v-if="sysForm.id">
           <label class="check"><input type="checkbox" v-model="sysForm.aktiv" /> aktiv (deaktivieren = archivieren, Werte bleiben erhalten)</label>
@@ -1196,6 +1264,12 @@ createApp({
             <button class="btn" @click="detailAction('openImport')">⇪ CSV-Import</button>
             <button class="btn" @click="detailAction('openExport')">⇩ CSV-Export (Backup)</button>
             <button class="btn" @click="detailAction('openReport')">⇩ PDF-Bericht</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="field"><label>Daten</label></div>
+          <div class="settings-actions">
+            <button class="btn" @click="exportAll">⇩ Gesamt-Export (alle Systeme + Konfiguration)</button>
           </div>
         </div>
         <div class="field">

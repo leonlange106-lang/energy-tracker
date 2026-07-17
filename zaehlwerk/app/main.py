@@ -7,9 +7,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import init_db
+from . import notifier
 from .routers import ha, imports, readings, systems
 
-app = FastAPI(title="Zählwerk API", version="2.4.0")
+app = FastAPI(title="Zählwerk API", version="2.5.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,8 +26,10 @@ app.include_router(ha.router)
 
 
 @app.on_event("startup")
-def _startup():
+async def _startup():
     init_db()
+    import asyncio
+    asyncio.create_task(notifier.watcher())
 
 
 @app.get("/api/health")

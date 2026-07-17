@@ -1,8 +1,9 @@
 """Ablesungen, Statistik, Chart-Daten, Export, PDF – alles aus SQLite."""
 import csv
 import io
-from datetime import date, datetime, timedelta
-from statistics import median
+import json
+import zipfile
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,6 +11,7 @@ from fastapi.responses import Response
 from sqlmodel import Session, select
 
 from .. import logic, report
+from ..due import system_due_entries
 from ..database import get_session
 from ..models import Reading, System
 from ..schemas import ChartData, ReadingCreate, ReadingRead, StatsRead
@@ -198,44 +200,14 @@ def get_dashboard(
 
 @router.get("/api/overview")
 def get_overview(session: Session = Depends(get_session)):
-    """Letzter Stand + Fälligkeit je aktivem System. EIN Query für alle (kein N+1).
-    Fälligkeit: konfiguriertes Intervall (zusatzfelder.ablese_intervall_tage) hat Vorrang,
-    sonst Median der bisherigen Intervalle."""
-    systems = session.exec(select(System).where(System.aktiv == True)).all()  # noqa: E712
-    ids = [s.id for s in systems]
-    if not ids:
-        return {}
-    all_rows = session.exec(
-        select(Reading).where(Reading.system_id.in_(ids)).order_by(Reading.datum, Reading.meter_replaced)
-    ).all()
-    by_system: dict[str, list[Reading]] = {}
-    for r in all_rows:
-        by_system.setdefault(r.system_id, []).append(r)
-
+    """Letzter Stand + Fälligkeit je aktivem System (gemeinsame Logik in due.py)."""
     out = {}
-    now = datetime.now()
-    for s in systems:
-        rows = by_system.get(s.id, [])
-        if not rows or rows[-1].value is None:
-            continue
-        last = rows[-1]
-        entry = {"value": last.value, "datum": last.datum.isoformat()}
-        # konfiguriertes Intervall?
-        interval = None
-        try:
-            iv = float((s.zusatzfelder or {}).get("ablese_intervall_tage") or 0)
-            interval = iv if iv > 0 else None
-        except (TypeError, ValueError):
-            interval = None
-        if interval is None and len(rows) >= 2:
-            gaps = [(rows[i].datum - rows[i - 1].datum).days for i in range(1, len(rows))]
-            gaps = [g for g in gaps if g > 0]
-            interval = median(gaps) if gaps else None
-        if interval:
-            nxt = last.datum + timedelta(days=interval)
-            entry["next_expected"] = nxt.date().isoformat()
-            entry["overdue_days"] = (now - nxt).days
-        out[s.id] = entry
+    for e in system_due_entries(session):
+        entry = {"value": e["value"], "datum": e["datum"].isoformat()}
+        if "overdue_days" in e:
+            entry["next_expected"] = e["next_expected"].date().isoformat()
+            entry["overdue_days"] = e["overdue_days"]
+        out[e["system"].id] = entry
     return out
 
 
@@ -250,6 +222,14 @@ def export_readings(
     """Alle Ablesungen als CSV – identisches Format wie der Import (Backup / Re-Import)."""
     system = _require_system(system_id, session)
     raw = _query_readings(session, system_id, from_, to)
+    fname = f"zaehlwerk_{system.name.replace(' ', '_')}.csv"
+    return Response(
+        content=_readings_csv(raw), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+def _readings_csv(raw: list[dict]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["datum", "wert", "kosten", "zaehlertausch", "notiz"])
@@ -262,10 +242,26 @@ def export_readings(
             "ja" if r.get("meter_replaced") else "",
             r.get("note") or "",
         ])
-    fname = f"zaehlwerk_{system.name.replace(' ', '_')}.csv"
+    return buf.getvalue()
+
+
+@router.get("/api/export.zip")
+def export_all(session: Session = Depends(get_session)):
+    """Gesamt-Backup: alle Systeme als CSV (Import-Format) + Systemkonfiguration als JSON."""
+    systems = session.exec(select(System).order_by(System.name)).all()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        cfg = [{
+            "name": s.name, "typ": s.typ, "einheit": s.einheit, "farbe": s.farbe,
+            "icon": s.icon, "zusatzfelder": s.zusatzfelder, "aktiv": s.aktiv,
+        } for s in systems]
+        z.writestr("systeme.json", json.dumps(cfg, ensure_ascii=False, indent=2))
+        for sy in systems:
+            raw = _query_readings(session, sy.id)
+            z.writestr(f"zaehlwerk_{sy.name.replace(' ', '_')}.csv", _readings_csv(raw))
     return Response(
-        content=buf.getvalue(), media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        content=buf.getvalue(), media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="zaehlwerk-backup.zip"'},
     )
 
 

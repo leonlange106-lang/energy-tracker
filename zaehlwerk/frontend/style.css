@@ -404,7 +404,7 @@ td.r { text-align: right; }
 .holdbtn {
   position: relative; overflow: visible; cursor: pointer;
   font-family: var(--sans); font-size: 13px; font-weight: 500; letter-spacing: .1px;
-  height: 38px; padding: 0 16px; border-radius: 10px;
+  height: 38px; padding: 0 16px; border-radius: 999px;
   border: 1px solid var(--md-outline-variant); background: transparent; color: var(--md-error);
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   -webkit-user-select: none; user-select: none; touch-action: none;
