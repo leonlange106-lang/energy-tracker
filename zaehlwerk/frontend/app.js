@@ -200,6 +200,7 @@ const SystemDetail = {
     // Modals
     showReading: false,
     showScanner: false,
+    scanFileMode: false,
     scanBusy: false,
     scanStatus: "",
     showImport: false,
@@ -303,7 +304,11 @@ const SystemDetail = {
       const dir = this.sortDir === "asc" ? 1 : -1;
       rows.sort((a, b) => {
         let av = a[this.sortKey], bv = b[this.sortKey];
-        if (this.sortKey === "datum") { av = new Date(av); bv = new Date(bv); }
+        if (this.sortKey === "datum") {
+          // ISO-Strings sortieren lexikographisch korrekt – kein Date-Parsing
+          // (neuere WebViews parsen uneinheitlich -> nicht-deterministische Reihenfolge)
+          av = String(av); bv = String(bv);
+        }
         av = av ?? -Infinity; bv = bv ?? -Infinity;
         return av < bv ? -dir : av > bv ? dir : 0;
       });
@@ -362,9 +367,16 @@ const SystemDetail = {
       this.reading = { datum: today(), value: null, cost: null, meter_replaced: false, note: "" };
       this.showReading = true;
     },
-    /* ---------- OCR-Scanner (tesseract.js, lazy) ---------- */
+    /* ---------- OCR-Scanner (tesseract.js, lazy; Stream ODER natives Foto) ---------- */
     async openScanner() {
+      // HA-App-WebViews (v.a. iOS) stellen keinen Kamera-Stream bereit -> natives Foto als Fallback
+      const hasStream = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      this.scanFileMode = !hasStream;
       this.showScanner = true;
+      if (!hasStream) {
+        this.scanStatus = "Diese Umgebung erlaubt keinen Live-Stream – nutze die native Kamera per Foto.";
+        return;
+      }
       this.scanStatus = "Kamera wird gestartet …";
       this.$nextTick(async () => {
         try {
@@ -375,7 +387,9 @@ const SystemDetail = {
           await this.$refs.scanVideo.play();
           this.scanStatus = "Zählerstand mittig ins Feld halten, dann auslösen.";
         } catch (e) {
-          this.scanStatus = "Kamera nicht verfügbar: " + e.message;
+          // Stream verweigert (Berechtigung etc.) -> ebenfalls auf natives Foto wechseln
+          this.scanFileMode = true;
+          this.scanStatus = "Kein Stream (" + e.message + ") – nutze die native Kamera per Foto.";
         }
       });
     },
@@ -383,19 +397,39 @@ const SystemDetail = {
       if (this._stream) { this._stream.getTracks().forEach((t) => t.stop()); this._stream = null; }
       this.showScanner = false; this.scanBusy = false;
     },
+    triggerScanFile() { this.$refs.scanFile && this.$refs.scanFile.click(); },
+    onScanFile(ev) {
+      const file = ev.target.files && ev.target.files[0];
+      ev.target.value = "";
+      if (!file) return;
+      const img = new Image();
+      img.onload = () => {
+        // mittleren Streifen ausschneiden (dort liegt das Zählwerk)
+        const cw = img.naturalWidth, ch = img.naturalHeight;
+        const cropH = Math.round(ch * 0.34);
+        const canvas = document.createElement("canvas");
+        canvas.width = cw; canvas.height = cropH;
+        canvas.getContext("2d").drawImage(img, 0, (ch - cropH) / 2, cw, cropH, 0, 0, cw, cropH);
+        URL.revokeObjectURL(img.src);
+        this.runOcr(canvas);
+      };
+      img.src = URL.createObjectURL(file);
+    },
     async captureScan() {
+      if (this.scanFileMode) { this.triggerScanFile(); return; }
       const video = this.$refs.scanVideo;
       if (!video || !video.videoWidth) return;
+      const cw = video.videoWidth, ch = video.videoHeight;
+      const cropH = Math.round(ch * 0.28);
+      const canvas = document.createElement("canvas");
+      canvas.width = cw; canvas.height = cropH;
+      canvas.getContext("2d").drawImage(video, 0, (ch - cropH) / 2, cw, cropH, 0, 0, cw, cropH);
+      this.runOcr(canvas);
+    },
+    async runOcr(canvas) {
       this.scanBusy = true;
       this.scanStatus = "Texterkennung läuft …";
       try {
-        // Mittleren Streifen ausschneiden (dort liegt das Zählwerk) -> weniger Störtext
-        const cw = video.videoWidth, ch = video.videoHeight;
-        const cropH = Math.round(ch * 0.28);
-        const canvas = document.createElement("canvas");
-        canvas.width = cw; canvas.height = cropH;
-        canvas.getContext("2d").drawImage(video, 0, (ch - cropH) / 2, cw, cropH, 0, 0, cw, cropH);
-        // tesseract.js erst bei Bedarf laden (~2 MB) – blockiert die App sonst nie
         if (typeof Tesseract === "undefined") {
           this.scanStatus = "Lade Texterkennung (einmalig) …";
           await new Promise((res, rej) => {
@@ -409,7 +443,6 @@ const SystemDetail = {
         const result = await Tesseract.recognize(canvas, "eng", {
           tessedit_char_whitelist: "0123456789.,",
         });
-        // Längste Ziffernfolge (mit optionalem Dezimalteil) herausziehen
         const matches = (result.data.text.match(/\d+[.,]?\d*/g) || [])
           .sort((a, b) => b.length - a.length);
         if (matches.length) {
@@ -417,7 +450,7 @@ const SystemDetail = {
           this.notify("Erkannt: " + matches[0] + " – bitte prüfen!", "ok");
           this.closeScanner();
         } else {
-          this.scanStatus = "Nichts erkannt – näher ran, mehr Licht, nochmal auslösen.";
+          this.scanStatus = "Nichts erkannt – näher ran, mehr Licht, nochmal versuchen.";
         }
       } catch (e) {
         this.scanStatus = "Fehler: " + e.message;
@@ -499,11 +532,7 @@ const SystemDetail = {
         </div>
       </div>
       <div class="dh-actions">
-        <button class="btn btn-primary btn-sm" @click="openReading">＋ Neuer Wert</button>
-        <button class="btn btn-sm" @click="openImport">⇪ Import</button>
-        <button class="btn btn-sm" @click="openExport">⇩ Export</button>
-        <button class="btn btn-sm" @click="openReport">⇩ PDF-Bericht</button>
-        <button class="btn btn-sm" @click="$emit('edit', system)">Bearbeiten</button>
+        <button class="btn btn-tonal btn-sm" @click="openReport">⇩ PDF</button>
       </div>
     </div>
 
@@ -512,10 +541,11 @@ const SystemDetail = {
       <button class="tab" :class="{active: tab==='list'}" @click="tab='list'">Werte ({{ readings.length }})</button>
     </div>
 
-    <div v-if="loading" class="center-load"><span class="spin"></span></div>
+    <transition name="m3sw" mode="out-in">
+    <div v-if="loading" class="center-load" key="load"><span class="spin"></span></div>
 
     <!-- AUSWERTUNG -->
-    <div v-else-if="tab==='chart'">
+    <div v-else-if="tab==='chart'" key="chart">
       <div class="stats" v-if="stats">
         <div class="stat"><div class="s-label">Gesamtverbrauch</div><div class="s-val num">{{ fmt(stats.total_consumption) }}<span class="u">{{ system.einheit }}</span></div></div>
         <div class="stat"><div class="s-label">Ø / Tag</div><div class="s-val num">{{ fmt(stats.avg_per_day, 3) }}<span class="u">{{ system.einheit }}</span></div></div>
@@ -556,12 +586,11 @@ const SystemDetail = {
     </div>
 
     <!-- WERTE-TABELLE -->
-    <div v-else>
+    <div v-else key="list">
       <div class="table-tools">
         <input class="input" v-model="filter" placeholder="Filtern (Notiz / Datum)…" />
         <label class="check"><input type="checkbox" v-model="onlyOutliers" /> nur Ausreißer</label>
         <div class="spacer" style="flex:1"></div>
-        <button class="btn btn-primary btn-sm" @click="openReading">＋ Neuer Wert</button>
       </div>
 
       <div v-if="!readings.length" class="empty">
@@ -578,9 +607,9 @@ const SystemDetail = {
               <th @click="setSort('datum')">Datum <span class="arrow">{{ arrow('datum') }}</span></th>
               <th @click="setSort('value')" class="r">Zählerstand <span class="arrow">{{ arrow('value') }}</span></th>
               <th @click="setSort('consumption')" class="r">Verbrauch <span class="arrow">{{ arrow('consumption') }}</span></th>
-              <th @click="setSort('cost')" class="r">Kosten <span class="arrow">{{ arrow('cost') }}</span></th>
+              <th @click="setSort('cost')" class="r col-cost">Kosten <span class="arrow">{{ arrow('cost') }}</span></th>
               <th class="col-note">Notiz</th>
-              <th></th>
+              <th class="col-del"></th>
             </tr>
           </thead>
           <tbody>
@@ -627,19 +656,19 @@ const SystemDetail = {
         <div class="modal-body">
           <div class="field-row">
             <div class="field"><label>Datum</label><input class="input" type="date" v-model="reading.datum" /></div>
-            <div class="field"><label>Zählerstand ({{ system.einheit }})</label>
+            <div class="field">
               <div class="input-scan">
-                <input class="input" type="number" step="any" v-model="reading.value" />
+                <label class="tf"><input class="tf-input" type="number" step="any" v-model="reading.value" placeholder=" " /><span class="tf-label">Zählerstand ({{ system.einheit }})</span></label>
                 <button class="btn btn-sm" @click="openScanner" title="Zählerstand per Kamera scannen">📷</button>
               </div>
             </div>
           </div>
-          <div class="field"><label>Kosten € (optional)</label><input class="input" type="number" step="any" v-model="reading.cost" /></div>
+          <label class="tf"><input class="tf-input" type="number" step="any" v-model="reading.cost" placeholder=" " /><span class="tf-label">Kosten € (optional)</span></label>
           <div class="field">
             <label class="check"><input type="checkbox" v-model="reading.meter_replaced" /> Zählertausch (neuer Zähler startet bei 0)</label>
             <div class="hint" v-if="latestValue!==null && !reading.meter_replaced">Letzter Stand: {{ fmt(latestValue,1) }} {{ system.einheit }} – neuer Wert muss ≥ sein.</div>
           </div>
-          <div class="field"><label>Notiz (optional)</label><input class="input" v-model="reading.note" /></div>
+          <label class="tf"><input class="tf-input" v-model="reading.note" placeholder=" " /><span class="tf-label">Notiz (optional)</span></label>
         </div>
         <div class="modal-foot">
           <button class="btn" @click="showReading=false">Abbrechen</button>
@@ -648,21 +677,25 @@ const SystemDetail = {
       </div>
     </div>
 
+    </transition>
+
     <!-- OVERLAY: OCR-Scanner -->
     <div class="overlay" v-if="showScanner" @click.self="closeScanner">
       <div class="modal modal-scan">
         <div class="modal-head"><h3>📷 Zählerstand scannen</h3></div>
         <div class="modal-body">
-          <div class="scan-stage">
+          <div class="scan-stage" v-if="!scanFileMode">
             <video ref="scanVideo" playsinline muted></video>
             <div class="scan-frame"></div>
           </div>
+          <button v-else class="scan-filebtn" @click="triggerScanFile">📷 Foto mit nativer Kamera aufnehmen</button>
+          <input ref="scanFile" type="file" accept="image/*" capture="environment" style="display:none" @change="onScanFile" />
           <div class="hint" style="margin-top:8px">{{ scanStatus }}</div>
           <div class="hint">Beta: Erkennung per Tesseract-OCR im Browser. Ergebnis immer prüfen – mechanische Rollen-Zählwerke mit halb gedrehten Ziffern sind fehleranfällig.</div>
         </div>
         <div class="modal-foot">
           <button class="btn" @click="closeScanner">Abbrechen</button>
-          <button class="btn btn-primary" :disabled="scanBusy" @click="captureScan">{{ scanBusy ? 'Erkenne …' : 'Auslösen' }}</button>
+          <button class="btn btn-primary" :disabled="scanBusy" @click="captureScan">{{ scanBusy ? 'Erkenne …' : (scanFileMode ? 'Foto aufnehmen' : 'Auslösen') }}</button>
         </div>
       </div>
     </div>
@@ -736,6 +769,14 @@ createApp({
         .catch((e) => this.notify("PDF fehlgeschlagen: " + e.message, "err"));
     },
     pickTheme(mode) { setTheme(mode); },
+    fabAction() {
+      if (this.view === 'detail' && this.$refs.detail) this.$refs.detail.openReading();
+      else this.newSystem();
+    },
+    detailAction(fn) {
+      this.showSettings = false;
+      if (this.$refs.detail && this.$refs.detail[fn]) this.$refs.detail[fn]();
+    },
     dueInfo(id) {
       const l = this.latest[id];
       if (!l || l.overdue_days === undefined || l.overdue_days === null) return null;
@@ -782,24 +823,54 @@ createApp({
   template: `
   <div class="topbar">
     <div class="topbar-inner">
-      <button v-if="view==='detail'" class="iconbtn" @click="back" title="Alle Systeme (Startseite)">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 L12 3 L21 11"/><path d="M5 10 V20 H19 V10"/></svg>
-      </button>
       <div class="brand">
-        <span class="logo"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 A8 8 0 0 1 20 18"/><path d="M12 18 L16.5 11.5"/><circle cx="12" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg></span>
-        <h1>Zählwerk</h1>
+        <span class="logo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19a9 9 0 1 1 14 0"/><path d="M12 5v2"/><path d="M5.6 8.5l1.5 1.2"/><path d="M18.4 8.5l-1.5 1.2"/><path d="M12 15l3.5-4.5"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg></span>
+        <h1>{{ view==='detail' && selectedSystem ? selectedSystem.name : 'Zählwerk' }}</h1>
       </div>
       <div class="spacer"></div>
-      <button v-if="view==='menu' && systems.length" class="btn btn-sm" @click="openCombinedReport">⇩ Gesamt-PDF</button>
-      <button v-if="view==='menu'" class="btn btn-primary btn-sm" @click="newSystem">＋ System</button>
-      <button class="iconbtn" @click="showSettings=true" title="Einstellungen">
-        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      </button>
     </div>
   </div>
 
+  <!-- Navigation Rail (Desktop/Tablet) -->
+  <nav class="nav-rail">
+    <button class="fab rail-fab" @click="fabAction" :title="view==='menu' ? 'System anlegen' : 'Neuer Wert'">＋</button>
+    <button class="nav-item" :class="{active: view==='menu'}" @click="back">
+      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 L12 3 L21 11"/><path d="M5 10 V20 H19 V10"/></svg></span>
+      Systeme
+    </button>
+    <button class="nav-item" v-if="systems.length" @click="openCombinedReport">
+      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3 3 3-3"/></svg></span>
+      Bericht
+    </button>
+    <button class="nav-item" :class="{active: showSettings}" @click="showSettings=true">
+      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      Optionen
+    </button>
+  </nav>
+
+  <!-- Bottom Navigation (Mobile) -->
+  <nav class="nav-bottom">
+    <button class="nav-item" :class="{active: view==='menu'}" @click="back">
+      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 L12 3 L21 11"/><path d="M5 10 V20 H19 V10"/></svg></span>
+      Systeme
+    </button>
+    <button class="nav-item" v-if="systems.length" @click="openCombinedReport">
+      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3 3 3-3"/></svg></span>
+      Bericht
+    </button>
+    <button class="nav-item" :class="{active: showSettings}" @click="showSettings=true">
+      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      Optionen
+    </button>
+  </nav>
+
+  <!-- FAB (Mobile) -->
+  <div class="fab-screen"><button class="fab" @click="fabAction" :title="view==='menu' ? 'System anlegen' : 'Neuer Wert'">＋</button></div>
+  </div>
+
   <div class="wrap">
-    <div v-if="loading" class="center-load"><span class="spin"></span></div>
+    <transition name="m3sw" mode="out-in">
+    <div v-if="loading" class="center-load" key="load"><span class="spin"></span></div>
 
     <!-- MENÜ -->
     <template v-else-if="view==='menu'">
@@ -835,6 +906,7 @@ createApp({
 
     <!-- DETAIL -->
     <system-detail
+      ref="detail"
       v-else-if="selectedSystem"
       :key="selectedSystem.id"
       :system="selectedSystem"
@@ -848,7 +920,7 @@ createApp({
     <div class="modal">
       <div class="modal-head"><h3>{{ sysForm.id ? 'System bearbeiten' : 'Neues System' }}</h3></div>
       <div class="modal-body">
-        <div class="field"><label>Name</label><input class="input" v-model="sysForm.name" placeholder="z. B. Strom Hauptzähler" /></div>
+        <label class="tf"><input class="tf-input" v-model="sysForm.name" placeholder=" " /><span class="tf-label">Name (z. B. Strom Hauptzähler)</span></label>
         <div class="field-row">
           <div class="field"><label>Typ</label>
             <select class="select" v-model="sysForm.typ" @change="onTypeChange">
@@ -883,6 +955,15 @@ createApp({
     <div class="modal">
       <div class="modal-head"><h3>Einstellungen</h3></div>
       <div class="modal-body">
+        <div class="settings-section" v-if="view==='detail' && selectedSystem">
+          <div class="field"><label>System · {{ selectedSystem.name }}</label></div>
+          <div class="settings-actions">
+            <button class="btn" @click="showSettings=false; editSystem(selectedSystem)">✎ System bearbeiten</button>
+            <button class="btn" @click="detailAction('openImport')">⇪ CSV-Import</button>
+            <button class="btn" @click="detailAction('openExport')">⇩ CSV-Export (Backup)</button>
+            <button class="btn" @click="detailAction('openReport')">⇩ PDF-Bericht</button>
+          </div>
+        </div>
         <div class="field">
           <label>Darstellung</label>
           <div class="theme-opts">
@@ -903,3 +984,18 @@ createApp({
   <div v-if="toast" class="toast" :class="toast.type">{{ toast.msg }}</div>
   `,
 }).mount("#app");
+
+/* ---------- M3 Ink-Ripple: geht physikalisch vom Beruehrungspunkt aus ---------- */
+document.addEventListener("pointerdown", (ev) => {
+  const host = ev.target.closest(".btn, .tab, .tile, .nav-item .nav-pill, .seg button, .fab, .iconbtn, .theme-opt");
+  if (!host) return;
+  const rect = host.getBoundingClientRect();
+  const size = Math.max(rect.width, rect.height);
+  const ink = document.createElement("span");
+  ink.className = "ripple-ink";
+  ink.style.width = ink.style.height = size + "px";
+  ink.style.left = (ev.clientX - rect.left - size / 2) + "px";
+  ink.style.top = (ev.clientY - rect.top - size / 2) + "px";
+  host.appendChild(ink);
+  setTimeout(() => ink.remove(), 550);
+}, { passive: true });
