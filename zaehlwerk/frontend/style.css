@@ -400,6 +400,41 @@ td.r { text-align: right; }
 /* Datums-Input: native Breiten-Eigenheiten neutralisieren (iOS ragte über) */
 .field .input[type="date"] { width: 100%; min-width: 0; max-width: 100%; -webkit-appearance: none; appearance: none; }
 
+/* ---------- Hold-to-Delete: Outline zeichnet sich im Uhrzeigersinn ---------- */
+.holdbtn {
+  position: relative; overflow: visible; cursor: pointer;
+  font-family: var(--sans); font-size: 13px; font-weight: 500; letter-spacing: .1px;
+  height: 38px; padding: 0 16px; border-radius: 10px;
+  border: 1px solid var(--md-outline-variant); background: transparent; color: var(--md-error);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  -webkit-user-select: none; user-select: none; touch-action: none;
+}
+.holdbtn.small { height: 32px; padding: 0 12px; font-size: 12px; }
+.holdbtn.round { width: 32px; height: 32px; padding: 0; border-radius: 50%; }
+.holdbtn .hold-inner { position: relative; z-index: 1; }
+.holdbtn .hold-ring { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.holdbtn .hold-ring rect {
+  fill: none; stroke: var(--md-error); stroke-width: 5; vector-effect: non-scaling-stroke;
+  stroke-dasharray: 100; stroke-dashoffset: 100;
+  transition: stroke-dashoffset .25s var(--ease-standard);   /* Loslassen: schnelles Zurückspulen */
+}
+.holdbtn.holding { background: color-mix(in srgb, var(--md-error) 10%, transparent); }
+.holdbtn.holding .hold-ring rect {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 3s linear;                    /* 3 s Fortschritt im Uhrzeigersinn */
+}
+
+/* ---------- Beta-Chip + Versionsverlauf ---------- */
+.beta { font-size: 10px; font-weight: 500; letter-spacing: .5px; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 6px; background: var(--md-warn-container); color: var(--md-on-surface);
+  vertical-align: middle; margin-left: 6px; }
+.rel { margin-bottom: 18px; }
+.rel-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.rel-v { font-weight: 700; font-size: 15px; }
+.rel-d { font-size: 12px; color: var(--md-on-surface-variant); }
+.rel-items { margin: 0; padding-left: 18px; font-size: 13px; line-height: 20px; color: var(--md-on-surface); }
+.rel-items li { margin-bottom: 3px; }
+
 /* ---------- Ripple ---------- */
 .ripple-ink { position: absolute; border-radius: 50%; transform: scale(0); pointer-events: none;
   background: currentColor; opacity: .18; animation: ripple var(--dur-long) var(--ease-standard); }

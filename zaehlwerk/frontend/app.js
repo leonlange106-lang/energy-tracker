@@ -3,6 +3,29 @@
    ========================================================================= */
 const { createApp, reactive } = Vue;
 
+/* ---------- Version & Changelog ---------- */
+const APP_VERSION = "2.4.0";
+const APP_CHANGELOG = [
+  { v: "2.4.0", d: "17.07.2026", items: [
+    "Löschen überarbeitet: 3-Sekunden-Halten mit Fortschritts-Outline + Bestätigung",
+    "Systeme endgültig löschbar (Falschanlage) inkl. aller Ablesungen",
+    "Zählerstand-Übernahme aus Home Assistant (Entity pro System konfigurierbar)",
+    "Versionsverlauf in den Optionen", "Foto-Scanner als Beta markiert", "Fälligkeit ab 2 Monaten in Monaten angezeigt",
+  ]},
+  { v: "2.3.x", d: "17.07.2026", items: [
+    "Material-Design-3-Redesign (Farben, Typografie, Navigation Rail/Bottom-Bar, FAB, Ripple)",
+    "Ablesungen bearbeitbar", "Zählertausch: Endstand alt + Startstand neu am selben Tag",
+    "Foto-Scan: 7-Segment-Modell, Galerie-Upload mit EXIF-Datum", "Diverse Mobile-Fixes",
+  ]},
+  { v: "2.2.0", d: "17.07.2026", items: [
+    "Ø-Preis pro System (Kostenschätzung, als ≈ markiert)", "Ablese-Intervall pro System",
+    "SQLite-WAL + DB im HA-Backup (/config)", "Dashboard-Endpoint (1 Request statt 3)", "OCR-Scanner (Beta)",
+  ]},
+  { v: "2.1.0", d: "16.07.2026", items: ["HA-Add-on-Repository mit Auto-Update", "Ein-Klick-Deploy (deploy.ps1)"] },
+  { v: "2.0.0", d: "16.07.2026", items: ["Standalone: InfluxDB durch SQLite ersetzt, LXC überflüssig"] },
+  { v: "1.x", d: "15.07.2026", items: ["Erstversion: FastAPI + InfluxDB + Vue 3, CSV-Import, PDF-Berichte, Dark Mode"] },
+];
+
 /* ---------- Theme (Light/Dark, System-follow + manuell) ---------- */
 const themeStore = reactive({ mode: localStorage.getItem("zw_theme") || "auto", dark: false });
 function applyTheme() {
@@ -35,6 +58,7 @@ const SYSTEM_TYPES = [
 const COMMON_FIELDS = [
   { key: "preis", label: "Ø-Preis €/Einheit (für Kostenschätzung, optional)", type: "number" },
   { key: "ablese_intervall_tage", label: "Ablese-Intervall in Tagen (für Fälligkeit, optional)", type: "number" },
+  { key: "ha_entity", label: "HA-Entity Zählerstand (optional, z. B. sensor.stromzaehler)", type: "text" },
 ];
 const EXTRA_FIELDS = {
   "Gas":            [{ key: "brennwert", label: "Brennwert (kWh/m³)", type: "number" },
@@ -86,6 +110,34 @@ function typeIcon(typ) {
   const t = SYSTEM_TYPES.find((x) => x.v === typ);
   return t ? t.icon : "▦";
 }
+
+/* =========================================================================
+   Hold-to-Delete-Button: 3 s halten, Outline zeichnet sich im Uhrzeigersinn,
+   erst DANACH feuert @held (Aufrufer zeigt zusätzlich Bestätigungs-Popup).
+   ========================================================================= */
+const HoldButton = {
+  props: { small: Boolean, round: Boolean, title: String },
+  emits: ["held"],
+  data: () => ({ holding: false }),
+  template: `
+  <button type="button" class="holdbtn" :class="{small, round, holding}"
+          :title="title || 'Zum Löschen 3 Sekunden gedrückt halten'"
+          @pointerdown.stop.prevent="start" @pointerup="cancel" @pointerleave="cancel"
+          @pointercancel="cancel" @contextmenu.prevent @click.stop.prevent>
+    <svg class="hold-ring" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <rect x="3" y="3" width="94" height="94" :rx="round ? 50 : 22" pathLength="100" />
+    </svg>
+    <span class="hold-inner"><slot></slot></span>
+  </button>`,
+  methods: {
+    start() {
+      this.holding = true;
+      this._t = setTimeout(() => { this.holding = false; this.$emit("held"); }, 3000);
+    },
+    cancel() { this.holding = false; clearTimeout(this._t); },
+  },
+  beforeUnmount() { clearTimeout(this._t); },
+};
 
 /* =========================================================================
    Chart-Komponente – reiner Renderer (Datasets kommen fertig vom Parent)
@@ -172,7 +224,7 @@ const EnergyChart = {
    System-Detail – Chart + Tabelle + Erfassung + Import
    ========================================================================= */
 const SystemDetail = {
-  components: { EnergyChart },
+  components: { EnergyChart, HoldButton },
   inject: ["notify"],
   props: { system: Object },
   emits: ["back", "edit", "changed"],
@@ -218,6 +270,7 @@ const SystemDetail = {
       if (this.range === "year") d.setFullYear(d.getFullYear() - 1);
       return d.toISOString().slice(0, 10);
     },
+    haEntity() { return (this.system.zusatzfelder || {}).ha_entity || null; },
     modeLabel() {
       return { value: "Zählerstand", consumption: "Verbrauch", per_day: "Verbrauch/Tag" }[this.mode];
     },
@@ -378,6 +431,16 @@ const SystemDetail = {
       };
       this.showReading = true;
     },
+    async fetchHaValue() {
+      try {
+        const r = await api(`/api/ha/state/${encodeURIComponent(this.haEntity)}`);
+        const v = parseFloat(String(r.state).replace(",", "."));
+        if (!isFinite(v)) throw new Error(`Entity liefert '${r.state}' – kein numerischer Zählerstand`);
+        this.reading.value = v;
+        this.notify(`Übernommen: ${fmt(v)} ${r.unit || ""} (${r.name || this.haEntity})`, "ok");
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+
     /* ---------- OCR-Scanner (tesseract.js, lazy; Stream ODER natives Foto) ---------- */
     async openScanner() {
       // HA-App-WebViews (v.a. iOS) stellen keinen Kamera-Stream bereit -> natives Foto als Fallback
@@ -773,7 +836,7 @@ const SystemDetail = {
               <td class="col-note">{{ r.note || '' }}</td>
               <td class="r col-del" style="white-space:nowrap">
                 <button class="iconbtn" style="width:32px;height:32px" @click.stop="openEditReading(r)" title="Bearbeiten">✎</button>
-                <button class="iconbtn" style="width:32px;height:32px" @click.stop="deleteReading(r)" title="Löschen">✕</button>
+                <hold-button :small="true" :round="true" @held="deleteReading(r)">✕</hold-button>
               </td>
             </tr>
             <tr v-if="expandedId===r.id" class="row-detail">
@@ -784,7 +847,7 @@ const SystemDetail = {
                   <div v-if="r.note"><span class="dg-label">Notiz</span><span>{{ r.note }}</span></div>
                   <div style="display:flex;gap:8px">
                     <button class="btn btn-sm btn-tonal" @click.stop="openEditReading(r)">✎ Bearbeiten</button>
-                    <button class="btn btn-sm btn-danger-outline" @click.stop="deleteReading(r)">✕ Löschen</button>
+                    <hold-button :small="true" @held="deleteReading(r)">✕ Löschen (halten)</hold-button>
                   </div>
                 </div>
               </td>
@@ -813,12 +876,13 @@ const SystemDetail = {
             <div class="field">
               <div class="input-scan">
                 <label class="tf"><input class="tf-input" type="number" step="any" v-model="reading.value" placeholder=" " /><span class="tf-label">Zählerstand ({{ system.einheit }})</span></label>
-                <button class="btn btn-sm" @click="openScanner" title="Zählerstand per Kamera scannen">📷</button>
+                <button class="btn btn-sm" @click="openScanner" title="Zählerstand per Kamera scannen (Beta)">📷</button>
               </div>
             </div>
           </div>
           <label class="tf"><input class="tf-input" type="number" step="any" v-model="reading.cost" placeholder=" " /><span class="tf-label">Kosten € (optional)</span></label>
           <div class="field">
+            <button v-if="haEntity && !reading.id" class="btn btn-tonal btn-sm" style="margin-bottom:14px" :disabled="busy" @click="fetchHaValue">⌂ Zählerstand aus Home Assistant übernehmen</button>
             <label class="check"><input type="checkbox" v-model="reading.meter_replaced" /> Startstand NEUER Zähler (Zählertausch)</label>
             <div class="hint" v-if="reading.meter_replaced">Vorgehen beim Tausch: <strong>1.</strong> Endstand des alten Zählers als normale Ablesung erfassen. <strong>2.</strong> Diesen Eintrag hier mit dem Startstand des neuen Zählers (meist 0) anlegen – gleiches Datum ist ok.</div>
             <div class="hint" v-if="latestValue!==null && !reading.meter_replaced">Letzter Stand: {{ fmt(latestValue,1) }} {{ system.einheit }} – neuer Wert muss ≥ sein.</div>
@@ -835,7 +899,7 @@ const SystemDetail = {
     <!-- OVERLAY: OCR-Scanner -->
     <div class="overlay" v-if="showScanner" @click.self="closeScanner">
       <div class="modal modal-scan">
-        <div class="modal-head"><h3>📷 Zählerstand scannen</h3></div>
+        <div class="modal-head"><h3>📷 Zählerstand scannen <span class="beta">Beta</span></h3></div>
         <div class="modal-body">
           <div class="scan-stage" v-if="!scanFileMode">
             <video ref="scanVideo" playsinline muted></video>
@@ -883,7 +947,7 @@ const SystemDetail = {
    Root-App
    ========================================================================= */
 createApp({
-  components: { SystemDetail },
+  components: { SystemDetail, HoldButton },
   provide() { return { notify: this.notify }; },
   data: () => ({
     systems: [],
@@ -899,6 +963,9 @@ createApp({
     types: SYSTEM_TYPES,
     latest: {},                // system_id -> { value, datum }
     showSettings: false,
+    showChangelog: false,
+    appVersion: APP_VERSION,
+    changelog: APP_CHANGELOG,
   }),
   computed: {
     visibleSystems() { return this.systems.filter((s) => this.showArchived || s.aktiv); },
@@ -929,6 +996,18 @@ createApp({
       if (this.view === 'detail' && this.$refs.detail) this.$refs.detail.openReading();
       else this.newSystem();
     },
+    async confirmDeleteSystem() {
+      const sys = this.sysForm;
+      if (!sys || !sys.id) return;
+      if (!confirm(`System "${sys.name}" und ALLE zugehörigen Ablesungen endgültig löschen?\n\nDas kann nicht rückgängig gemacht werden.`)) return;
+      try {
+        await api(`/api/systems/${sys.id}`, { method: "DELETE" });
+        this.showSystem = false;
+        this.notify("System gelöscht", "ok");
+        this.view = "menu"; this.selected = null;
+        await this.load();
+      } catch (e) { this.notify(e.message, "err"); }
+    },
     detailAction(fn) {
       this.showSettings = false;
       if (this.$refs.detail && this.$refs.detail[fn]) this.$refs.detail[fn]();
@@ -937,7 +1016,8 @@ createApp({
       const l = this.latest[id];
       if (!l || l.overdue_days === undefined || l.overdue_days === null) return null;
       const od = l.overdue_days;
-      if (od > 0) return { level: "over", text: `Ablesung überfällig · seit ${od} T` };
+      const span = (n) => (n >= 60 ? `${Math.round(n / 30)} Mon.` : `${n} T`);
+      if (od > 0) return { level: "over", text: `Ablesung überfällig · seit ${span(od)}` };
       if (od >= -30) return { level: "soon", text: `Ablesung bald fällig · in ${-od} T` };
       return null;
     },
@@ -1128,9 +1208,24 @@ createApp({
           <div class="hint">„Automatisch" folgt der System-Einstellung deines Geräts.</div>
         </div>
       </div>
-      <div class="modal-foot">
+      <div class="modal-foot" style="justify-content:space-between;align-items:center">
+        <button class="crumb" @click="showChangelog=true">Zählwerk v{{ appVersion }} · Versionsverlauf</button>
         <button class="btn btn-primary" @click="showSettings=false">Fertig</button>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Versionsverlauf -->
+  <div class="overlay" v-if="showChangelog" @click.self="showChangelog=false">
+    <div class="modal">
+      <div class="modal-head"><h3>Versionsverlauf</h3></div>
+      <div class="modal-body">
+        <div v-for="rel in changelog" :key="rel.v" class="rel">
+          <div class="rel-head"><span class="rel-v num">v{{ rel.v }}</span><span class="rel-d">{{ rel.d }}</span></div>
+          <ul class="rel-items"><li v-for="(it, i) in rel.items" :key="i">{{ it }}</li></ul>
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn btn-primary" @click="showChangelog=false">Schließen</button></div>
     </div>
   </div>
 

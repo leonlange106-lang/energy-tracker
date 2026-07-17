@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
 from ..database import get_session
-from ..models import System
+from ..models import Reading, System
 from ..schemas import SystemCreate, SystemRead, SystemUpdate
 
 router = APIRouter(prefix="/api/systems", tags=["systems"])
@@ -50,3 +50,15 @@ def update_system(
     session.commit()
     session.refresh(system)
     return system
+
+
+@router.delete("/{system_id}", status_code=204)
+def delete_system(system_id: str, session: Session = Depends(get_session)):
+    """Endgültige Löschung (Falschanlage): System + ALLE zugehörigen Ablesungen."""
+    system = session.get(System, system_id)
+    if not system:
+        raise HTTPException(404, "System nicht gefunden")
+    for r in session.exec(select(Reading).where(Reading.system_id == system_id)).all():
+        session.delete(r)
+    session.delete(system)
+    session.commit()
