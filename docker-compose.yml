@@ -1,9 +1,8 @@
-# Optionaler Standalone-Betrieb OHNE Home Assistant (z.B. im LXC/Docker).
-# Für HA nutzt du stattdessen das Add-on (ha-addon/). Kein InfluxDB mehr nötig.
-
+# Optionaler Standalone-Betrieb OHNE Home Assistant.
+# Für HA: das Add-on-Repository nutzen (siehe SETUP.md). Kein InfluxDB mehr.
 services:
   app:
-    build: ./backend
+    build: ./zaehlwerk
     restart: unless-stopped
     environment:
       SQLITE_PATH: /data/zaehlwerk.db
@@ -13,6 +12,5 @@ services:
     ports:
       - "8000:8000"
     mem_limit: 256m
-
 volumes:
   app-data:
