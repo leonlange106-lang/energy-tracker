@@ -227,6 +227,8 @@ body {
 .tile.archived { opacity: .55; }
 .tile.due-over { outline: 2px solid var(--md-error); outline-offset: -2px; }
 .tile.due-soon { outline: 2px solid var(--md-warn); outline-offset: -2px; }
+/* Systemfarb-Streifen darf die Fälligkeits-Outline nicht überdecken */
+.tile.due-over .swatch, .tile.due-soon .swatch { top: 2px; bottom: 2px; left: 2px; border-radius: 3px; }
 .due-badge { margin-top: 12px; display: inline-block; font-size: 12px; font-weight: 500; letter-spacing: .1px; padding: 5px 12px; border-radius: 8px; }
 .due-badge.over { color: var(--md-on-error); background: var(--md-error); }
 :root[data-theme="dark"] .due-badge.over { color: #fff; background: color-mix(in srgb, var(--md-error) 45%, #7a1010); }

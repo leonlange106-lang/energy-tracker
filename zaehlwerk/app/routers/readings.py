@@ -41,7 +41,9 @@ def _query_readings(session: Session, system_id: str,
         stmt = stmt.where(Reading.datum >= datetime(from_.year, from_.month, from_.day))
     if to:
         stmt = stmt.where(Reading.datum <= datetime(to.year, to.month, to.day, 23, 59, 59))
-    rows = session.exec(stmt.order_by(Reading.datum)).all()
+    # meter_replaced sortiert bei Datumsgleichheit ans Ende:
+    # erst Endstand ALTER Zähler (normale Ablesung), dann Startstand NEUER Zähler (Tausch)
+    rows = session.exec(stmt.order_by(Reading.datum, Reading.meter_replaced)).all()
     out = [_reading_dict(r) for r in rows]
     if limit:
         out = out[-limit:]
@@ -104,6 +106,22 @@ def create_reading(system_id: str, payload: ReadingCreate, session: Session = De
         meter_replaced=payload.meter_replaced,
         note=payload.note,
     )
+    session.add(r)
+    session.commit()
+    session.refresh(r)
+    return ReadingRead(**_reading_dict(r))
+
+
+@router.put("/api/readings/{reading_id}", response_model=ReadingRead)
+def update_reading(reading_id: str, payload: ReadingCreate, session: Session = Depends(get_session)):
+    r = session.get(Reading, reading_id)
+    if not r:
+        raise HTTPException(404, "Ablesung nicht gefunden")
+    r.datum = datetime(payload.datum.year, payload.datum.month, payload.datum.day)
+    r.value = payload.value
+    r.cost = payload.cost
+    r.meter_replaced = payload.meter_replaced
+    r.note = payload.note
     session.add(r)
     session.commit()
     session.refresh(r)
@@ -188,7 +206,7 @@ def get_overview(session: Session = Depends(get_session)):
     if not ids:
         return {}
     all_rows = session.exec(
-        select(Reading).where(Reading.system_id.in_(ids)).order_by(Reading.datum)
+        select(Reading).where(Reading.system_id.in_(ids)).order_by(Reading.datum, Reading.meter_replaced)
     ).all()
     by_system: dict[str, list[Reading]] = {}
     for r in all_rows:

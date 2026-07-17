@@ -364,7 +364,18 @@ const SystemDetail = {
 
     /* Ablesung */
     openReading() {
-      this.reading = { datum: today(), value: null, cost: null, meter_replaced: false, note: "" };
+      this.reading = { id: null, datum: today(), value: null, cost: null, meter_replaced: false, note: "" };
+      this.showReading = true;
+    },
+    openEditReading(r) {
+      this.reading = {
+        id: r.id,
+        datum: String(r.datum).slice(0, 10),
+        value: r.value,
+        cost: r.cost,
+        meter_replaced: !!r.meter_replaced,
+        note: r.note || "",
+      };
       this.showReading = true;
     },
     /* ---------- OCR-Scanner (tesseract.js, lazy; Stream ODER natives Foto) ---------- */
@@ -393,8 +404,11 @@ const SystemDetail = {
         }
       });
     },
-    closeScanner() {
+    closeStreamOnly() {
       if (this._stream) { this._stream.getTracks().forEach((t) => t.stop()); this._stream = null; }
+    },
+    closeScanner() {
+      this.closeStreamOnly();
       this.showScanner = false; this.scanBusy = false;
     },
     triggerScanFile() { this.$refs.scanFile && this.$refs.scanFile.click(); },
@@ -463,18 +477,20 @@ const SystemDetail = {
       if (this.reading.value === null || this.reading.value === "") { this.notify("Zählerwert fehlt", "err"); return; }
       this.busy = true;
       try {
-        await api(`/api/systems/${this.system.id}/readings`, {
-          method: "POST",
-          body: JSON.stringify({
-            datum: this.reading.datum,
-            value: Number(this.reading.value),
-            cost: this.reading.cost === "" || this.reading.cost === null ? null : Number(this.reading.cost),
-            meter_replaced: this.reading.meter_replaced,
-            note: this.reading.note || null,
-          }),
+        const body = JSON.stringify({
+          datum: this.reading.datum,
+          value: Number(this.reading.value),
+          cost: this.reading.cost === "" || this.reading.cost === null ? null : Number(this.reading.cost),
+          meter_replaced: this.reading.meter_replaced,
+          note: this.reading.note || null,
         });
+        if (this.reading.id) {
+          await api(`/api/readings/${this.reading.id}`, { method: "PUT", body });
+        } else {
+          await api(`/api/systems/${this.system.id}/readings`, { method: "POST", body });
+        }
         this.showReading = false;
-        this.notify("Ablesung gespeichert", "ok");
+        this.notify(this.reading.id ? "Ablesung aktualisiert" : "Ablesung gespeichert", "ok");
         await this.loadDynamic();
       } catch (e) { this.notify(e.message, "err"); }
       finally { this.busy = false; }
@@ -625,7 +641,10 @@ const SystemDetail = {
               </td>
               <td class="r num col-cost">{{ r.cost_effective === null || r.cost_effective === undefined ? '–' : (r.cost_estimated ? '≈ ' : '') + fmt(r.cost_effective) }}</td>
               <td class="col-note">{{ r.note || '' }}</td>
-              <td class="r col-del"><button class="btn btn-ghost btn-sm" @click.stop="deleteReading(r)">✕</button></td>
+              <td class="r col-del" style="white-space:nowrap">
+                <button class="iconbtn" style="width:32px;height:32px" @click.stop="openEditReading(r)" title="Bearbeiten">✎</button>
+                <button class="iconbtn" style="width:32px;height:32px" @click.stop="deleteReading(r)" title="Löschen">✕</button>
+              </td>
             </tr>
             <tr v-if="expandedId===r.id" class="row-detail">
               <td colspan="6">
@@ -633,7 +652,10 @@ const SystemDetail = {
                   <div><span class="dg-label">Kosten</span><span class="num">{{ r.cost_effective === null || r.cost_effective === undefined ? '–' : (r.cost_estimated ? '≈ ' : '') + fmt(r.cost_effective) + ' €' }}<span v-if="r.cost_estimated" class="hint-inline"> (geschätzt via Ø-Preis)</span></span></div>
                   <div><span class="dg-label">Verbrauch/Tag</span><span class="num">{{ fmt(r.consumption_per_day, 3) }}</span></div>
                   <div v-if="r.note"><span class="dg-label">Notiz</span><span>{{ r.note }}</span></div>
-                  <div><button class="btn btn-sm btn-danger-outline" @click.stop="deleteReading(r)">✕ Ablesung löschen</button></div>
+                  <div style="display:flex;gap:8px">
+                    <button class="btn btn-sm btn-tonal" @click.stop="openEditReading(r)">✎ Bearbeiten</button>
+                    <button class="btn btn-sm btn-danger-outline" @click.stop="deleteReading(r)">✕ Löschen</button>
+                  </div>
                 </div>
               </td>
             </tr>
@@ -649,10 +671,12 @@ const SystemDetail = {
       </div>
     </div>
 
+    </transition>
+
     <!-- MODAL: Ablesung -->
     <div class="overlay" v-if="showReading" @click.self="showReading=false">
       <div class="modal">
-        <div class="modal-head"><h3>Neue Ablesung – {{ system.name }}</h3></div>
+        <div class="modal-head"><h3>{{ reading.id ? 'Ablesung bearbeiten' : 'Neue Ablesung' }} – {{ system.name }}</h3></div>
         <div class="modal-body">
           <div class="field-row">
             <div class="field"><label>Datum</label><input class="input" type="date" v-model="reading.datum" /></div>
@@ -665,7 +689,8 @@ const SystemDetail = {
           </div>
           <label class="tf"><input class="tf-input" type="number" step="any" v-model="reading.cost" placeholder=" " /><span class="tf-label">Kosten € (optional)</span></label>
           <div class="field">
-            <label class="check"><input type="checkbox" v-model="reading.meter_replaced" /> Zählertausch (neuer Zähler startet bei 0)</label>
+            <label class="check"><input type="checkbox" v-model="reading.meter_replaced" /> Startstand NEUER Zähler (Zählertausch)</label>
+            <div class="hint" v-if="reading.meter_replaced">Vorgehen beim Tausch: <strong>1.</strong> Endstand des alten Zählers als normale Ablesung erfassen. <strong>2.</strong> Diesen Eintrag hier mit dem Startstand des neuen Zählers (meist 0) anlegen – gleiches Datum ist ok.</div>
             <div class="hint" v-if="latestValue!==null && !reading.meter_replaced">Letzter Stand: {{ fmt(latestValue,1) }} {{ system.einheit }} – neuer Wert muss ≥ sein.</div>
           </div>
           <label class="tf"><input class="tf-input" v-model="reading.note" placeholder=" " /><span class="tf-label">Notiz (optional)</span></label>
@@ -676,8 +701,6 @@ const SystemDetail = {
         </div>
       </div>
     </div>
-
-    </transition>
 
     <!-- OVERLAY: OCR-Scanner -->
     <div class="overlay" v-if="showScanner" @click.self="closeScanner">
@@ -691,6 +714,7 @@ const SystemDetail = {
           <button v-else class="scan-filebtn" @click="triggerScanFile">📷 Foto mit nativer Kamera aufnehmen</button>
           <input ref="scanFile" type="file" accept="image/*" capture="environment" style="display:none" @change="onScanFile" />
           <div class="hint" style="margin-top:8px">{{ scanStatus }}</div>
+          <button v-if="!scanFileMode" class="crumb" style="margin-top:6px" @click="scanFileMode=true; closeStreamOnly()">Stream klappt nicht? → Stattdessen natives Foto nutzen</button>
           <div class="hint">Beta: Erkennung per Tesseract-OCR im Browser. Ergebnis immer prüfen – mechanische Rollen-Zählwerke mit halb gedrehten Ziffern sind fehleranfällig.</div>
         </div>
         <div class="modal-foot">
