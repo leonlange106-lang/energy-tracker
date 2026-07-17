@@ -412,10 +412,58 @@ const SystemDetail = {
       this.showScanner = false; this.scanBusy = false;
     },
     triggerScanFile() { this.$refs.scanFile && this.$refs.scanFile.click(); },
-    onScanFile(ev) {
+    triggerGalleryFile() { this.$refs.galleryFile && this.$refs.galleryFile.click(); },
+    async exifDate(file) {
+      // Minimal-EXIF: DateTimeOriginal (0x9003) aus JPEG-APP1 lesen. Fallback: Datei-Änderungsdatum.
+      try {
+        const buf = new DataView(await file.slice(0, 256 * 1024).arrayBuffer());
+        if (buf.getUint16(0) !== 0xFFD8) throw 0;                    // kein JPEG
+        let off = 2;
+        while (off < buf.byteLength - 4) {
+          if (buf.getUint8(off) !== 0xFF) break;
+          const marker = buf.getUint8(off + 1);
+          const size = buf.getUint16(off + 2);
+          if (marker === 0xE1 && buf.getUint32(off + 4) === 0x45786966) {  // "Exif"
+            const t = off + 10;                                       // TIFF-Header
+            const le = buf.getUint16(t) === 0x4949;                   // Byte-Order
+            const g16 = (o) => buf.getUint16(o, le), g32 = (o) => buf.getUint32(o, le);
+            const scanIfd = (ifd, wantTag) => {
+              const n = g16(ifd);
+              for (let i = 0; i < n; i++) {
+                const e = ifd + 2 + i * 12;
+                if (g16(e) === wantTag) return e;
+              }
+              return null;
+            };
+            const ifd0 = t + g32(t + 4);
+            const exifPtr = scanIfd(ifd0, 0x8769);
+            if (exifPtr) {
+              const exifIfd = t + g32(exifPtr + 8);
+              const dto = scanIfd(exifIfd, 0x9003);
+              if (dto) {
+                const strOff = t + g32(dto + 8);
+                let str = "";
+                for (let i = 0; i < 19; i++) str += String.fromCharCode(buf.getUint8(strOff + i));
+                const m = str.match(/^(\d{4}):(\d{2}):(\d{2})/);
+                if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+              }
+            }
+            break;
+          }
+          off += 2 + size;
+        }
+      } catch (_) {}
+      if (file.lastModified) return new Date(file.lastModified).toISOString().slice(0, 10);
+      return null;
+    },
+    async onScanFile(ev) {
       const file = ev.target.files && ev.target.files[0];
       ev.target.value = "";
       if (!file) return;
+      if (!this.reading.id) {
+        const d = await this.exifDate(file);
+        if (d) { this.reading.datum = d; this.notify("Ablesedatum aus Foto: " + fmtDate(d), "ok"); }
+      }
       const img = new Image();
       img.onload = () => {
         // mittleren Streifen ausschneiden (dort liegt das Zählwerk)
@@ -478,27 +526,35 @@ const SystemDetail = {
       ctx.putImageData(img, 0, 0);
       return c;
     },
-    pickOcrCandidate(text) {
-      // Ziffernfolgen extrahieren; Leerzeichen INNERHALB von Folgen zusammenziehen
-      // (Tesseract trennt Zaehlwerks-Rollen/LCD-Gruppen gern mit Spaces)
-      const joined = text.replace(/(\d)[ \t]+(?=\d)/g, "$1");
-      const raw = joined.match(/\d+[.,]?\d*/g) || [];
-      if (!raw.length) return null;
-      const last = this.latestValue;  // letzter bekannter Stand (kann null sein)
-      const cands = raw.map((m) => {
-        const num = parseFloat(m.replace(",", "."));
-        const digits = m.replace(/[.,]/g, "").length;
-        let score = digits;                                  // mehr Ziffern = besser ...
-        if (digits > 8) score -= 100;                        // ... aber >8 = Seriennummer o.ä., kein Zählwerk
-        if (last !== null && isFinite(num)) {
-          if (num >= last && num <= last + 100000) score += 100;   // plausibel: >= letzter Stand
-          else if (num < last) score -= 50;                        // kleiner als letzter Stand
-          else score -= 30;                                        // absurd weit drüber
+    pickOcrCandidate(text, modelBonus = 0) {
+      // Zeilenweise auswerten: die kWh-Zeile ist das Zählwerk, Adress-/Typenschild-Zeilen nicht.
+      const last = this.latestValue;
+      const cands = [];
+      for (let line of String(text).split(/\n/)) {
+        const hasKwh = /kwh/i.test(line);
+        // OBIS-Codes (1.8.0 etc.) entfernen, dann Einheiten raus
+        let l = line.replace(/\b\d\.\d{1,2}\.\d\b/g, " ").replace(/kwh|m³|m3/gi, " ");
+        const letters = (l.match(/[a-zäöüß]/gi) || []).length;
+        l = l.replace(/(\d)[ \t]+(?=\d)/g, "$1");
+        for (const m of l.match(/\d+[.,]?\d*/g) || []) {
+          const num = parseFloat(m.replace(",", "."));
+          const digits = m.replace(/[.,]/g, "").length;
+          let score = digits + modelBonus;
+          if (digits > 8) score -= 100;                 // Seriennummer o.ä.
+          if (digits < 3) score -= 20;                  // 473 W etc. eher nicht das Zählwerk
+          if (hasKwh) score += 200;                     // Einheit direkt daneben -> Zählwerk
+          if (letters >= 4) score -= 60;                // Adresse/Typenschild
+          if (last !== null && isFinite(num)) {
+            if (num >= last && num <= last + 100000) score += 100;
+            else if (num < last) score -= 50;
+            else score -= 30;
+          }
+          cands.push({ m, num, score, fromKwh: hasKwh });
         }
-        return { m, num, score };
-      });
+      }
+      if (!cands.length) return null;
       cands.sort((a, b) => b.score - a.score);
-      return cands[0].m;
+      return cands[0];
     },
     async runOcr(canvas) {
       this.scanBusy = true;
@@ -515,13 +571,27 @@ const SystemDetail = {
           this.scanStatus = "Texterkennung läuft …";
         }
         const prepped = this.preprocessForOcr(canvas);
-        const result = await Tesseract.recognize(prepped, "eng", {
-          tessedit_char_whitelist: "0123456789., ",
+        const r1 = await Tesseract.recognize(prepped, "eng", {
+          tessedit_char_whitelist: "0123456789., kWhm",
         });
-        const best = this.pickOcrCandidate(result.data.text);
+        let best = this.pickOcrCandidate(r1.data.text);
+
+        // Kein Treffer aus der kWh-Zeile? -> LCD vermutlich 7-Segment, Spezial-Modell versuchen
+        if (!best || !best.fromKwh) {
+          try {
+            this.scanStatus = "Digital-Display erkannt – lade 7-Segment-Modell …";
+            const r2 = await Tesseract.recognize(prepped, "letsgodigital", {
+              langPath: "https://cdn.jsdelivr.net/gh/arturaugusto/display_ocr@master/letsgodigital",
+              gzip: false,
+            });
+            const b2 = this.pickOcrCandidate(r2.data.text, 40);
+            if (b2 && (!best || b2.score > best.score)) best = b2;
+          } catch (_) { /* Modell nicht ladbar -> beim eng-Ergebnis bleiben */ }
+        }
+
         if (best) {
-          this.reading.value = best.replace(",", ".");
-          this.notify("Erkannt: " + best + " – bitte prüfen!", "ok");
+          this.reading.value = best.m.replace(",", ".");
+          this.notify("Erkannt: " + best.m + " – bitte prüfen!", "ok");
           this.closeScanner();
         } else {
           this.scanStatus = "Nichts erkannt – Zählwerk formatfüllend in den Rahmen, mehr Licht, nochmal versuchen.";
@@ -772,7 +842,9 @@ const SystemDetail = {
             <div class="scan-frame"></div>
           </div>
           <button v-else class="scan-filebtn" @click="triggerScanFile">📷 Foto mit nativer Kamera aufnehmen</button>
+          <button class="scan-filebtn scan-gallery" @click="triggerGalleryFile">🖼 Foto aus Galerie wählen<br /><small>Ablesedatum wird aus den Foto-Metadaten übernommen</small></button>
           <input ref="scanFile" type="file" accept="image/*" capture="environment" style="display:none" @change="onScanFile" />
+          <input ref="galleryFile" type="file" accept="image/*" style="display:none" @change="onScanFile" />
           <div class="hint" style="margin-top:8px">{{ scanStatus }}</div>
           <button v-if="!scanFileMode" class="crumb" style="margin-top:6px" @click="scanFileMode=true; closeStreamOnly()">Stream klappt nicht? → Stattdessen natives Foto nutzen</button>
           <div class="hint">Beta: Erkennung per Tesseract-OCR im Browser. Ergebnis immer prüfen – mechanische Rollen-Zählwerke mit halb gedrehten Ziffern sind fehleranfällig.</div>

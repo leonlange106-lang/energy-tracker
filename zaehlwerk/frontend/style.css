@@ -395,6 +395,10 @@ td.r { text-align: right; }
   box-shadow: 0 0 0 999px rgba(0,0,0,.35); pointer-events: none; }
 .scan-filebtn { width: 100%; height: 120px; border-radius: 16px; border: 2px dashed var(--md-outline);
   background: var(--md-surface-c); color: var(--md-on-surface-variant); font-size: 15px; font-family: var(--sans); cursor: pointer; }
+.scan-gallery { height: 76px; margin-top: 10px; }
+.scan-gallery small { font-size: 11px; color: var(--md-on-surface-variant); }
+/* Datums-Input: native Breiten-Eigenheiten neutralisieren (iOS ragte über) */
+.field .input[type="date"] { width: 100%; min-width: 0; max-width: 100%; -webkit-appearance: none; appearance: none; }
 
 /* ---------- Ripple ---------- */
 .ripple-ink { position: absolute; border-radius: 50%; transform: scale(0); pointer-events: none;
