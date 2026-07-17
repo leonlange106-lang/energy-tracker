@@ -866,11 +866,9 @@ createApp({
 
   <!-- FAB (Mobile) -->
   <div class="fab-screen"><button class="fab" @click="fabAction" :title="view==='menu' ? 'System anlegen' : 'Neuer Wert'">＋</button></div>
-  </div>
 
   <div class="wrap">
-    <transition name="m3sw" mode="out-in">
-    <div v-if="loading" class="center-load" key="load"><span class="spin"></span></div>
+    <div v-if="loading" class="center-load"><span class="spin"></span></div>
 
     <!-- MENÜ -->
     <template v-else-if="view==='menu'">

@@ -9,7 +9,7 @@ from .config import settings
 from .database import init_db
 from .routers import imports, readings, systems
 
-app = FastAPI(title="Zählwerk API", version="2.3.0")
+app = FastAPI(title="Zählwerk API", version="2.3.1")
 
 app.add_middleware(
     CORSMiddleware,
