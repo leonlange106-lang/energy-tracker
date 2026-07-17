@@ -1,19 +1,22 @@
-"""Ablesungen = Zeitreihen in InfluxDB. Plus abgeleitete Stats & Chart-Data."""
-from datetime import date
+"""Ablesungen, Statistik, Chart-Daten, Export, PDF – alles aus SQLite."""
+import csv
+import io
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlmodel import Session, select
 
-from .. import influx, logic, report
+from .. import logic, report
 from ..database import get_session
-from ..models import System
+from ..models import Reading, System
 from ..schemas import ChartData, ReadingCreate, ReadingRead, StatsRead
 
 router = APIRouter(tags=["readings"])
 
 
+# ---------- Helfer ----------
 def _require_system(system_id: str, session: Session) -> System:
     system = session.get(System, system_id)
     if not system:
@@ -21,6 +24,42 @@ def _require_system(system_id: str, session: Session) -> System:
     return system
 
 
+def _reading_dict(r: Reading) -> dict:
+    return {
+        "id": r.id, "system_id": r.system_id, "datum": r.datum,
+        "value": r.value, "cost": r.cost,
+        "meter_replaced": r.meter_replaced, "note": r.note,
+    }
+
+
+def _query_readings(session: Session, system_id: str,
+                    from_: Optional[date] = None, to: Optional[date] = None,
+                    limit: Optional[int] = None) -> list[dict]:
+    stmt = select(Reading).where(Reading.system_id == system_id)
+    if from_:
+        stmt = stmt.where(Reading.datum >= datetime(from_.year, from_.month, from_.day))
+    if to:
+        stmt = stmt.where(Reading.datum <= datetime(to.year, to.month, to.day, 23, 59, 59))
+    rows = session.exec(stmt.order_by(Reading.datum)).all()
+    out = [_reading_dict(r) for r in rows]
+    if limit:
+        out = out[-limit:]
+    return out
+
+
+def _enriched(session: Session, system_id: str,
+              from_: Optional[date] = None, to: Optional[date] = None) -> list[dict]:
+    raw = _query_readings(session, system_id, from_, to)
+    return logic.mark_outliers(logic.compute_intervals(raw))
+
+
+def _latest(session: Session, system_id: str) -> Optional[Reading]:
+    return session.exec(
+        select(Reading).where(Reading.system_id == system_id).order_by(Reading.datum.desc())
+    ).first()
+
+
+# ---------- Ablesungen ----------
 @router.get("/api/systems/{system_id}/readings", response_model=list[ReadingRead])
 def list_readings(
     system_id: str,
@@ -30,56 +69,46 @@ def list_readings(
     session: Session = Depends(get_session),
 ):
     _require_system(system_id, session)
-    raw = influx.query_readings(system_id, start=from_, stop=to, limit=limit)
-    enriched = logic.mark_outliers(logic.compute_intervals(raw))
+    enriched = _enriched(session, system_id, from_, to)
+    if limit:
+        enriched = enriched[-limit:]
     return enriched
 
 
 @router.post("/api/systems/{system_id}/readings", response_model=ReadingRead, status_code=201)
-def create_reading(
-    system_id: str, payload: ReadingCreate, session: Session = Depends(get_session)
-):
-    system = _require_system(system_id, session)
-
-    # Plausibilität: Wert darf nicht kleiner als letzter bekannter Wert sein (außer Zählertausch)
+def create_reading(system_id: str, payload: ReadingCreate, session: Session = Depends(get_session)):
+    _require_system(system_id, session)
     if not payload.meter_replaced:
-        latest = influx.latest_reading(system_id)
-        if latest and latest["value"] is not None and payload.value < latest["value"]:
+        latest = _latest(session, system_id)
+        if latest and latest.value is not None and payload.value < latest.value:
             raise HTTPException(
                 422,
-                f"Wert {payload.value} < letzter Wert {latest['value']}. "
+                f"Wert {payload.value} < letzter Wert {latest.value}. "
                 f"Bei Zählertausch 'meter_replaced' setzen.",
             )
-
-    rid = influx.write_reading(
+    r = Reading(
         system_id=system_id,
-        system_type=system.typ,
-        datum=payload.datum,
+        datum=datetime(payload.datum.year, payload.datum.month, payload.datum.day),
         value=payload.value,
         cost=payload.cost,
         meter_replaced=payload.meter_replaced,
         note=payload.note,
     )
-    return ReadingRead(
-        id=rid,
-        system_id=system_id,
-        datum=influx._to_utc_dt(payload.datum),
-        value=payload.value,
-        cost=payload.cost,
-        meter_replaced=payload.meter_replaced,
-        note=payload.note,
-    )
+    session.add(r)
+    session.commit()
+    session.refresh(r)
+    return ReadingRead(**_reading_dict(r))
 
 
 @router.delete("/api/readings/{reading_id}", status_code=204)
-def delete_reading(reading_id: str):
-    try:
-        system_id, ts_ns = influx.decode_reading_id(reading_id)
-    except Exception:
-        raise HTTPException(400, "Ungültige reading_id")
-    influx.delete_reading(system_id, ts_ns)
+def delete_reading(reading_id: str, session: Session = Depends(get_session)):
+    r = session.get(Reading, reading_id)
+    if r:
+        session.delete(r)
+        session.commit()
 
 
+# ---------- Auswertung ----------
 @router.get("/api/systems/{system_id}/stats", response_model=StatsRead)
 def get_stats(
     system_id: str,
@@ -88,9 +117,7 @@ def get_stats(
     session: Session = Depends(get_session),
 ):
     _require_system(system_id, session)
-    raw = influx.query_readings(system_id, start=from_, stop=to)
-    enriched = logic.mark_outliers(logic.compute_intervals(raw))
-    return logic.compute_stats(enriched)
+    return logic.compute_stats(_enriched(session, system_id, from_, to))
 
 
 @router.get("/api/systems/{system_id}/chart-data", response_model=ChartData)
@@ -101,8 +128,7 @@ def get_chart_data(
     session: Session = Depends(get_session),
 ):
     system = _require_system(system_id, session)
-    raw = influx.query_readings(system_id, start=from_, stop=to)
-    enriched = logic.mark_outliers(logic.compute_intervals(raw))
+    enriched = _enriched(session, system_id, from_, to)
     return ChartData(
         system_id=system_id,
         name=system.name,
@@ -113,6 +139,7 @@ def get_chart_data(
         consumption=[e["consumption"] for e in enriched],
         consumption_per_day=[e["consumption_per_day"] for e in enriched],
         outliers=[e["is_outlier"] for e in enriched],
+        meter_replaced=[bool(e.get("meter_replaced")) for e in enriched],
     )
 
 
@@ -122,12 +149,43 @@ def get_overview(session: Session = Depends(get_session)):
     systems = session.exec(select(System).where(System.aktiv == True)).all()  # noqa: E712
     out = {}
     for s in systems:
-        latest = influx.latest_reading(s.id)
-        if latest and latest.get("value") is not None:
-            out[s.id] = {"value": latest["value"], "datum": latest["datum"].isoformat()}
+        latest = _latest(session, s.id)
+        if latest and latest.value is not None:
+            out[s.id] = {"value": latest.value, "datum": latest.datum.isoformat()}
     return out
 
 
+# ---------- Export ----------
+@router.get("/api/systems/{system_id}/export.csv")
+def export_readings(
+    system_id: str,
+    from_: Optional[date] = Query(None, alias="from"),
+    to: Optional[date] = Query(None),
+    session: Session = Depends(get_session),
+):
+    """Alle Ablesungen als CSV – identisches Format wie der Import (Backup / Re-Import)."""
+    system = _require_system(system_id, session)
+    raw = _query_readings(session, system_id, from_, to)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["datum", "wert", "kosten", "zaehlertausch", "notiz"])
+    for r in raw:
+        val, cost = r.get("value"), r.get("cost")
+        w.writerow([
+            r["datum"].date().isoformat(),
+            ("" if val is None else (str(int(val)) if float(val).is_integer() else f"{val:.4f}".rstrip("0").rstrip("."))),
+            ("" if cost is None else f"{cost:.2f}"),
+            "ja" if r.get("meter_replaced") else "",
+            r.get("note") or "",
+        ])
+    fname = f"zaehlwerk_{system.name.replace(' ', '_')}.csv"
+    return Response(
+        content=buf.getvalue(), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+# ---------- PDF ----------
 @router.get("/api/systems/{system_id}/report.pdf")
 def get_report(
     system_id: str,
@@ -136,22 +194,17 @@ def get_report(
     session: Session = Depends(get_session),
 ):
     system = _require_system(system_id, session)
-    raw = influx.query_readings(system_id, start=from_, stop=to)
-    enriched = logic.mark_outliers(logic.compute_intervals(raw))
-    stats = logic.compute_stats(enriched)
+    enriched = _enriched(session, system_id, from_, to)
     pdf = report.build_report_pdf(
         system={"name": system.name, "typ": system.typ, "einheit": system.einheit},
         enriched=enriched,
-        stats=stats,
+        stats=logic.compute_stats(enriched),
         from_label=from_.strftime("%d.%m.%Y") if from_ else None,
         to_label=to.strftime("%d.%m.%Y") if to else None,
     )
-    fname = f"energie-bericht_{system.name.replace(' ', '_')}.pdf"
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{fname}"'},
-    )
+    fname = f"zaehlwerk-bericht_{system.name.replace(' ', '_')}.pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{fname}"'})
 
 
 @router.get("/api/report.pdf")
@@ -165,8 +218,7 @@ def get_combined_report(
     ).all()
     sections = []
     for system in systems:
-        raw = influx.query_readings(system.id, start=from_, stop=to)
-        enriched = logic.mark_outliers(logic.compute_intervals(raw))
+        enriched = _enriched(session, system.id, from_, to)
         sections.append({
             "system": {"name": system.name, "typ": system.typ, "einheit": system.einheit},
             "enriched": enriched,
@@ -177,8 +229,5 @@ def get_combined_report(
         from_label=from_.strftime("%d.%m.%Y") if from_ else None,
         to_label=to.strftime("%d.%m.%Y") if to else None,
     )
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={"Content-Disposition": 'inline; filename="energie-gesamtbericht.pdf"'},
-    )
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="zaehlwerk-gesamtbericht.pdf"'})

@@ -86,6 +86,7 @@ class ChartData(BaseModel):
     consumption: list[Optional[float]]
     consumption_per_day: list[Optional[float]]
     outliers: list[bool]
+    meter_replaced: list[bool]
 
 
 class ImportResult(BaseModel):

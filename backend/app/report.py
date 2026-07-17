@@ -40,45 +40,56 @@ class ConsumptionChart(Flowable):
         self.enriched = [e for e in enriched if e.get("consumption_per_day") is not None]
 
     def draw(self):
-        d = Drawing(self.width, self.height)
+        c = self.canv
         pad_l, pad_r, pad_t, pad_b = 38, 10, 14, 26
         x0, x1 = pad_l, self.width - pad_r
         y0, y1 = pad_b, self.height - pad_t
         pts = self.enriched
-
-        # Achsenrahmen + Gridlines
         vals = [e["consumption_per_day"] for e in pts]
-        vmax = max(vals) if vals else 1
-        vmax = vmax * 1.1 or 1
+        vmax = (max(vals) if vals else 1) * 1.1 or 1
+        n = len(pts)
+
+        def px(i): return x0 + (x1 - x0) * i / (n - 1) if n > 1 else x0
+        def py(v): return y0 + (y1 - y0) * (v / vmax)
+
+        # 1) Verlaufsfläche unter der Kurve (Clip auf die Fläche + vertikaler Gradient)
+        if n >= 2:
+            c.saveState()
+            p = c.beginPath()
+            p.moveTo(px(0), y0)
+            for i, e in enumerate(pts):
+                p.lineTo(px(i), py(e["consumption_per_day"]))
+            p.lineTo(px(n - 1), y0)
+            p.close()
+            c.clipPath(p, stroke=0, fill=0)
+            top = colors.Color(ACCENT.red, ACCENT.green, ACCENT.blue, 0.38)
+            bot = colors.Color(ACCENT.red, ACCENT.green, ACCENT.blue, 0.02)
+            c.linearGradient(x0, y1, x0, y0, (top, bot), positions=(0, 1), extend=True)
+            c.restoreState()
+
+        # 2) Gridlines, Achsenbeschriftung, Linie, Punkte
+        d = Drawing(self.width, self.height)
         for i in range(5):
             gy = y0 + (y1 - y0) * i / 4
             d.add(Line(x0, gy, x1, gy, strokeColor=LINE, strokeWidth=0.5))
             d.add(String(x0 - 4, gy - 3, _fmt(vmax * i / 4, 0),
                          fontSize=6, fillColor=INK_SOFT, textAnchor="end"))
-
-        if len(pts) >= 2:
-            n = len(pts)
-            def px(i): return x0 + (x1 - x0) * i / (n - 1)
-            def py(v): return y0 + (y1 - y0) * (v / vmax)
-
+        if n >= 2:
             coords = []
             for i, e in enumerate(pts):
                 coords += [px(i), py(e["consumption_per_day"])]
             d.add(PolyLine(coords, strokeColor=ACCENT, strokeWidth=1.4))
-
             for i, e in enumerate(pts):
                 out = e.get("is_outlier")
                 d.add(Circle(px(i), py(e["consumption_per_day"]), 3 if out else 1.6,
                              fillColor=WARN if out else ACCENT, strokeColor=None))
-
-            # X-Labels (Anfang / Mitte / Ende)
             for i in (0, n // 2, n - 1):
                 lbl = pts[i]["datum"].strftime("%m/%y")
                 d.add(String(px(i), y0 - 12, lbl, fontSize=6, fillColor=INK_SOFT, textAnchor="middle"))
 
-        self.canv.saveState()
-        d.drawOn(self.canv, 0, 0)
-        self.canv.restoreState()
+        c.saveState()
+        d.drawOn(c, 0, 0)
+        c.restoreState()
 
 
 def _styles():

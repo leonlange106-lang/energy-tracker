@@ -1,44 +1,12 @@
-# Energie-Tracker – App + InfluxDB in einem Stack.
-# InfluxDB richtet sich beim ERSTEN Start automatisch ein (Org/Bucket/Token aus .env).
-# Beide Services teilen sich denselben Token -> nichts manuell abtippen.
+# Optionaler Standalone-Betrieb OHNE Home Assistant (z.B. im LXC/Docker).
+# Für HA nutzt du stattdessen das Add-on (ha-addon/). Kein InfluxDB mehr nötig.
 
 services:
-  influxdb:
-    image: influxdb:2.7
-    restart: unless-stopped
-    environment:
-      DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USERNAME}
-      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
-      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
-      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
-    volumes:
-      - influx-data:/var/lib/influxdb2
-      - influx-config:/etc/influxdb2
-    # InfluxDB fürs LAN geöffnet, damit das HA-Add-on (anderer Host) drankommt.
-    # Token-geschützt; nur im Heimnetz erreichbar.
-    ports:
-      - "8086:8086"
-    mem_limit: 512m
-    healthcheck:
-      test: ["CMD", "influx", "ping"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
   app:
     build: ./backend
     restart: unless-stopped
-    depends_on:
-      influxdb:
-        condition: service_healthy
     environment:
-      INFLUX_URL: http://influxdb:8086
-      INFLUX_TOKEN: ${INFLUX_TOKEN}
-      INFLUX_ORG: ${INFLUX_ORG}
-      INFLUX_BUCKET: ${INFLUX_BUCKET}
-      SQLITE_PATH: /data/systems.db
+      SQLITE_PATH: /data/zaehlwerk.db
       CORS_ORIGINS: "*"
     volumes:
       - app-data:/data
@@ -47,6 +15,4 @@ services:
     mem_limit: 256m
 
 volumes:
-  influx-data:
-  influx-config:
   app-data:

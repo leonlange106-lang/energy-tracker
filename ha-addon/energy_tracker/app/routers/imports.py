@@ -1,4 +1,4 @@
-"""CSV-Import: Vorlage bereitstellen + Bulk-Upload (bestehende Historie NICHT auto-importiert)."""
+"""CSV-Import: Vorlage bereitstellen + Bulk-Upload nach SQLite."""
 import csv
 import io
 from datetime import date, datetime
@@ -7,9 +7,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 from sqlmodel import Session
 
-from .. import influx
 from ..database import get_session
-from ..models import System
+from ..models import Reading, System
 from ..schemas import ImportResult
 
 router = APIRouter(tags=["import"])
@@ -42,8 +41,7 @@ def _parse_float(raw: str):
 @router.get("/api/import/template", response_class=PlainTextResponse)
 def import_template():
     return PlainTextResponse(
-        TEMPLATE,
-        media_type="text/csv",
+        TEMPLATE, media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=import_template.csv"},
     )
 
@@ -59,7 +57,6 @@ async def import_readings(
         raise HTTPException(404, "System nicht gefunden")
 
     content = (await file.read()).decode("utf-8-sig")
-    # Delimiter automatisch erkennen (`,` oder `;`)
     try:
         dialect = csv.Sniffer().sniff(content[:2048], delimiters=",;")
     except csv.Error:
@@ -70,22 +67,22 @@ async def import_readings(
     for lineno, row in enumerate(reader, start=2):
         row = {(k or "").strip().lower(): v for k, v in row.items()}
         try:
-            datum = _parse_date(row.get("datum", ""))
+            d = _parse_date(row.get("datum", ""))
             value = _parse_float(row.get("wert", ""))
             if value is None:
                 raise ValueError("Wert fehlt")
-            influx.write_reading(
+            session.add(Reading(
                 system_id=system_id,
-                system_type=system.typ,
-                datum=datum,
+                datum=datetime(d.year, d.month, d.day),
                 value=value,
                 cost=_parse_float(row.get("kosten", "")),
                 meter_replaced=(row.get("zaehlertausch", "").strip().lower() in _TRUE),
                 note=(row.get("notiz") or "").strip() or None,
-            )
+            ))
             imported += 1
         except Exception as exc:  # noqa: BLE001
             skipped += 1
             errors.append(f"Zeile {lineno}: {exc}")
+    session.commit()
 
     return ImportResult(imported=imported, skipped=skipped, errors=errors[:50])
