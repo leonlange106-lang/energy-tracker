@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.10.1";
+const APP_VERSION = "2.11.0";
 const APP_CHANGELOG = [
+  { v: "2.11.0", d: "18.07.2026", items: [
+    "Zähler-Tab: Metadaten aus 2.10.0 endlich in der Oberfläche pflegbar",
+    "Hardware-Empfehlung je Zähler (Hichi IR, Reed-Kontakt, AI-on-the-edge, wM-Bus …)",
+    "Live-Vorschau der Empfehlung schon beim Eintippen der Bauart",
+    "Eichfrist-Badge je Zähler",
+  ]},
   { v: "2.10.1", d: "18.07.2026", items: [
     "Systemverwaltung wieder erreichbar: „✎ Bearbeiten\" in der Systemansicht",
     "Systeme endgültig löschbar – der Button fehlte seit 2.4.0",
@@ -247,6 +253,184 @@ const NAV_ITEMS = [
 ];
 const NAV_BREAKPOINT = 840;   // identisch zum CSS-Breakpoint Rail <-> Bottom-Bar
 
+/* =========================================================================
+   Hardware-Empfehlung fuer Smart-Meter-Nachruestung
+   -------------------------------------------------------------------------
+   Regelbasiert, bewusst kein Scoring-Modell: die Zuordnung Zaehlerbauart ->
+   Ausleseverfahren ist deterministisch und nachvollziehbar. Jede Regel
+   liefert mit, WORAN sie erkannt hat und wie sicher das ist - damit der
+   Nutzer eine Fehlzuordnung sofort sieht, statt einer Blackbox zu vertrauen.
+
+   Reihenfolge = Spezifitaet. Die erste zutreffende Regel je Medium gewinnt,
+   generische Regeln greifen nur als Rueckfallebene.
+   ========================================================================= */
+const HW_CONFIDENCE = {
+  sicher:       { label: "eindeutig",   rank: 3 },
+  wahrscheinlich:{ label: "wahrscheinlich", rank: 2 },
+  generisch:    { label: "Rückfallebene", rank: 1 },
+};
+
+/* Normalisiert Freitext: Kleinschreibung, Umlaute, Sonderzeichen raus.
+   "Balgengaszähler" / "balgengas-zaehler" / "BALGENGASZAEHLER" -> gleich. */
+function hwNorm(s) {
+  return String(s || "").toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, " ").trim();
+}
+const hwHas = (hay, ...needles) => needles.some((n) => hwNorm(hay).includes(hwNorm(n)));
+
+const HW_RULES = [
+  /* ---------------- Strom ---------------- */
+  {
+    id: "strom-imsys",
+    medium: "Strom",
+    confidence: "sicher",
+    match: (c) => hwHas(c.bauart, "imsys", "intelligentes messsystem", "smart meter gateway", "smgw")
+               || hwHas(c.modell, "smgw"),
+    grund: "iMSys bzw. Smart-Meter-Gateway erkannt",
+    titel: "Auslesung über die HAN-Schnittstelle des Gateways",
+    hardware: [
+      "HAN-Adapter des Messstellenbetreibers (CLS-Schnittstelle)",
+      "Alternativ: separater eigener Zähler hinter dem iMSys",
+    ],
+    hinweis: "Ein iMSys gehört dem Messstellenbetreiber und ist plombiert. Der Zugang zur HAN-Schnittstelle wird beim Betreiber beantragt – ein optischer Lesekopf ist hier weder nötig noch zulässig.",
+  },
+  {
+    id: "strom-mme",
+    medium: "Strom",
+    confidence: "sicher",
+    match: (c) => hwHas(c.bauart, "mme", "moderne messeinrichtung", "ehz")
+               || hwHas(c.modell, "mme", "ehz", "q3a", "q3b", "e220", "dd3", "dd4", "sml"),
+    grund: "moderne Messeinrichtung mit optischer Schnittstelle (D0/SML)",
+    titel: "Optischer Lesekopf an der Infrarot-Schnittstelle",
+    hardware: [
+      "Hichi IR-Lesekopf (Tasmota vorinstalliert) – Magnethalterung, berührungslos",
+      "Alternativ: Tibber Pulse IR oder volkszaehler-Lesekopf mit ESPHome",
+    ],
+    hinweis: "Für die vollständigen Daten inklusive momentaner Leistung ist meist die vierstellige INF-PIN nötig – kostenlos beim Messstellenbetreiber anzufordern. Ohne PIN liefert der Zähler nur den Zählerstand.",
+  },
+  {
+    id: "strom-ferraris",
+    medium: "Strom",
+    confidence: "sicher",
+    match: (c) => hwHas(c.bauart, "ferraris", "drehscheibe", "induktionszaehler")
+               || hwHas(c.bauart, "wechselstromzaehler", "drehstromzaehler"),
+    grund: "mechanischer Zähler mit rotierender Scheibe",
+    titel: "Reflexlichtschranke auf die Markierung der Drehscheibe",
+    hardware: [
+      "TCRT5000 Reflexkoppler an ESP32/ESP8266 mit ESPHome",
+      "Alternativ: Hichi Ferraris-Sensor (fertig konfektioniert)",
+    ],
+    hinweis: "Die Umdrehungszahl pro kWh steht auf dem Typenschild (z. B. 75 U/kWh) und muss in der Konfiguration hinterlegt werden. Der Sensor wird außen aufgeklebt, die Plombe bleibt unberührt.",
+  },
+
+  /* ---------------- Gas ---------------- */
+  {
+    id: "gas-balgen",
+    medium: "Gas",
+    confidence: "sicher",
+    match: (c) => hwHas(c.bauart, "balgengas", "balgen")
+               || hwHas(c.modell, "bk g4", "bk g6", "bk4", "g4 rf1", "g4"),
+    grund: "Balgengaszähler erkannt",
+    titel: "Reed-Kontakt an der Magnetziffer",
+    hardware: [
+      "Reed-Kontakt oder Hall-Sensor an ESP32/ESP8266 mit ESPHome",
+      "Fertiglösung: Impulsgeber des Herstellers (z. B. Elster IN-Z61)",
+    ],
+    hinweis: "Voraussetzung ist ein Magnet in der letzten Ziffernrolle – erkennbar an einem Punkt oder Stern neben der Ziffer, oder per Reed-Test. Fehlt er, bleibt nur die Kameralösung.",
+    fallbackId: "universal-kamera",
+  },
+  {
+    id: "gas-ultraschall",
+    medium: "Gas",
+    confidence: "wahrscheinlich",
+    match: (c) => hwHas(c.bauart, "ultraschall", "drehkolben", "turbinenrad"),
+    grund: "elektronischer Gaszähler",
+    titel: "Auslesung über die vorhandene Datenschnittstelle",
+    hardware: [
+      "Optischer Lesekopf, falls IR-Schnittstelle vorhanden",
+      "M-Bus- oder wM-Bus-Empfänger, je nach Ausstattung",
+    ],
+    hinweis: "Elektronische Gaszähler bringen die Schnittstelle meist mit. Welche es ist, steht im Datenblatt zum Modell – Bauart und Modell hier vollständig eintragen hilft bei der Eingrenzung.",
+  },
+
+  /* ---------------- Wasser ---------------- */
+  {
+    id: "wasser-ultraschall",
+    medium: "Wasser",
+    confidence: "sicher",
+    match: (c) => hwHas(c.bauart, "ultraschall") || hwHas(c.modell, "ultraschall"),
+    grund: "Ultraschall-Wasserzähler, sendet in der Regel per Funk",
+    titel: "wM-Bus-Empfänger auf 868 MHz",
+    hardware: [
+      "ESP32 mit CC1101-Funkmodul und wM-Bus-Firmware",
+      "Alternativ: USB-Stick mit wM-Bus-Empfang plus wmbusmeters",
+    ],
+    hinweis: "Viele Zähler senden verschlüsselt. Der AES-Schlüssel gehört zum Zähler und wird beim Versorger angefragt – ohne ihn kommen nur Telegramme ohne lesbare Werte an.",
+  },
+  {
+    id: "wasser-fluegelrad",
+    medium: "Wasser",
+    confidence: "sicher",
+    match: (c) => hwHas(c.bauart, "fluegelrad", "woltmann", "mehrstrahl", "einstrahl")
+               || hwHas(c.hersteller, "pipersberg"),
+    grund: "mechanischer Wasserzähler mit Rollenzählwerk",
+    titel: "Kamerabasierte Zifferblatt-Erkennung",
+    hardware: [
+      "AI-on-the-edge-device auf ESP32-CAM",
+      "Alternativ: Reed-Kontakt, falls eine Ziffernrolle einen Magneten trägt",
+    ],
+    hinweis: "Die Kameralösung braucht eine feste Halterung und gleichmäßige Beleuchtung – beides bringt das fertige Gehäuse mit. Sie ist berührungslos und damit unabhängig von Plomben.",
+  },
+
+  /* ---------------- Medienunabhängig ---------------- */
+  {
+    id: "universal-kamera",
+    medium: null,
+    confidence: "generisch",
+    match: (c) => ["Strom", "Gas", "Wasser"].includes(c.typ),
+    grund: "funktioniert an jedem Rollenzählwerk, unabhängig von Bauart und Hersteller",
+    titel: "Kamerabasierte Zifferblatt-Erkennung",
+    hardware: ["AI-on-the-edge-device auf ESP32-CAM"],
+    hinweis: "Die Rückfallebene, wenn keine elektrische oder optische Schnittstelle existiert. Liefert den Zählerstand, aber keine Momentanwerte.",
+  },
+  {
+    id: "pv-wechselrichter",
+    medium: null,
+    confidence: "wahrscheinlich",
+    match: (c) => c.typ === "PV-Erzeugung" || c.typ === "PV-Einspeisung",
+    grund: "PV-Daten kommen vom Wechselrichter, nicht vom Zähler",
+    titel: "Anbindung des Wechselrichters statt des Zählers",
+    hardware: [
+      "Modbus TCP oder RTU zum Wechselrichter (SunSpec)",
+      "Alternativ: Hersteller-Integration in Home Assistant",
+    ],
+    hinweis: "Für die Einspeisung ist zusätzlich der Zweirichtungszähler relevant – dafür gelten die Empfehlungen zu Strom.",
+  },
+];
+
+/* Liefert die Empfehlungen zu einem Zaehler. Erste passende spezifische Regel
+   je Medium plus die generische Rueckfallebene, falls sie nicht ohnehin traf. */
+function hwSuggest(meter, system) {
+  const ctx = {
+    typ: system ? system.typ : null,
+    bauart: meter ? meter.bauart : null,
+    modell: meter ? meter.modell : null,
+    hersteller: meter ? meter.hersteller : null,
+  };
+  const hits = [];
+  const spezifisch = HW_RULES.filter(
+    (r) => r.medium && r.medium === ctx.typ && r.match(ctx));
+  if (spezifisch.length) hits.push(spezifisch[0]);
+  HW_RULES.filter((r) => !r.medium && r.match(ctx)).forEach((r) => {
+    if (!hits.some((h) => h.id === r.id)) hits.push(r);
+  });
+  // Wenn eine spezifische Regel griff, ist die generische Kamera nur noch
+  // Beiwerk -> nach hinten und als solche markiert.
+  return hits.map((r) => ({ ...r, conf: HW_CONFIDENCE[r.confidence] }))
+             .sort((a, b) => b.conf.rank - a.conf.rank);
+}
+
 /* ---------- Helfer ---------- */
 async function api(path, opts = {}) {
   // Führenden Slash entfernen -> relativer Request. Funktioniert direkt (LXC)
@@ -417,6 +601,12 @@ const SystemDetail = {
   emits: ["back", "edit", "changed"],
   data: () => ({
     tab: "chart",
+    // Zähler-Metadaten (v2.10.0) + Hardware-Empfehlung
+    meters: [],
+    metersLoaded: false,
+    showMeter: false,
+    meterForm: null,
+    bauarten: [],
     loading: true,
     readings: [],
     stats: null,
@@ -565,6 +755,7 @@ const SystemDetail = {
   },
   watch: {
     range() { this.loadDynamic(); },
+    tab(v) { if (v === "meters" && !this.metersLoaded) this.loadMeters(); },
     overlayIds() { this.loadOverlays(); },
   },
   async mounted() {
@@ -574,6 +765,71 @@ const SystemDetail = {
   methods: {
     fmt, fmtDate, typeIcon,
     async loadAll() { this.loading = true; await this.loadDynamic(); this.loading = false; },
+
+    /* ---------- Zähler-Metadaten ---------- */
+    async loadMeters() {
+      try {
+        const [ms, ba] = await Promise.all([
+          api(`/api/systems/${this.system.id}/meters`),
+          this.bauarten.length ? Promise.resolve(this.bauarten) : api("/api/meters/bauarten"),
+        ]);
+        this.meters = ms;
+        this.bauarten = ba;
+        this.metersLoaded = true;
+      } catch (e) { this.notify("Zähler nicht ladbar: " + e.message, "err"); }
+    },
+    openMeter(m) {
+      this.meterForm = m
+        ? { ...m }
+        : { id: null, hersteller: "", modell: "", zaehlernummer: "", bauart: "",
+            baujahr: null, eichung_bis: null, messstellenbetreiber: "",
+            stellen_vor: null, stellen_nach: null,
+            eingebaut_am: null, ausgebaut_am: null, notiz: "" };
+      this.showMeter = true;
+    },
+    async saveMeter() {
+      const f = this.meterForm;
+      // Leerstrings zu null: das Backend trimmt zwar auch, aber so bleibt die
+      // Vorschau der Empfehlung schon vor dem Speichern konsistent.
+      const clean = (v) => (v === "" || v === undefined ? null : v);
+      const body = JSON.stringify({
+        hersteller: clean(f.hersteller), modell: clean(f.modell),
+        zaehlernummer: clean(f.zaehlernummer), bauart: clean(f.bauart),
+        baujahr: f.baujahr ? Number(f.baujahr) : null,
+        eichung_bis: clean(f.eichung_bis),
+        messstellenbetreiber: clean(f.messstellenbetreiber),
+        stellen_vor: f.stellen_vor ? Number(f.stellen_vor) : null,
+        stellen_nach: f.stellen_nach !== null && f.stellen_nach !== "" ? Number(f.stellen_nach) : null,
+        eingebaut_am: clean(f.eingebaut_am), ausgebaut_am: clean(f.ausgebaut_am),
+        notiz: clean(f.notiz),
+      });
+      this.busy = true;
+      try {
+        if (f.id) await api(`/api/meters/${f.id}`, { method: "PATCH", body });
+        else await api(`/api/systems/${this.system.id}/meters`, { method: "POST", body });
+        this.showMeter = false;
+        this.notify(f.id ? "Zähler aktualisiert" : "Zähler angelegt", "ok");
+        await this.loadMeters();
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.busy = false; }
+    },
+    async deleteMeter(m) {
+      try {
+        await api(`/api/meters/${m.id}`, { method: "DELETE" });
+        this.notify("Zähler gelöscht", "ok");
+        await this.loadMeters();
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+
+    /* ---------- Hardware-Empfehlung ---------- */
+    suggestFor(meter) { return hwSuggest(meter, this.system); },
+    eichungLabel(m) {
+      if (m.eichung_bis === null || m.eichung_faellig_in_tagen === null) return null;
+      const d = m.eichung_faellig_in_tagen;
+      if (d < 0) return { level: "over", text: `Eichung abgelaufen seit ${Math.abs(d)} T` };
+      if (d <= 180) return { level: "soon", text: `Eichung endet in ${d} T` };
+      return { level: "ok", text: `Eichung bis ${fmtDate(m.eichung_bis)}` };
+    },
     async loadDynamic() {
       const q = this.fromParam ? `?from=${this.fromParam}` : "";
       // Ein kombinierter Request statt drei (eine Berechnung im Backend)
@@ -977,6 +1233,7 @@ const SystemDetail = {
     <div class="tabs">
       <button class="tab" :class="{active: tab==='chart'}" @click="tab='chart'">Auswertung</button>
       <button class="tab" :class="{active: tab==='list'}" @click="tab='list'">Werte ({{ readings.length }})</button>
+      <button class="tab" :class="{active: tab==='meters'}" @click="tab='meters'">Zähler<span v-if="metersLoaded && meters.length"> ({{ meters.length }})</span></button>
     </div>
 
     <transition name="m3sw" mode="out-in">
@@ -1094,6 +1351,125 @@ const SystemDetail = {
     </div>
 
     </transition>
+
+    <!-- TAB: Zähler + Hardware-Empfehlung -->
+    <div v-if="tab==='meters'" key="meters">
+      <div class="empty" v-if="metersLoaded && !meters.length">
+        <h3>Noch kein Zähler hinterlegt</h3>
+        <p>Trag Hersteller, Modell und Bauart ein – daraus leitet Zählwerk passende Auslese-Hardware für die Smart-Meter-Nachrüstung ab.</p>
+        <button class="btn btn-primary" @click="openMeter(null)">＋ Zähler anlegen</button>
+      </div>
+
+      <div v-else>
+        <div class="eyebrow">
+          Zähler
+          <button class="btn btn-sm" @click="openMeter(null)">＋ Zähler</button>
+        </div>
+
+        <div v-for="m in meters" :key="m.id" class="card meter-card" :class="{removed: !m.aktiv}">
+          <div class="meter-head">
+            <div>
+              <div class="m-title">
+                {{ m.hersteller || 'Hersteller unbekannt' }}<span v-if="m.modell"> · {{ m.modell }}</span>
+              </div>
+              <div class="m-sub">
+                <span v-if="m.bauart">{{ m.bauart }}</span>
+                <span v-if="m.zaehlernummer" class="num">Nr. {{ m.zaehlernummer }}</span>
+                <span v-if="!m.aktiv">ausgebaut {{ fmtDate(m.ausgebaut_am) }}</span>
+              </div>
+            </div>
+            <div class="m-actions">
+              <button class="btn btn-sm" @click="openMeter(m)">✎</button>
+              <hold-button :small="true" @held="deleteMeter(m)">✕ halten</hold-button>
+            </div>
+          </div>
+
+          <div v-if="eichungLabel(m)" class="due-badge" :class="eichungLabel(m).level">
+            {{ eichungLabel(m).level === 'ok' ? '✓' : '⚠' }} {{ eichungLabel(m).text }}
+          </div>
+
+          <!-- Auto-Suggest -->
+          <div class="hw-block" v-if="m.aktiv">
+            <div class="hw-head">Auslese-Hardware</div>
+            <div v-for="s in suggestFor(m)" :key="s.id" class="hw-item" :class="'conf-' + s.confidence">
+              <div class="hw-top">
+                <span class="hw-titel">{{ s.titel }}</span>
+                <span class="hw-conf">{{ s.conf.label }}</span>
+              </div>
+              <div class="hw-grund">erkannt an: {{ s.grund }}</div>
+              <ul class="hw-list"><li v-for="(h,i) in s.hardware" :key="i">{{ h }}</li></ul>
+              <div class="hw-hinweis">{{ s.hinweis }}</div>
+            </div>
+            <div class="hint hw-disclaimer">
+              Vorschläge ohne Gewähr. Zähler sind plombiert – alle genannten Verfahren arbeiten
+              berührungslos von außen. Plomben nicht öffnen, Zähler nicht umbauen.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: Zähler -->
+    <div class="overlay" v-if="showMeter" @click.self="showMeter=false">
+      <div class="modal">
+        <div class="modal-head"><h3>{{ meterForm.id ? 'Zähler bearbeiten' : 'Neuer Zähler' }}</h3></div>
+        <div class="modal-body">
+          <div class="field-row">
+            <div class="field"><label>Hersteller</label>
+              <input class="input" v-model="meterForm.hersteller" placeholder="z. B. Pipersberg" /></div>
+            <div class="field"><label>Modell</label>
+              <input class="input" v-model="meterForm.modell" placeholder="z. B. mMe4.0" /></div>
+          </div>
+          <div class="field">
+            <label>Bauart</label>
+            <input class="input" v-model="meterForm.bauart" list="zw-bauarten" placeholder="Vorschläge verfügbar" />
+            <datalist id="zw-bauarten"><option v-for="b in bauarten" :key="b" :value="b"></option></datalist>
+          </div>
+
+          <!-- Live-Vorschau: reagiert auf jede Eingabe, noch vor dem Speichern -->
+          <div class="hw-preview" v-if="suggestFor(meterForm).length">
+            <div class="hw-head">Passende Hardware</div>
+            <div v-for="s in suggestFor(meterForm)" :key="s.id" class="hw-item" :class="'conf-' + s.confidence">
+              <div class="hw-top">
+                <span class="hw-titel">{{ s.titel }}</span>
+                <span class="hw-conf">{{ s.conf.label }}</span>
+              </div>
+              <ul class="hw-list"><li v-for="(h,i) in s.hardware" :key="i">{{ h }}</li></ul>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field"><label>Zählernummer</label>
+              <input class="input" v-model="meterForm.zaehlernummer" /></div>
+            <div class="field"><label>Baujahr</label>
+              <input class="input" type="number" inputmode="numeric" min="1900" max="2100" v-model="meterForm.baujahr" /></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Eichung gültig bis</label>
+              <input class="input" type="date" v-model="meterForm.eichung_bis" /></div>
+            <div class="field"><label>Messstellenbetreiber</label>
+              <input class="input" v-model="meterForm.messstellenbetreiber" /></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Stellen vor dem Komma</label>
+              <input class="input" type="number" inputmode="numeric" min="1" max="12" v-model="meterForm.stellen_vor" /></div>
+            <div class="field"><label>Stellen nach dem Komma</label>
+              <input class="input" type="number" inputmode="numeric" min="0" max="6" v-model="meterForm.stellen_nach" /></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Eingebaut am</label>
+              <input class="input" type="date" v-model="meterForm.eingebaut_am" /></div>
+            <div class="field"><label>Ausgebaut am</label>
+              <input class="input" type="date" v-model="meterForm.ausgebaut_am" /></div>
+          </div>
+          <label class="tf"><input class="tf-input" v-model="meterForm.notiz" placeholder=" " /><span class="tf-label">Notiz (optional)</span></label>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" @click="showMeter=false">Abbrechen</button>
+          <button class="btn btn-primary" :disabled="busy" @click="saveMeter">Speichern</button>
+        </div>
+      </div>
+    </div>
 
     <!-- MODAL: Ablesung -->
     <div class="overlay" v-if="showReading" @click.self="showReading=false">

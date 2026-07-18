@@ -14,6 +14,22 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.11.0] - 2026-07-18
+
+### Added
+
+- [Frontend/app.js] Ergänzt eine regelbasierte Hardware-Empfehlung für die Smart-Meter-Nachrüstung. `hwSuggest()` wertet Medium, Bauart, Modell und Hersteller aus und liefert je Zähler das passende Ausleseverfahren samt Begründung und Sicherheitsgrad.
+- [Frontend/app.js] Ergänzt neun Regeln: moderne Messeinrichtung, iMSys, Ferraris, Balgengaszähler, elektronischer Gaszähler, Ultraschall-Wasserzähler, mechanischer Wasserzähler, kamerabasierte Rückfallebene und PV-Wechselrichter.
+- [Frontend/UI] Ergänzt den Reiter Zähler in der Systemansicht mit Anlegen, Bearbeiten und Löschen der Metadaten aus 2.10.0; ohne ihn waren die Felder nur über die API erreichbar.
+- [Frontend/UI] Ergänzt eine Live-Vorschau der Empfehlung im Zählerdialog, die schon beim Eintippen der Bauart reagiert.
+- [Frontend/UI] Ergänzt ein Eichfrist-Badge je Zähler mit den Stufen gültig, endet demnächst und abgelaufen.
+
+### Changed
+
+- [Frontend/style.css] Kennzeichnet den Sicherheitsgrad einer Empfehlung über die linke Kante statt über Farbflächen, damit die Abstufung in allen Paletten und im Hochkontrast-Theme lesbar bleibt.
+
+---
+
 ## [2.10.1] - 2026-07-18
 
 ### Fixed
@@ -253,7 +269,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.1...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.1...v2.10.0
 [2.9.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.0...v2.9.1

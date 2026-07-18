@@ -860,3 +860,43 @@ html { scrollbar-gutter: stable; }
   .modal-foot.has-danger .holdbtn { width: 100%; margin-top: 4px; }
   .modal-foot.has-danger > .btn { flex: 1 1 auto; }
 }
+
+/* ---------- Zähler-Karten + Hardware-Empfehlung ---------- */
+.meter-card { padding: 18px 20px; margin-bottom: 14px; }
+.meter-card.removed { opacity: .62; }
+.meter-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.m-title { font-size: 16px; line-height: 24px; font-weight: 500; }
+.m-sub { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 3px;
+  font-size: 12px; letter-spacing: .4px; color: var(--md-on-surface-variant); }
+.m-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+
+.hw-block { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--md-outline-variant); }
+.hw-preview { margin: 4px 0 18px; padding: 12px 14px; border-radius: 16px;
+  background: var(--md-surface-c-low); border: 1px solid var(--md-outline-variant); }
+.hw-head { font-size: 11px; line-height: 16px; font-weight: 500; letter-spacing: .5px;
+  text-transform: uppercase; color: var(--md-on-surface-variant); margin-bottom: 10px; }
+
+.hw-item { padding: 12px 14px; border-radius: 14px; margin-bottom: 10px;
+  background: var(--md-surface-c); border-left: 3px solid var(--md-outline-variant); }
+.hw-item:last-child { margin-bottom: 0; }
+/* Sicherheitsgrad ueber die Kante statt ueber Farbflaechen -> bleibt in
+   allen Paletten und im Hochkontrast-Theme lesbar. */
+.hw-item.conf-sicher        { border-left-color: var(--md-primary); }
+.hw-item.conf-wahrscheinlich{ border-left-color: var(--md-warn); }
+.hw-item.conf-generisch     { border-left-color: var(--md-outline); opacity: .88; }
+
+.hw-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.hw-titel { font-size: 14px; font-weight: 500; line-height: 20px; }
+.hw-conf { font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--md-on-surface-variant); white-space: nowrap; }
+.hw-grund { font-size: 12px; letter-spacing: .4px; color: var(--md-on-surface-variant); margin-top: 2px; }
+.hw-list { margin: 8px 0 0; padding-left: 18px; font-size: 14px; line-height: 21px; }
+.hw-list li { margin-bottom: 3px; }
+.hw-hinweis { margin-top: 8px; font-size: 13px; line-height: 19px; color: var(--md-on-surface-variant); }
+.hw-disclaimer { margin-top: 12px; }
+.due-badge.ok { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+
+@media (max-width: 640px) {
+  .meter-head { flex-direction: column; }
+  .m-actions { width: 100%; }
+}
