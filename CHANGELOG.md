@@ -14,6 +14,25 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.7.0] - 2026-07-18
+
+### Added
+
+- [Frontend/style.css] Ergänzt die Farbpaletten Indigo und Ember als vollständige M3-Rollensätze für Hell- und Dunkelmodus; die Achse wird über `data-palette` am Wurzelelement gesteuert.
+- [Frontend/style.css] Ergänzt eine Hochkontrast-Stufe über `data-contrast="high"`: verstärkte Neutralrollen, sichtbare Konturen auf Flächen, 2 px Button-Rahmen; palettenunabhängig für beide Modi.
+- [Frontend/style.css] Ergänzt einen Fokusring über `:focus-visible` für alle bedienbaren Elemente (WCAG 2.4.11); zuvor existierte kein Fokusindikator.
+- [Frontend/UI] Ergänzt Palette- und Kontrastauswahl in den Einstellungen; beide Werte werden in `localStorage` gehalten (`zw_palette`, `zw_contrast`).
+- [Frontend/UI] Übernimmt die Systempräferenz `prefers-contrast: more`, solange der Nutzer keine eigene Kontraststufe gewählt hat.
+
+### Changed
+
+- [Frontend/app.js] Trennt das Theming in drei unabhängige Achsen (Modus, Palette, Kontrast) statt eines einzelnen Hell-/Dunkel-Schalters.
+- [Frontend/index.html] Erweitert das Pre-Paint-Skript um Palette und Kontrast, damit beim Laden keine Farbumschaltung sichtbar wird.
+- [Frontend/style.css] Ersetzt hartkodierte Farbwerte in `.nav-scrim` und `.toast.err` durch die Rollen `--md-scrim` und `--md-error-container`.
+- [Frontend/app.js] Bezieht die Ausreißerfarbe in Chart und Legende aus der neuen Rolle `--md-outlier` statt aus dem literalen Wert `#d9820a`.
+
+---
+
 ## [2.6.0] - 2026-07-18
 
 ### Added
@@ -150,7 +169,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.4.0...v2.5.0

@@ -30,6 +30,9 @@
   --md-warn:                 #9A6A00;
   --md-warn-container:       #FFE08D;
   --md-scrim:                rgba(0,0,0,.42);
+  --md-outlier:              #9A6A00;   /* Ausreisser-Markierung (Charts, Legende) */
+  --md-focus:                var(--md-primary);
+  --md-focus-width:          3px;
   --md-shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 1px 3px 1px rgba(0,0,0,.10);
   --md-shadow-2: 0 1px 2px rgba(0,0,0,.3), 0 2px 6px 2px rgba(0,0,0,.12);
   --md-shadow-3: 0 4px 8px 3px rgba(0,0,0,.13), 0 1px 3px rgba(0,0,0,.3);
@@ -91,10 +94,159 @@
   --md-warn:                 #F5BE48;
   --md-warn-container:       #745B00;
   --md-scrim:                rgba(0,0,0,.6);
+  --md-outlier:              #F5BE48;
   --counter-soft: #6f8a8c;
   --counter-label: #5f7d80;
   --ok: #52c584;
 }
+
+/* =========================================================================
+   Themes: Palette (data-palette) x Modus (data-theme) x Kontrast (data-contrast)
+   Die drei Achsen sind unabhaengig. Basis oben = Palette "teal" (Standard);
+   die Bloecke hier ueberschreiben nur die Farbrollen, nie Layout oder Typografie.
+   ========================================================================= */
+
+/* ---------- Palette: Indigo (Seed #4A5C92) ---------- */
+:root[data-palette="indigo"] {
+  --md-primary:              #4A5C92;
+  --md-on-primary:           #FFFFFF;
+  --md-primary-container:    #DAE2FF;
+  --md-on-primary-container: #00193D;
+  --md-secondary-container:  #DDE2F9;
+  --md-on-secondary-container:#151B2C;
+  --md-surface:              #FAF8FF;
+  --md-surface-dim:          #DAD9E0;
+  --md-surface-c-lowest:     #FFFFFF;
+  --md-surface-c-low:        #F4F3FA;
+  --md-surface-c:            #EEEDF4;
+  --md-surface-c-high:       #E8E7EF;
+  --md-surface-c-highest:    #E2E2E9;
+  --md-on-surface:           #1A1B21;
+  --md-on-surface-variant:   #44464F;
+  --md-outline:              #757780;
+  --md-outline-variant:      #C5C6D0;
+  --md-inverse-surface:      #2F3036;
+  --md-inverse-on-surface:   #F1F0F7;
+  --counter-soft: #9698A4; --counter-label: #7E808C;
+}
+:root[data-palette="indigo"][data-theme="dark"] {
+  --md-primary:              #B3C5FF;
+  --md-on-primary:           #15294F;
+  --md-primary-container:    #2E4377;
+  --md-on-primary-container: #DAE2FF;
+  --md-secondary-container:  #414659;
+  --md-on-secondary-container:#DDE2F9;
+  --md-surface:              #121317;
+  --md-surface-dim:          #121317;
+  --md-surface-c-lowest:     #0D0E12;
+  --md-surface-c-low:        #1A1B21;
+  --md-surface-c:            #1E1F25;
+  --md-surface-c-high:       #292A2F;
+  --md-surface-c-highest:    #34343A;
+  --md-on-surface:           #E3E1E9;
+  --md-on-surface-variant:   #C5C6D0;
+  --md-outline:              #8F909A;
+  --md-outline-variant:      #44464F;
+  --md-inverse-surface:      #E3E1E9;
+  --md-inverse-on-surface:   #2F3036;
+  --counter-soft: #74767F; --counter-label: #63656E;
+}
+
+/* ---------- Palette: Ember (Seed #984716) ---------- */
+:root[data-palette="ember"] {
+  --md-primary:              #984716;
+  --md-on-primary:           #FFFFFF;
+  --md-primary-container:    #FFDBC9;
+  --md-on-primary-container: #341100;
+  --md-secondary-container:  #FFDBC9;
+  --md-on-secondary-container:#2B160B;
+  --md-surface:              #FFF8F6;
+  --md-surface-dim:          #E8D7CF;
+  --md-surface-c-lowest:     #FFFFFF;
+  --md-surface-c-low:        #FFF1EB;
+  --md-surface-c:            #FCEAE2;
+  --md-surface-c-high:       #F6E4DD;
+  --md-surface-c-highest:    #F0DED7;
+  --md-on-surface:           #221A16;
+  --md-on-surface-variant:   #52443D;
+  --md-outline:              #85736B;
+  --md-outline-variant:      #D7C2BA;
+  --md-inverse-surface:      #382E2A;
+  --md-inverse-on-surface:   #FFEDE6;
+  --counter-soft: #A08D85; --counter-label: #8A7770;
+}
+:root[data-palette="ember"][data-theme="dark"] {
+  --md-primary:              #FFB68E;
+  --md-on-primary:           #522300;
+  --md-primary-container:    #743500;
+  --md-on-primary-container: #FFDBC9;
+  --md-secondary-container:  #5B4034;
+  --md-on-secondary-container:#FFDBC9;
+  --md-surface:              #1A120E;
+  --md-surface-dim:          #1A120E;
+  --md-surface-c-lowest:     #140C09;
+  --md-surface-c-low:        #221A16;
+  --md-surface-c:            #271E1A;
+  --md-surface-c-high:       #322824;
+  --md-surface-c-highest:    #3D332E;
+  --md-on-surface:           #F0DED7;
+  --md-on-surface-variant:   #D7C2BA;
+  --md-outline:              #A08D85;
+  --md-outline-variant:      #52443D;
+  --md-inverse-surface:      #F0DED7;
+  --md-inverse-on-surface:   #382E2A;
+  --counter-soft: #8A7770; --counter-label: #75635C;
+}
+
+/* ---------- Kontraststufe: hoch (palettenunabhaengig) ----------
+   Ueberschreibt gezielt die Neutralrollen und Trennlinien, damit jede
+   Palette in der Hochkontrast-Variante WCAG-AAA-Textkontrast erreicht.   */
+:root[data-contrast="high"] {
+  --md-surface:              #FFFFFF;
+  --md-surface-c-lowest:     #FFFFFF;
+  --md-surface-c-low:        #F2F2F2;
+  --md-surface-c:            #EBEBEB;
+  --md-surface-c-high:       #E0E0E0;
+  --md-surface-c-highest:    #D4D4D4;
+  --md-on-surface:           #000000;
+  --md-on-surface-variant:   #1E1E1E;
+  --md-outline:              #1B1B1B;
+  --md-outline-variant:      #4A4A4A;
+  --md-error:                #8C0009;
+  --md-scrim:                rgba(0,0,0,.62);
+  --md-focus-width:          3px;
+  --chart-grid:              #9A9A9A;
+}
+:root[data-contrast="high"][data-theme="dark"] {
+  --md-surface:              #000000;
+  --md-surface-c-lowest:     #000000;
+  --md-surface-c-low:        #0D0D0D;
+  --md-surface-c:            #161616;
+  --md-surface-c-high:       #242424;
+  --md-surface-c-highest:    #333333;
+  --md-on-surface:           #FFFFFF;
+  --md-on-surface-variant:   #EDEDED;
+  --md-outline:              #D5D5D5;
+  --md-outline-variant:      #A0A0A0;
+  --md-error:                #FFD2CC;
+  --md-scrim:                rgba(0,0,0,.78);
+  --chart-grid:              #7A7A7A;
+}
+/* Hochkontrast: Flaechen brauchen sichtbare Kanten statt nur Tonwertunterschiede */
+:root[data-contrast="high"] .tile,
+:root[data-contrast="high"] .card,
+:root[data-contrast="high"] .modal,
+:root[data-contrast="high"] .nav-rail,
+:root[data-contrast="high"] .nav-bottom { border: 1px solid var(--md-outline); }
+:root[data-contrast="high"] .btn { border-width: 2px; }
+
+/* ---------- Fokus-Indikator (M3 Focus Ring, WCAG 2.4.11) ---------- */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: var(--md-focus-width) solid var(--md-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.nav-item:focus-visible { outline-offset: -2px; }
 
 /* ---------- Basis + M3 Type-Scale ---------- */
 * { box-sizing: border-box; }
@@ -189,7 +341,7 @@ body.nav-expanded { --rail-w: 264px; }
 
 /* --- Scrim hinter dem mobilen Drawer --- */
 .nav-scrim {
-  position: fixed; inset: 0; z-index: 29; background: rgba(0,0,0,.4);
+  position: fixed; inset: 0; z-index: 29; background: var(--md-scrim);
   animation: scrim-in var(--dur-short) var(--ease-standard);
 }
 @keyframes scrim-in { from { opacity: 0 } to { opacity: 1 } }
@@ -492,12 +644,13 @@ td.r { text-align: right; }
   background: var(--md-inverse-surface); color: var(--md-inverse-on-surface);
   animation: dlg-in var(--dur-med) var(--ease-emph-decel); }
 .toast.err { background: var(--md-error-container); color: var(--md-on-surface); }
-:root[data-theme="dark"] .toast.err { color: #ffdad6; }
+:root[data-theme="dark"] .toast.err { color: var(--md-error-container); }
 .empty { text-align: center; padding: 56px 20px; color: var(--md-on-surface-variant); }
 .empty h3 { color: var(--md-on-surface); margin: 0 0 6px; font-weight: 500; }
 .spin { display: inline-block; width: 18px; height: 18px; border: 2.5px solid var(--md-surface-c-highest); border-top-color: var(--md-primary); border-radius: 50%; animation: sp .8s linear infinite; }
 @keyframes sp { to { transform: rotate(360deg); } }
 .center-load { display: flex; justify-content: center; padding: 60px; }
+.theme-opt .pal-dot { width: 18px; height: 18px; border-radius: 50%; display: inline-block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
 .crumb { background: none; border: none; color: var(--md-on-surface-variant); font-size: 14px; cursor: pointer; font-family: var(--sans); }
 
 /* ---------- Responsive: Rail/Drawer vs. Bottom-Bar ---------- */

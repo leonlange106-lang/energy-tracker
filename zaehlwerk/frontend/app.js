@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.6.0";
+const APP_VERSION = "2.7.0";
 const APP_CHANGELOG = [
+  { v: "2.7.0", d: "18.07.2026", items: [
+    "Wählbare Farbpaletten: Teal, Indigo, Ember – unabhängig vom Hell-/Dunkel-Modus",
+    "Hochkontrast-Theme (WCAG AAA) für beide Modi und alle Paletten",
+    "Sichtbarer Fokusring auf allen bedienbaren Elementen",
+    "Systempräferenz „prefers-contrast\" wird automatisch übernommen",
+  ]},
   { v: "2.6.0", d: "18.07.2026", items: [
     "Einklappbare Navigations-Sidebar (Rail 80px ↔ Drawer 264px), Zustand bleibt gespeichert",
     "Mobile: Sidebar als modaler Drawer mit Scrim über den Menü-Button in der Top-App-Bar",
@@ -43,20 +49,55 @@ const APP_CHANGELOG = [
 ];
 
 /* ---------- Theme (Light/Dark, System-follow + manuell) ---------- */
-const themeStore = reactive({ mode: localStorage.getItem("zw_theme") || "auto", dark: false });
+/* Drei unabhaengige Achsen: Modus (hell/dunkel/auto), Palette, Kontrast.
+   Alle drei werden als data-Attribute am <html> gesetzt; das CSS kombiniert sie. */
+const PALETTES = [
+  { key: "teal",   label: "Teal",   swatch: "#00696F" },
+  { key: "indigo", label: "Indigo", swatch: "#4A5C92" },
+  { key: "ember",  label: "Ember",  swatch: "#984716" },
+];
+const CONTRASTS = [
+  { key: "standard", label: "Standard" },
+  { key: "high",     label: "Hoher Kontrast" },
+];
+const themeStore = reactive({
+  mode:     localStorage.getItem("zw_theme") || "auto",
+  palette:  localStorage.getItem("zw_palette") || "teal",
+  contrast: localStorage.getItem("zw_contrast") || "standard",
+  dark: false,
+});
 function applyTheme() {
   const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const sysContrast = window.matchMedia("(prefers-contrast: more)").matches;
   themeStore.dark = themeStore.mode === "dark" || (themeStore.mode === "auto" && sysDark);
-  document.documentElement.setAttribute("data-theme", themeStore.dark ? "dark" : "light");
+  const el = document.documentElement;
+  el.setAttribute("data-theme", themeStore.dark ? "dark" : "light");
+  el.setAttribute("data-palette", themeStore.palette);
+  // Systemweite Kontrastpraeferenz gewinnt, wenn der Nutzer nichts Eigenes gewaehlt hat
+  el.setAttribute("data-contrast",
+    themeStore.contrast === "standard" && sysContrast ? "high" : themeStore.contrast);
 }
 function setTheme(mode) {
   themeStore.mode = mode;
   localStorage.setItem("zw_theme", mode);
   applyTheme();
 }
+function setPalette(key) {
+  themeStore.palette = key;
+  localStorage.setItem("zw_palette", key);
+  applyTheme();
+}
+function setContrast(key) {
+  themeStore.contrast = key;
+  localStorage.setItem("zw_contrast", key);
+  applyTheme();
+}
 applyTheme();
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   if (themeStore.mode === "auto") applyTheme();
+});
+window.matchMedia("(prefers-contrast: more)").addEventListener("change", () => {
+  if (themeStore.contrast === "standard") applyTheme();
 });
 // aktuelle Theme-Farbe aus CSS lesen (für Chart.js)
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -364,7 +405,7 @@ const SystemDetail = {
       const pm = toMap(this.chartData);
       const idxOf = (l) => this.chartData.labels.indexOf(l);
       const primData = labels.map((l) => (l in pm ? pm[l] : null));
-      const ptColor = labels.map((l) => { const i = idxOf(l); return i >= 0 && this.chartData.outliers[i] ? "#d9820a" : this.chartData.color; });
+      const ptColor = labels.map((l) => { const i = idxOf(l); return i >= 0 && this.chartData.outliers[i] ? (cssVar("--md-outlier") || "#9A6A00") : this.chartData.color; });
       const ptRad = labels.map((l) => { const i = idxOf(l); return i >= 0 && this.chartData.outliers[i] ? 5 : this.chartType === "bar" ? 0 : 2; });
 
       // E: im Zählerstand-Modus die Linie an Zählertausch-Punkten trennen (Segmente je Zähler)
@@ -873,7 +914,7 @@ const SystemDetail = {
         <energy-chart :labels="chart.labels" :datasets="chart.datasets" :chart-type="chartType" :has-y2="chart.hasY2" :y2-label="chart.y2Label" />
         <div class="legend-hint">
           <span><span class="dot" :style="{background: chartData ? chartData.color : '#0e7c86'}"></span>{{ modeLabel }}</span>
-          <span><span class="dot" style="background:#d9820a"></span>Ausreißer (Ø + 2σ)</span>
+          <span><span class="dot" style="background:var(--md-outlier)"></span>Ausreißer (Ø + 2σ)</span>
         </div>
       </div>
     </div>
@@ -1044,6 +1085,8 @@ createApp({
     busy: false,
     toast: null,
     palette: PALETTE,
+    palettes: PALETTES,
+    contrasts: CONTRASTS,
     types: SYSTEM_TYPES,
     latest: {},                // system_id -> { value, datum }
     showSettings: false,
@@ -1060,6 +1103,8 @@ createApp({
     selectedSystem() { return this.systems.find((s) => s.id === this.selected) || null; },
     formExtra() { return this.sysForm ? [...(EXTRA_FIELDS[this.sysForm.typ] || []), ...COMMON_FIELDS] : []; },
     themeMode() { return themeStore.mode; },
+    themePalette() { return themeStore.palette; },
+    themeContrast() { return themeStore.contrast; },
     /* aktiver Navigationspunkt (Einstellungen als Modal hat Vorrang vor der Ansicht) */
     activeNav() { return this.showSettings ? "einstellungen" : "zaehlwerk"; },
     navMenuIcon() { return SVG.menu; },
@@ -1112,6 +1157,8 @@ createApp({
         .catch((e) => this.notify("PDF fehlgeschlagen: " + e.message, "err"));
     },
     pickTheme(mode) { setTheme(mode); },
+    pickPalette(key) { setPalette(key); },
+    pickContrast(key) { setContrast(key); },
     fabAction() {
       if (this.view === 'detail' && this.$refs.detail) this.$refs.detail.openReading();
       else this.newSystem();
@@ -1334,6 +1381,25 @@ createApp({
             <button class="theme-opt" :class="{sel: themeMode==='dark'}" @click="pickTheme('dark')"><span class="ic">🌙</span> Dunkel</button>
           </div>
           <div class="hint">„Automatisch" folgt der System-Einstellung deines Geräts.</div>
+        </div>
+        <div class="field">
+          <label>Farbpalette</label>
+          <div class="theme-opts">
+            <button v-for="p in palettes" :key="p.key" class="theme-opt"
+                    :class="{sel: themePalette===p.key}" @click="pickPalette(p.key)">
+              <span class="ic pal-dot" :style="{background: p.swatch}"></span> {{ p.label }}
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Kontrast</label>
+          <div class="theme-opts">
+            <button v-for="c in contrasts" :key="c.key" class="theme-opt"
+                    :class="{sel: themeContrast===c.key}" @click="pickContrast(c.key)">
+              <span class="ic">{{ c.key==='high' ? '◐' : '◔' }}</span> {{ c.label }}
+            </button>
+          </div>
+          <div class="hint">„Hoher Kontrast" verstärkt Text, Konturen und Fokusringe. Meldet dein System bereits eine Kontrastpräferenz, greift sie automatisch.</div>
         </div>
       </div>
       <div class="modal-foot" style="justify-content:space-between;align-items:center">
