@@ -1,5 +1,5 @@
 name: "Zählwerk"
-version: "2.14.0"
+version: "2.15.0"
 slug: "zaehlwerk"
 description: "Verbrauchs- & Zählerstands-Tracking (Strom, Gas, Wasser, PV). Standalone, nur SQLite."
 url: "https://github.com/leonlange106-lang/energy-tracker"

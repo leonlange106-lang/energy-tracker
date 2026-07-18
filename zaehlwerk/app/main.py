@@ -11,7 +11,7 @@ from . import backup as backup_mod, notifier, outbound
 from .routers import (backups, external, ha, imports, meters, readings,
                       settings as settings_router, systems)
 
-app = FastAPI(title="Zählwerk API", version="2.14.0")
+app = FastAPI(title="Zählwerk API", version="2.15.0")
 
 app.add_middleware(
     CORSMiddleware,

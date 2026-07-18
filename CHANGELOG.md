@@ -14,6 +14,27 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.15.0] - 2026-07-18
+
+### Added
+
+- [Frontend/Sidebar] Ergänzt eine aufklappbare Unterliste am Eintrag Zählwerk nach Material-3-Muster. Sie führt alle aktiven Systeme mit Farbpunkt, Name und Einheit auf und springt per Klick direkt in die Detailansicht.
+- [Frontend/Sidebar] Trennt Navigation und Aufklappen in zwei Schaltflächen: der Eintrag selbst führt weiterhin zur Übersicht, der Pfeil daneben öffnet und schließt die Unterliste.
+- [Frontend/Sidebar] Hebt das gerade geöffnete System in der Unterliste hervor und klappt sie beim Einsprung aus der Übersicht automatisch auf.
+- [Frontend/Sidebar] Merkt sich den Auf- und Zuklappzustand in `localStorage` unter `zw_nav_sub`.
+- [Frontend/Sidebar] Ergänzt Beschriftungen für Screenreader über `aria-expanded`, `aria-controls` und `role="group"`.
+
+### Changed
+
+- [Frontend/Sidebar] Blendet die Unterliste im eingeklappten Rail-Zustand aus, da dort keine Textbeschriftungen dargestellt werden; der gespeicherte Zustand bleibt erhalten.
+- [Frontend/Sidebar] Begrenzt die Höhe der Unterliste auf 46 Prozent der Fensterhöhe mit eigenem Bildlauf, damit Bericht, Einstellungen und Admin-Tools auch bei vielen Systemen erreichbar bleiben.
+
+### Fixed
+
+- [Frontend/UI] Zieht die Beschriftung der Plus-Schaltfläche in der Sidebar auf `fabLabel` nach; die Umstellung aus 2.12.2 hatte diese Stelle übersehen, sodass dort weiterhin „Wert" stand, während der Zähler-Tab aktiv war.
+
+---
+
 ## [2.14.0] - 2026-07-18
 
 ### Added
@@ -359,7 +380,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.14.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.15.0...HEAD
+[2.15.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.2...v2.13.0
 [2.12.2]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.1...v2.12.2

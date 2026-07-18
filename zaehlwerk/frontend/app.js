@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.14.0";
+const APP_VERSION = "2.15.0";
 const APP_CHANGELOG = [
+  { v: "2.15.0", d: "18.07.2026", items: [
+    "Sidebar: „Zählwerk\" lässt sich aufklappen und listet alle aktiven Systeme",
+    "Direkter Sprung in ein System aus der Sidebar, aktives System hervorgehoben",
+    "Pfeil klappt auf, der Eintrag selbst führt weiterhin zur Übersicht",
+  ]},
   { v: "2.14.0", d: "18.07.2026", items: [
     "Tägliche automatische Sicherung der Datenbank nach /backup",
     "Konsistent trotz laufender Schreibzugriffe (SQLite Online-Backup + Integritätsprüfung)",
@@ -268,10 +273,11 @@ const SVG = {
   report: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3 3 3-3"/></svg>',
   cog:    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   admin:  '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-2.9 8.2-7 10-4.1-1.8-7-5.6-7-10V6z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
   menu:   '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>',
 };
 const NAV_ITEMS = [
-  { key: "zaehlwerk",    label: "Zählwerk",     icon: SVG.home,   action: "back",                primary: true },
+  { key: "zaehlwerk",    label: "Zählwerk",     icon: SVG.home,   action: "back",                primary: true, expandable: true },
   { key: "bericht",      label: "Bericht",      icon: SVG.report, action: "openCombinedReport",  primary: true, needsSystems: true },
   { key: "einstellungen",label: "Einstellungen",icon: SVG.cog,    action: "openSettings",        primary: true },
   { key: "admin",        label: "Admin-Tools",  icon: SVG.admin,  action: null, disabled: true, badge: "bald" },
@@ -1622,6 +1628,7 @@ createApp({
     navExpanded: localStorage.getItem("zw_nav_expanded") === "1",
     navDrawer: false,
     navItems: NAV_ITEMS,
+    navSubOpen: localStorage.getItem("zw_nav_sub") === "1",
   }),
   computed: {
     visibleSystems() { return this.systems.filter((s) => this.showArchived || s.aktiv); },
@@ -1633,6 +1640,11 @@ createApp({
     /* aktiver Navigationspunkt (Einstellungen als Modal hat Vorrang vor der Ansicht) */
     activeNav() { return this.view === "settings" ? "einstellungen" : "zaehlwerk"; },
     navMenuIcon() { return SVG.menu; },
+    chevronIcon() { return SVG.chevron; },
+    /* Unterpunkte = aktive Systeme in der Reihenfolge der Übersicht.
+       Archivierte bleiben draußen: die Sidebar ist ein Sprungziel für den
+       Alltag, nicht der Ort, an dem Altbestand verwaltet wird. */
+    navSubItems() { return this.systems.filter((s) => s.aktiv); },
     fabLabel() {
       if (this.view === "menu") return "System";
       const d = this.$refs.detail;
@@ -1663,9 +1675,19 @@ createApp({
       if (this.isCompact()) return;
       this.navExpanded = !this.navExpanded;
       localStorage.setItem("zw_nav_expanded", this.navExpanded ? "1" : "0");
+      // navSubOpen bleibt gespeichert: klappt die Rail wieder auf, steht die
+      // Unterliste so, wie der Nutzer sie zuletzt verlassen hat.
       this.applyNavClass();
     },
     closeDrawer() { this.navDrawer = false; },
+    toggleNavSub() {
+      this.navSubOpen = !this.navSubOpen;
+      localStorage.setItem("zw_nav_sub", this.navSubOpen ? "1" : "0");
+    },
+    goSystem(s) {
+      this.closeDrawer();
+      this.open(s);
+    },
     onNavKey(ev) { if (ev.key === "Escape" && this.navDrawer) this.navDrawer = false; },
     /* Beim Wechsel auf einen schmalen Viewport darf kein Drawer offen bleiben,
        sonst laege er unsichtbar ueber der Bottom-Bar und blockierte Klicks. */
@@ -1689,7 +1711,13 @@ createApp({
       } catch (e) { this.notify(e.message, "err"); }
       finally { this.loading = false; }
     },
-    open(s) { this.selected = s.id; this.view = "detail"; window.scrollTo(0, 0); },
+    open(s) {
+      this.selected = s.id;
+      this.view = "detail";
+      // Kontext zeigen: wer in ein System springt, sieht in der Sidebar, wo er ist
+      if (this.navExpanded && !this.navSubOpen) this.toggleNavSub();
+      window.scrollTo(0, 0);
+    },
     back() { this.view = "menu"; this.selected = null; this.load(); },
     exportAll() {
       fetchBlobDownload("api/export.zip", "zaehlwerk-backup.zip")
@@ -1985,19 +2013,41 @@ createApp({
 
   <!-- Sidebar: Navigation Rail (Desktop) / modaler Drawer (Mobile) -->
   <nav id="zw-nav" class="nav-rail" :class="{ expanded: navExpanded, drawer: navDrawer }" aria-label="Hauptnavigation">
-    <button class="fab rail-fab" @click="fabAction" :title="view==='menu' ? 'System anlegen' : 'Neuer Wert'">
-      <span class="fab-plus">＋</span><span class="fab-text">{{ view==='menu' ? 'System' : 'Wert' }}</span>
+    <button class="fab rail-fab" @click="fabAction" :title="'Neu: ' + fabLabel">
+      <span class="fab-plus">＋</span><span class="fab-text">{{ fabLabel }}</span>
     </button>
-    <button v-for="it in visibleNavItems" :key="it.key"
-            class="nav-item"
-            :class="{ active: activeNav===it.key, disabled: it.disabled }"
-            :disabled="it.disabled"
-            :title="it.disabled ? it.label + ' (noch nicht verfügbar)' : it.label"
-            @click="goNav(it)">
-      <span class="nav-pill" v-html="it.icon"></span>
-      <span class="nav-label">{{ it.label }}</span>
-      <span v-if="it.badge" class="nav-badge">{{ it.badge }}</span>
-    </button>
+    <template v-for="it in visibleNavItems" :key="it.key">
+      <div class="nav-row">
+        <button class="nav-item"
+                :class="{ active: activeNav===it.key, disabled: it.disabled }"
+                :disabled="it.disabled"
+                :title="it.disabled ? it.label + ' (noch nicht verfügbar)' : it.label"
+                @click="goNav(it)">
+          <span class="nav-pill" v-html="it.icon"></span>
+          <span class="nav-label">{{ it.label }}</span>
+          <span v-if="it.badge" class="nav-badge">{{ it.badge }}</span>
+        </button>
+        <!-- Getrennte Schaltfläche: der Pfeil klappt auf, der Eintrag navigiert.
+             M3 trennt diese beiden Aktionen bewusst - ein Klick auf den Eintrag
+             darf nie nur ein Menü öffnen, wenn er auch ein Ziel hat. -->
+        <button v-if="it.expandable && navExpanded && navSubItems.length"
+                class="nav-expander" :class="{ open: navSubOpen }"
+                :aria-expanded="String(navSubOpen)" :aria-controls="'zw-sub-' + it.key"
+                :title="navSubOpen ? 'Systeme einklappen' : 'Systeme aufklappen'"
+                @click.stop="toggleNavSub" v-html="chevronIcon"></button>
+      </div>
+
+      <div v-if="it.expandable && navExpanded && navSubOpen" class="nav-sub"
+           :id="'zw-sub-' + it.key" role="group" :aria-label="it.label + ' – Systeme'">
+        <button v-for="s in navSubItems" :key="s.id"
+                class="nav-subitem" :class="{ active: view==='detail' && selected===s.id }"
+                :title="s.name" @click="goSystem(s)">
+          <span class="dot" :style="{background: s.farbe}"></span>
+          <span class="ns-label">{{ s.name }}</span>
+          <span class="ns-unit">{{ s.einheit }}</span>
+        </button>
+      </div>
+    </template>
     <div class="nav-foot">v{{ appVersion }}</div>
   </nav>
   <div class="nav-scrim" v-if="navDrawer" @click="closeDrawer"></div>
