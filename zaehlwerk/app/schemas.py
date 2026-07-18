@@ -116,7 +116,8 @@ class AppSettingsRead(BaseModel):
     mqtt_host: str = ""
     mqtt_port: int = 1883
     mqtt_username: str = ""
-    mqtt_base_topic: str = "zaehlwerk"
+    mqtt_base_topic: str = "tele"
+    mqtt_tasmota_discovery: bool = False
     # Kein Passwortfeld: der Server gibt nur bekannt, ob eines hinterlegt ist.
     mqtt_password_set: bool = False
     notify_enabled: bool
@@ -154,6 +155,7 @@ class AppSettingsUpdate(BaseModel):
     mqtt_username: Optional[str] = Field(None, max_length=120)
     mqtt_password: Optional[str] = Field(None, max_length=256)
     mqtt_base_topic: Optional[str] = Field(None, max_length=120)
+    mqtt_tasmota_discovery: Optional[bool] = None
 
     @field_validator("outlier_sigma")
     @classmethod
@@ -360,3 +362,9 @@ class TariffPlanRead(TariffPlanBase):
     system_id: str
     erstellt_am: datetime
     aktiv: bool = False        # Periode umfasst das heutige Datum
+
+
+class MqttAssign(BaseModel):
+    """Zuordnung eines erkannten Topics zu einem System."""
+    system_id: str
+    topic: str = Field(..., max_length=200, pattern=r"^[^#+\s]+$")

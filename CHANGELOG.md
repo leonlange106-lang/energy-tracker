@@ -14,6 +14,30 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.18.0] - 2026-07-18
+
+### Added
+
+- [Backend/MQTT] Ergänzt einen nativen Tasmota-Parser. Er liest `ENERGY.Total`, `ENERGY.Total_In` und `COUNTER.C1` bis `C4` unmittelbar aus der Telemetrie, sodass kein JSON-Pfad von Hand hinterlegt werden muss. Die in `StatusSNS` verpackte Variante wird ebenfalls erkannt.
+- [Backend/MQTT] Gibt dem Tasmota-Parser Vorrang vor der allgemeinen Schlüsselsuche; bei einem Gerät ohne Zählerstand, aber mit anderen Zahlenfeldern hätte diese sonst den falschen Wert übernommen.
+- [Backend/MQTT] Ergänzt eine Auto-Discovery über `tele/+/SENSOR` und `tele/+/LWT`. Erkannte Geräte werden mit Topic, letztem Wert, ausgelesenem Pfad, Einheit und Momentanleistung geführt; gespeichert wird erst nach ausdrücklicher Zuordnung zu einem System.
+- [Backend/MQTT] Wertet das LWT-Topic für die Online- und Offline-Anzeige je Gerät aus. Da Tasmota diese Nachricht mit Retain-Flag veröffentlicht, liegt der Zustand direkt nach dem Abonnieren vor, auch für Geräte, die gerade nicht senden.
+- [Backend/routers/mqtt.py] Ergänzt `GET /api/mqtt/devices`, `POST /api/mqtt/devices/forget` und `POST /api/mqtt/assign`.
+- [Backend/routers/settings.py] Ergänzt den Parameter `mqtt_tasmota_discovery` sowie das anpassbare Telemetrie-Präfix.
+- [Frontend/UI] Ergänzt den Schalter Tasmota Auto-Discovery, die Geräteliste mit Zustandsanzeige und die Zuordnung eines Geräts zu einem System in einem Schritt.
+
+### Changed
+
+- [Backend/MQTT] Setzt den Standard des Basis-Topics von `zaehlwerk` auf `tele`, den Telemetrie-Präfix von Tasmota.
+- [Frontend/style.css] Stellt den Verbindungszustand über gefüllten Punkt, Ring und Umriss dar statt allein über die Farbe, damit die Unterscheidung im Hochkontrast-Theme und bei Farbfehlsichtigkeit erhalten bleibt.
+
+### Security
+
+- [Backend/routers/mqtt.py] Weist die Zuordnung eines Topics ab, das bereits an einem anderen System hängt; derselbe Messwert würde sonst in zwei Zählwerke laufen.
+- [Backend/schemas.py] Prüft das zuzuordnende Topic gegen ein Muster ohne Platzhalterzeichen und Leerraum, damit über die Zuordnung kein Wildcard-Abonnement entsteht.
+
+---
+
 ## [2.17.0] - 2026-07-18
 
 ### Added
@@ -433,7 +457,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.17.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.18.0...HEAD
+[2.18.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.17.0...v2.18.0
 [2.17.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.16.0...v2.17.0
 [2.16.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.14.0...v2.15.0

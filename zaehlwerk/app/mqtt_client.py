@@ -23,6 +23,7 @@ wird dagegen blockiert, solange der Offline-Modus aktiv ist.
 import json
 import logging
 import os
+import re
 import threading
 import urllib.request
 from collections import deque
@@ -40,6 +41,12 @@ log = logging.getLogger("zaehlwerk.mqtt")
 # damit man beim Einrichten sieht, ob und was ankommt.
 EVENTS: deque = deque(maxlen=60)
 
+# Auto-Discovery: erkannte Tasmota-Geräte. Schlüssel = Gerätename aus dem
+# Topic (tele/<gerät>/SENSOR). Bewusst nur im Arbeitsspeicher – die Liste ist
+# eine Einrichtungshilfe, kein Bestand, und baut sich nach einem Neustart
+# binnen eines Telemetrie-Intervalls (Standard 300 s) von selbst wieder auf.
+DISCOVERED: dict[str, dict] = {}
+
 _client = None
 _lock = threading.Lock()
 _state: dict[str, Any] = {
@@ -50,6 +57,8 @@ _state: dict[str, Any] = {
     "subscriptions": [],
     "messages": 0,
     "written": 0,
+    "discovery": False,
+    "discovery_prefix": "tele",
 }
 
 # Übliche Schlüssel in JSON-Nutzlasten, Reihenfolge = Priorität. Der Vergleich
@@ -57,6 +66,121 @@ _state: dict[str, Any] = {
 # {"ENERGY":{"Total":…}}, ESPHome {"value":…}, Shelly {"total":…}.
 JSON_KEYS = ["value", "total", "total_kwh", "total_in", "energy", "state",
              "reading", "counter", "consumption", "volume", "meter_reading"]
+
+
+# --------------------------------------------------------------------------
+# Tasmota
+# --------------------------------------------------------------------------
+# Tasmota veröffentlicht unter tele/<gerät>/SENSOR ein JSON-Objekt, dessen
+# Aufbau vom angeschlossenen Sensor abhängt. Für Zählwerk sind drei Zweige
+# relevant:
+#   ENERGY.Total      Stromzähler bzw. SML-Lesekopf (Hichi), Einheit kWh
+#   ENERGY.Total_In   Zweirichtungszähler, Bezug
+#   COUNTER.C1..C4    Impulseingänge – Reed-Kontakt am Gas- oder Wasserzähler
+# Die Reihenfolge ist die Priorität: ein Gerät mit ENERGY liefert dort den
+# Zählerstand, COUNTER wäre dann nur ein Nebenwert.
+TASMOTA_PATHS = [
+    (("energy", "total"),     "kWh",     "Stromzähler / SML-Lesekopf"),
+    (("energy", "total_in"),  "kWh",     "Zweirichtungszähler (Bezug)"),
+    (("counter", "c1"),       "Impulse", "Impulseingang C1"),
+    (("counter", "c2"),       "Impulse", "Impulseingang C2"),
+]
+
+TASMOTA_SENSOR_RE = re.compile(r"^(?P<prefix>[^/]+)/(?P<device>[^/]+)/SENSOR$")
+TASMOTA_LWT_RE = re.compile(r"^(?P<prefix>[^/]+)/(?P<device>[^/]+)/LWT$")
+
+
+def _get_ci(obj: dict, key: str):
+    """Schlüsselzugriff ohne Rücksicht auf Groß-/Kleinschreibung."""
+    if not isinstance(obj, dict):
+        return None
+    for k, v in obj.items():
+        if str(k).lower() == key:
+            return v
+    return None
+
+
+def parse_tasmota(payload: str) -> Optional[dict]:
+    """Tasmota-Nutzlast auswerten.
+
+    Liefert {"value", "path", "unit", "kind", "extra"} oder None, wenn es sich
+    nicht um eine Tasmota-Telemetrie mit verwertbarem Zählerstand handelt.
+    `extra` enthält Momentanwerte wie Power – nicht zum Speichern, sondern zur
+    Anzeige in der Geräteliste.
+    """
+    try:
+        data = json.loads(payload)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    # StatusSNS umschließt bei manchen Abfragen dieselbe Struktur
+    inner = _get_ci(data, "statussns")
+    if isinstance(inner, dict):
+        data = inner
+
+    for path, unit, kind in TASMOTA_PATHS:
+        node = data
+        for part in path:
+            node = _get_ci(node, part)
+            if node is None:
+                break
+        if node is None:
+            continue
+        try:
+            value = float(str(node).replace(",", "."))
+        except (ValueError, TypeError):
+            continue
+        energy = _get_ci(data, "energy") or {}
+        return {
+            "value": value,
+            "path": ".".join(p.upper() for p in path),
+            "unit": unit,
+            "kind": kind,
+            "extra": {
+                "power": _get_ci(energy, "power"),
+                "today": _get_ci(energy, "today"),
+                "time": _get_ci(data, "time"),
+            },
+        }
+    return None
+
+
+def _remember_device(topic: str, payload: str) -> None:
+    """Gerät aus einer Discovery-Nachricht in die Liste aufnehmen."""
+    match = TASMOTA_SENSOR_RE.match(topic)
+    if not match:
+        return
+    parsed = parse_tasmota(payload)
+    device = match.group("device")
+    entry = DISCOVERED.setdefault(device, {"device": device, "topic": topic,
+                                           "online": None, "assigned": False})
+    entry.update({
+        "topic": topic,
+        "last_seen": datetime.now().isoformat(timespec="seconds"),
+        "value": parsed["value"] if parsed else None,
+        "path": parsed["path"] if parsed else None,
+        "unit": parsed["unit"] if parsed else None,
+        "kind": parsed["kind"] if parsed else "unbekannt",
+        "power": (parsed or {}).get("extra", {}).get("power"),
+        "usable": parsed is not None,
+    })
+
+
+def _remember_lwt(topic: str, payload: str) -> None:
+    """Last Will and Testament: Tasmota meldet hier Online bzw. Offline.
+    Das Retain-Flag sorgt dafür, dass der Zustand direkt beim Abonnieren
+    ankommt – auch für Geräte, die gerade nicht senden."""
+    match = TASMOTA_LWT_RE.match(topic)
+    if not match:
+        return
+    device = match.group("device")
+    entry = DISCOVERED.setdefault(device, {"device": device,
+                                           "topic": f"{match.group('prefix')}/{device}/SENSOR",
+                                           "usable": False, "assigned": False})
+    entry["online"] = str(payload).strip().lower() == "online"
+    entry["lwt_seen"] = datetime.now().isoformat(timespec="seconds")
 
 
 def _event(level: str, text: str, **extra) -> None:
@@ -172,7 +296,10 @@ def _topic_map(session: Session) -> dict[str, System]:
 
 def ingest(topic: str, payload: str) -> Optional[dict]:
     """Eine Nachricht verarbeiten. Gibt das Ergebnis zurück oder None."""
-    value = parse_payload(payload)
+    # Tasmota zuerst: die generische Suche würde bei einem Gerät ohne ENERGY,
+    # aber mit anderen Zahlenfeldern, den falschen Wert greifen.
+    tas = parse_tasmota(payload)
+    value = tas["value"] if tas else parse_payload(payload)
     if value is None:
         _event("warn", f"Nutzlast nicht auswertbar auf {topic}", topic=topic)
         return None
@@ -233,11 +360,30 @@ def _on_connect(client, userdata, flags, reason_code, properties=None):
         return
     _state["last_error"] = None
     with Session(engine) as session:
-        topics = list(_topic_map(session).keys())
-    _state["subscriptions"] = topics
+        mapped = _topic_map(session)
+    topics = list(mapped.keys())
     for topic in topics:
         client.subscribe(topic, qos=0)
-    _event("info", f"Verbunden, {len(topics)} Topic(s) abonniert")
+
+    # Discovery: Wildcards zusätzlich zu den zugeordneten Topics. Sie schreiben
+    # nichts in die Datenbank, sondern füllen nur die Geräteliste.
+    if _state.get("discovery"):
+        prefix = _state.get("discovery_prefix") or "tele"
+        for wildcard in (f"{prefix}/+/SENSOR", f"{prefix}/+/LWT"):
+            client.subscribe(wildcard, qos=0)
+            topics.append(wildcard)
+        _mark_assigned(mapped)
+    _state["subscriptions"] = topics
+    _event("info", f"Verbunden, {len(topics)} Abonnement(s)"
+                   + (" inkl. Tasmota-Discovery" if _state.get("discovery") else ""))
+
+
+def _mark_assigned(mapped: dict) -> None:
+    """Geräte kennzeichnen, deren Topic bereits einem System zugeordnet ist."""
+    for entry in DISCOVERED.values():
+        system = mapped.get(entry.get("topic"))
+        entry["assigned"] = bool(system)
+        entry["system"] = system.name if system else None
 
 
 def _on_disconnect(client, userdata, flags, reason_code=None, properties=None):
@@ -247,8 +393,16 @@ def _on_disconnect(client, userdata, flags, reason_code=None, properties=None):
 
 def _on_message(client, userdata, msg):
     _state["messages"] += 1
+    payload = msg.payload.decode("utf-8", errors="replace")
     try:
-        ingest(msg.topic, msg.payload.decode("utf-8", errors="replace"))
+        if _state.get("discovery"):
+            if TASMOTA_LWT_RE.match(msg.topic):
+                _remember_lwt(msg.topic, payload)
+                return                      # LWT enthält keinen Zählerstand
+            if TASMOTA_SENSOR_RE.match(msg.topic):
+                _remember_device(msg.topic, payload)
+        # Geschrieben wird nur, wenn das Topic einem System zugeordnet ist.
+        ingest(msg.topic, payload)
     except Exception as exc:  # noqa: BLE001
         _event("warn", f"Verarbeitung fehlgeschlagen: {exc}", topic=msg.topic)
 
@@ -279,7 +433,9 @@ def start(cfg: dict) -> dict:
         # Neuaufbau der Verbindung übernimmt paho selbst, mit wachsendem Abstand
         client.reconnect_delay_set(min_delay=1, max_delay=120)
         _state.update({"broker": f"{broker['host']}:{broker['port']}",
-                       "source": broker["source"], "last_error": None})
+                       "source": broker["source"], "last_error": None,
+                       "discovery": bool(cfg.get("mqtt_tasmota_discovery")),
+                       "discovery_prefix": (cfg.get("mqtt_base_topic") or "tele").strip("/")})
         try:
             client.connect_async(broker["host"], broker["port"], keepalive=60)
             client.loop_start()
@@ -310,8 +466,16 @@ def resubscribe() -> None:
 
 
 def status() -> dict:
+    devices = sorted(DISCOVERED.values(),
+                     key=lambda d: (not d.get("usable"), d.get("device", "")))
     return {**_state, "available": _paho_available(),
-            "events": list(EVENTS)[:25]}
+            "events": list(EVENTS)[:25], "devices": devices}
+
+
+def forget_devices() -> int:
+    n = len(DISCOVERED)
+    DISCOVERED.clear()
+    return n
 
 
 def _paho_available() -> bool:

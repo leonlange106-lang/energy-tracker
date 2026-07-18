@@ -51,7 +51,8 @@ DEFAULTS: dict[str, object] = {
     "mqtt_port": 1883,
     "mqtt_username": "",
     "mqtt_password": "",
-    "mqtt_base_topic": "zaehlwerk",
+    "mqtt_base_topic": "tele",
+    "mqtt_tasmota_discovery": False,
 }
 
 _BOOL = lambda v: str(v).lower() in {"1", "true", "ja", "yes"}  # noqa: E731
@@ -72,6 +73,7 @@ _CASTS = {
     "mqtt_username": str,
     "mqtt_password": str,
     "mqtt_base_topic": str,
+    "mqtt_tasmota_discovery": _BOOL,
 }
 
 # Diese Schluessel verlassen den Server NIE im Klartext. Die Leseantwort meldet

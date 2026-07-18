@@ -1,10 +1,11 @@
 """MQTT-Status, Verbindungstest und Ereignisprotokoll."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from .. import mqtt_client
 from ..database import get_session
 from ..models import System
+from ..schemas import MqttAssign
 from .settings import read_settings
 
 router = APIRouter(prefix="/api/mqtt", tags=["mqtt"])
@@ -35,6 +36,45 @@ def restart(session: Session = Depends(get_session)):
         mqtt_client.stop()
         return {"connected": False, "note": "MQTT ist deaktiviert"}
     return mqtt_client.start(cfg)
+
+
+@router.get("/devices")
+def devices():
+    """Erkannte Tasmota-Geräte. Enthält keine Zugangsdaten."""
+    return {"devices": mqtt_client.status()["devices"],
+            "discovery": mqtt_client._state.get("discovery", False)}
+
+
+@router.post("/devices/forget")
+def forget():
+    return {"cleared": mqtt_client.forget_devices()}
+
+
+@router.post("/assign")
+def assign(payload: MqttAssign, session: Session = Depends(get_session)):
+    """Ein erkanntes Topic einem System zuordnen.
+
+    Schreibt in `zusatzfelder["mqtt_topic"]` – dieselbe Stelle, die auch der
+    Systemdialog bedient. Danach wird neu abonniert, damit die Übernahme
+    sofort greift und nicht erst beim nächsten Verbindungsaufbau.
+    """
+    system = session.get(System, payload.system_id)
+    if not system:
+        raise HTTPException(404, "System nicht gefunden")
+
+    # Ein Topic darf nicht an zwei Systemen hängen - sonst liefe derselbe Wert
+    # in zwei Zaehlwerke.
+    for other in session.exec(select(System).where(System.id != system.id)).all():
+        if (other.zusatzfelder or {}).get("mqtt_topic") == payload.topic:
+            raise HTTPException(409, f"Topic ist bereits '{other.name}' zugeordnet")
+
+    extra = dict(system.zusatzfelder or {})
+    extra["mqtt_topic"] = payload.topic
+    system.zusatzfelder = extra
+    session.add(system)
+    session.commit()
+    mqtt_client.resubscribe()
+    return {"system": system.name, "topic": payload.topic}
 
 
 @router.post("/resubscribe")

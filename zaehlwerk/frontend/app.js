@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.17.0";
+const APP_VERSION = "2.18.0";
 const APP_CHANGELOG = [
+  { v: "2.18.0", d: "18.07.2026", items: [
+    "Tasmota nativ: ENERGY.Total, Total_In und COUNTER.C1 ohne manuelle JSON-Pfade",
+    "Auto-Discovery über tele/+/SENSOR mit Geräteliste und Ein-Klick-Zuordnung",
+    "Online-/Offline-Anzeige je Gerät über das LWT-Topic",
+  ]},
   { v: "2.17.0", d: "18.07.2026", items: [
     "MQTT-Ingestion: Zählerstände aus Broker-Nachrichten übernehmen",
     "Zugangsdaten kommen vom Mosquitto-Add-on – kein Passwort nötig",
@@ -1773,6 +1778,7 @@ createApp({
     backupBusy: false,
     mqttStatus: null,
     mqttPassword: "",
+    assignTarget: {},
     settingsTab: "app",
     /* Pre-Export-Dialog */
     showExportCfg: false,
@@ -2076,7 +2082,8 @@ createApp({
             mqtt_host: d.mqtt_host || "",
             mqtt_port: Number(d.mqtt_port || 1883),
             mqtt_username: d.mqtt_username || "",
-            mqtt_base_topic: d.mqtt_base_topic || "zaehlwerk",
+            mqtt_base_topic: d.mqtt_base_topic || "tele",
+            mqtt_tasmota_discovery: !!d.mqtt_tasmota_discovery,
             // Leeres Feld = unveraendert lassen, nicht loeschen
             ...(this.mqttPassword ? { mqtt_password: this.mqttPassword } : {}),
           }),
@@ -2097,6 +2104,24 @@ createApp({
     async loadMqtt() {
       try { this.mqttStatus = await api("/api/mqtt/status"); }
       catch (_) { this.mqttStatus = null; }
+    },
+    async assignDevice(d) {
+      const systemId = this.assignTarget[d.device];
+      if (!systemId) return;
+      try {
+        const r = await api("/api/mqtt/assign", {
+          method: "POST",
+          body: JSON.stringify({ system_id: systemId, topic: d.topic }),
+        });
+        this.notify(`${r.topic} → ${r.system}`, "ok");
+        this.assignTarget[d.device] = null;
+        await this.load();          // zusatzfelder neu laden
+        await this.loadMqtt();
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async forgetDevices() {
+      try { await api("/api/mqtt/devices/forget", { method: "POST" }); await this.loadMqtt(); }
+      catch (e) { this.notify(e.message, "err"); }
     },
     async restartMqtt() {
       try {
@@ -2422,9 +2447,49 @@ createApp({
               </div>
             </template>
 
+            <div class="field">
+              <label class="check"><input type="checkbox" v-model="appSettingsDraft.mqtt_tasmota_discovery" />
+                <span>Tasmota Auto-Discovery aktivieren
+                  <small>Hört auf <code>{{ (appSettingsDraft.mqtt_base_topic || 'tele') }}/+/SENSOR</code> und
+                    <code>/+/LWT</code> und listet gefundene Geräte. Es wird nichts gespeichert,
+                    solange kein Topic zugeordnet ist.</small></span></label>
+            </div>
+            <div class="field" v-if="appSettingsDraft.mqtt_tasmota_discovery">
+              <label>Telemetrie-Präfix</label>
+              <input class="input" v-model="appSettingsDraft.mqtt_base_topic" placeholder="tele" />
+              <div class="hint">Tasmota-Standard ist <code>tele</code>. Nur ändern, wenn im Gerät angepasst.</div>
+            </div>
+
             <div class="settings-actions">
               <button class="btn" @click="restartMqtt">↻ Neu verbinden</button>
               <button class="btn btn-sm" @click="loadMqtt">Status aktualisieren</button>
+              <button class="btn btn-sm" v-if="mqttStatus && mqttStatus.devices && mqttStatus.devices.length"
+                      @click="forgetDevices">Geräteliste leeren</button>
+            </div>
+
+            <div class="mqtt-devices" v-if="mqttStatus && mqttStatus.devices && mqttStatus.devices.length">
+              <div class="hw-head">Erkannte Geräte ({{ mqttStatus.devices.length }})</div>
+              <div v-for="d in mqttStatus.devices" :key="d.device" class="mq-dev" :class="{unusable: !d.usable}">
+                <div class="mq-dev-head">
+                  <span class="mq-dot" :class="d.online===true ? 'on' : (d.online===false ? 'off' : 'unknown')"
+                        :title="d.online===true ? 'Online' : (d.online===false ? 'Offline (LWT)' : 'Status unbekannt')"></span>
+                  <strong>{{ d.device }}</strong>
+                  <span class="mq-assigned" v-if="d.assigned">→ {{ d.system }}</span>
+                </div>
+                <div class="mq-dev-sub">
+                  <code>{{ d.topic }}</code>
+                  <span v-if="d.usable">{{ fmt(d.value, 3) }} {{ d.unit }} · {{ d.path }}</span>
+                  <span v-else>kein Zählerstand im Telegramm</span>
+                  <span v-if="d.power !== null && d.power !== undefined">{{ d.power }} W</span>
+                </div>
+                <div class="mq-dev-act" v-if="d.usable && !d.assigned">
+                  <select class="select" v-model="assignTarget[d.device]">
+                    <option :value="null">System wählen …</option>
+                    <option v-for="s in systems.filter(x => x.aktiv)" :key="s.id" :value="s.id">{{ s.name }}</option>
+                  </select>
+                  <button class="btn btn-sm" :disabled="!assignTarget[d.device]" @click="assignDevice(d)">Zuordnen</button>
+                </div>
+              </div>
             </div>
 
             <table class="info-table" v-if="mqttStatus">

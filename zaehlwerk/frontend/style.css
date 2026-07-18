@@ -1013,3 +1013,32 @@ html { scrollbar-gutter: stable; }
   text-transform: uppercase; color: var(--md-on-surface-variant); margin-bottom: 2px; }
 .stat.tariff .s-val { color: var(--md-primary); }
 @media (max-width: 640px) { .tf-head { flex-direction: column; } .m-actions { width: 100%; } }
+
+/* ---------- MQTT-Ereignisprotokoll ---------- */
+.mqtt-log { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--md-outline-variant); }
+.mq-row { display: flex; gap: 10px; padding: 4px 0; font-size: 13px; line-height: 18px;
+  border-bottom: 1px solid var(--md-outline-variant); }
+.mq-row:last-child { border-bottom: none; }
+.mq-row.warn { color: var(--md-warn); }
+.mq-ts { font-family: var(--mono); font-size: 11px; color: var(--md-on-surface-variant);
+  flex: 0 0 auto; padding-top: 1px; }
+
+/* ---------- Tasmota-Geraeteliste ---------- */
+.mqtt-devices { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--md-outline-variant); }
+.mq-dev { padding: 10px 12px; border-radius: 12px; background: var(--md-surface-c); margin-bottom: 8px; }
+.mq-dev.unusable { opacity: .62; }
+.mq-dev-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.mq-assigned { font-size: 11px; letter-spacing: .4px; padding: 1px 8px; border-radius: 10px;
+  background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+.mq-dev-sub { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px;
+  font-size: 12px; color: var(--md-on-surface-variant); }
+.mq-dev-sub code { font-size: 11px; }
+.mq-dev-act { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+.mq-dev-act .select { flex: 1; min-width: 0; }
+/* Zustandspunkt: Form UND Farbe, damit er nicht allein ueber Farbe wirkt */
+.mq-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto;
+  box-shadow: inset 0 0 0 1px var(--md-outline-variant); }
+.mq-dot.on { background: var(--md-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-primary) 22%, transparent); }
+.mq-dot.off { background: var(--md-error); }
+.mq-dot.unknown { background: transparent; }
+@media (max-width: 640px) { .mq-dev-act { flex-direction: column; align-items: stretch; } }
