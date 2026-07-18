@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.5.1";
+const APP_VERSION = "2.6.0";
 const APP_CHANGELOG = [
+  { v: "2.6.0", d: "18.07.2026", items: [
+    "Einklappbare Navigations-Sidebar (Rail 80px ↔ Drawer 264px), Zustand bleibt gespeichert",
+    "Mobile: Sidebar als modaler Drawer mit Scrim über den Menü-Button in der Top-App-Bar",
+    "Navigationsziele Zählwerk, Bericht, Einstellungen und Admin-Tools (Platzhalter)",
+  ]},
   { v: "2.5.1", d: "17.07.2026", items: [
     "OCR anhand echter Zählerfotos kalibriert: adaptiver Otsu-Threshold, PSM-6-Segmentierung, Mehrfach-Pass",
     "Realistischere Scanner-Hinweise (Beta)",
@@ -95,6 +100,25 @@ const EXTRA_FIELDS = {
   "PV-Einspeisung": [{ key: "verguetung_ct", label: "Einspeisevergütung (ct/kWh)", type: "number" }],
 };
 const PALETTE = ["#0e7c86", "#d9820a", "#3b6fb5", "#2f8f5b", "#a4508b", "#c0453b", "#6b7280", "#0891b2"];
+
+/* ---------- Navigation (Sidebar) ----------
+   Zentrale Deklaration statt dupliziertem Markup in Rail und Bottom-Bar.
+   `action` verweist auf eine Methode der Root-App; `disabled` = Platzhalter
+   für noch nicht implementierte Bereiche (Admin-Tools).                     */
+const SVG = {
+  home:   '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 L12 3 L21 11"/><path d="M5 10 V20 H19 V10"/></svg>',
+  report: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3 3 3-3"/></svg>',
+  cog:    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  admin:  '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-2.9 8.2-7 10-4.1-1.8-7-5.6-7-10V6z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg>',
+  menu:   '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>',
+};
+const NAV_ITEMS = [
+  { key: "zaehlwerk",    label: "Zählwerk",     icon: SVG.home,   action: "back",                primary: true },
+  { key: "bericht",      label: "Bericht",      icon: SVG.report, action: "openCombinedReport",  primary: true, needsSystems: true },
+  { key: "einstellungen",label: "Einstellungen",icon: SVG.cog,    action: "openSettings",        primary: true },
+  { key: "admin",        label: "Admin-Tools",  icon: SVG.admin,  action: null, disabled: true, badge: "bald" },
+];
+const NAV_BREAKPOINT = 840;   // identisch zum CSS-Breakpoint Rail <-> Bottom-Bar
 
 /* ---------- Helfer ---------- */
 async function api(path, opts = {}) {
@@ -1026,16 +1050,47 @@ createApp({
     showChangelog: false,
     appVersion: APP_VERSION,
     changelog: APP_CHANGELOG,
+    /* Sidebar: navExpanded = Desktop (Rail <-> Drawer), navDrawer = Mobile-Overlay */
+    navExpanded: localStorage.getItem("zw_nav_expanded") === "1",
+    navDrawer: false,
+    navItems: NAV_ITEMS,
   }),
   computed: {
     visibleSystems() { return this.systems.filter((s) => this.showArchived || s.aktiv); },
     selectedSystem() { return this.systems.find((s) => s.id === this.selected) || null; },
     formExtra() { return this.sysForm ? [...(EXTRA_FIELDS[this.sysForm.typ] || []), ...COMMON_FIELDS] : []; },
     themeMode() { return themeStore.mode; },
+    /* aktiver Navigationspunkt (Einstellungen als Modal hat Vorrang vor der Ansicht) */
+    activeNav() { return this.showSettings ? "einstellungen" : "zaehlwerk"; },
+    navMenuIcon() { return SVG.menu; },
+    visibleNavItems() { return this.navItems.filter((i) => !i.needsSystems || this.systems.length); },
   },
-  async mounted() { await this.load(); },
+  async mounted() {
+    this.applyNavClass();
+    window.addEventListener("keydown", this.onNavKey);
+    await this.load();
+  },
+  unmounted() { window.removeEventListener("keydown", this.onNavKey); },
   methods: {
     fmt, typeIcon, fmtDate,
+
+    /* ---------- Sidebar ---------- */
+    isCompact() { return window.innerWidth <= NAV_BREAKPOINT; },
+    applyNavClass() { document.body.classList.toggle("nav-expanded", this.navExpanded); },
+    toggleNav() {
+      if (this.isCompact()) { this.navDrawer = !this.navDrawer; return; }
+      this.navExpanded = !this.navExpanded;
+      localStorage.setItem("zw_nav_expanded", this.navExpanded ? "1" : "0");
+      this.applyNavClass();
+    },
+    closeDrawer() { this.navDrawer = false; },
+    onNavKey(ev) { if (ev.key === "Escape" && this.navDrawer) this.navDrawer = false; },
+    openSettings() { this.showSettings = true; },
+    goNav(item) {
+      if (item.disabled || !item.action) return;
+      this.closeDrawer();
+      this[item.action]();
+    },
     notify(msg, type = "ok") { this.toast = { msg, type }; setTimeout(() => (this.toast = null), 3200); },
     async load() {
       this.loading = true;
@@ -1124,6 +1179,10 @@ createApp({
   template: `
   <div class="topbar">
     <div class="topbar-inner">
+      <button class="iconbtn nav-toggle" @click="toggleNav"
+              :aria-expanded="String(navExpanded || navDrawer)" aria-controls="zw-nav"
+              aria-label="Navigation ein-/ausklappen" title="Navigation ein-/ausklappen"
+              v-html="navMenuIcon"></button>
       <div class="brand">
         <span class="logo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19a9 9 0 1 1 14 0"/><path d="M12 5v2"/><path d="M5.6 8.5l1.5 1.2"/><path d="M18.4 8.5l-1.5 1.2"/><path d="M12 15l3.5-4.5"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg></span>
         <h1>{{ view==='detail' && selectedSystem ? selectedSystem.name : 'Zählwerk' }}</h1>
@@ -1132,36 +1191,31 @@ createApp({
     </div>
   </div>
 
-  <!-- Navigation Rail (Desktop/Tablet) -->
-  <nav class="nav-rail">
-    <button class="fab rail-fab" @click="fabAction" :title="view==='menu' ? 'System anlegen' : 'Neuer Wert'">＋</button>
-    <button class="nav-item" :class="{active: view==='menu'}" @click="back">
-      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 L12 3 L21 11"/><path d="M5 10 V20 H19 V10"/></svg></span>
-      Systeme
+  <!-- Sidebar: Navigation Rail (Desktop) / modaler Drawer (Mobile) -->
+  <nav id="zw-nav" class="nav-rail" :class="{ expanded: navExpanded, drawer: navDrawer }" aria-label="Hauptnavigation">
+    <button class="fab rail-fab" @click="fabAction" :title="view==='menu' ? 'System anlegen' : 'Neuer Wert'">
+      <span class="fab-plus">＋</span><span class="fab-text">{{ view==='menu' ? 'System' : 'Wert' }}</span>
     </button>
-    <button class="nav-item" v-if="systems.length" @click="openCombinedReport">
-      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3 3 3-3"/></svg></span>
-      Bericht
+    <button v-for="it in visibleNavItems" :key="it.key"
+            class="nav-item"
+            :class="{ active: activeNav===it.key, disabled: it.disabled }"
+            :disabled="it.disabled"
+            :title="it.disabled ? it.label + ' (noch nicht verfügbar)' : it.label"
+            @click="goNav(it)">
+      <span class="nav-pill" v-html="it.icon"></span>
+      <span class="nav-label">{{ it.label }}</span>
+      <span v-if="it.badge" class="nav-badge">{{ it.badge }}</span>
     </button>
-    <button class="nav-item" :class="{active: showSettings}" @click="showSettings=true">
-      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-      Optionen
-    </button>
+    <div class="nav-foot">v{{ appVersion }}</div>
   </nav>
+  <div class="nav-scrim" v-if="navDrawer" @click="closeDrawer"></div>
 
   <!-- Bottom Navigation (Mobile) -->
-  <nav class="nav-bottom">
-    <button class="nav-item" :class="{active: view==='menu'}" @click="back">
-      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 L12 3 L21 11"/><path d="M5 10 V20 H19 V10"/></svg></span>
-      Systeme
-    </button>
-    <button class="nav-item" v-if="systems.length" @click="openCombinedReport">
-      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3 3 3-3"/></svg></span>
-      Bericht
-    </button>
-    <button class="nav-item" :class="{active: showSettings}" @click="showSettings=true">
-      <span class="nav-pill"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-      Optionen
+  <nav class="nav-bottom" aria-label="Schnellzugriff">
+    <button v-for="it in visibleNavItems.filter(i => i.primary)" :key="it.key"
+            class="nav-item" :class="{ active: activeNav===it.key }" @click="goNav(it)">
+      <span class="nav-pill" v-html="it.icon"></span>
+      {{ it.label }}
     </button>
   </nav>
 
