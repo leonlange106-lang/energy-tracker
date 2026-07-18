@@ -7,10 +7,11 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import init_db
-from . import notifier
-from .routers import ha, imports, meters, readings, settings as settings_router, systems
+from . import notifier, outbound
+from .routers import (external, ha, imports, meters, readings,
+                      settings as settings_router, systems)
 
-app = FastAPI(title="Zählwerk API", version="2.11.0")
+app = FastAPI(title="Zählwerk API", version="2.12.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,6 +23,7 @@ app.add_middleware(
 app.include_router(systems.router)
 app.include_router(readings.router)
 app.include_router(imports.router)
+app.include_router(external.router)
 app.include_router(meters.router)
 app.include_router(settings_router.router)
 app.include_router(ha.router)
@@ -29,7 +31,13 @@ app.include_router(ha.router)
 
 @app.on_event("startup")
 async def _startup():
+    # Reihenfolge zwingend: Guard VOR allem anderen installieren, damit keine
+    # Verbindung in der Startphase durchrutscht. Der Guard laesst im Zweifel
+    # nichts nach draussen - die Flagge startet auf True.
+    outbound.install_socket_guard()
     init_db()
+    from .routers.settings import get_setting
+    outbound.set_offline(bool(get_setting("offline_mode", True)))
     import asyncio
     asyncio.create_task(notifier.watcher())
 

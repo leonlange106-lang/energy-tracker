@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.11.0";
+const APP_VERSION = "2.12.0";
 const APP_CHANGELOG = [
+  { v: "2.12.0", d: "18.07.2026", items: [
+    "Internet-Kill-Switch: sperrt ausgehende Verbindungen auf Socket-Ebene, Standard ist gesperrt",
+    "Optionale externe Daten: Wetter (Open-Meteo) und Day-Ahead-Preise (aWATTar)",
+    "Anbieter-Allowlist fest im Code, keine Schlüssel, keine frei setzbaren URLs",
+    "Offline fehlertolerant: zwischengespeicherte Daten bleiben abrufbar",
+  ]},
   { v: "2.11.0", d: "18.07.2026", items: [
     "Zähler-Tab: Metadaten aus 2.10.0 endlich in der Oberfläche pflegbar",
     "Hardware-Empfehlung je Zähler (Hichi IR, Reed-Kontakt, AI-on-the-edge, wM-Bus …)",
@@ -1583,6 +1589,7 @@ createApp({
     settingsErrors: {},
     settingsSaving: false,
     sysInfo: null,
+    extStatus: null,
     settingsTab: "app",
     appVersion: APP_VERSION,
     changelog: APP_CHANGELOG,
@@ -1690,10 +1697,13 @@ createApp({
     /* ---------- Sektion A: Anwendungsparameter ---------- */
     async loadSettings() {
       try {
-        const [s, i] = await Promise.all([api("/api/settings"), api("/api/system/info")]);
+        const [s, i, x] = await Promise.all([
+          api("/api/settings"), api("/api/system/info"), api("/api/external/status"),
+        ]);
         this.appSettings = s;
         this.appSettingsDraft = { ...s };
         this.sysInfo = i;
+        this.extStatus = x;
         this.settingsErrors = {};
       } catch (e) { this.notify("Einstellungen nicht ladbar: " + e.message, "err"); }
     },
@@ -1725,6 +1735,7 @@ createApp({
         const saved = await api("/api/settings", {
           method: "PUT",
           body: JSON.stringify({
+            offline_mode: !!d.offline_mode,
             notify_enabled: !!d.notify_enabled,
             notify_interval_hours: Number(d.notify_interval_hours),
             default_interval_days: Number(d.default_interval_days),
@@ -1733,11 +1744,21 @@ createApp({
         });
         this.appSettings = saved;
         this.appSettingsDraft = { ...saved };
-        this.notify("Einstellungen gespeichert", "ok");
+        this.notify(saved.offline_mode
+          ? "Gespeichert – Internetzugriff gesperrt"
+          : "Gespeichert – Internetzugriff freigegeben", "ok");
+        try { this.extStatus = await api("/api/external/status"); } catch (_) {}
       } catch (e) {
         // 422 vom Server: Feldfehler sichtbar machen statt nur zu toasten
         this.notify("Nicht gespeichert: " + e.message, "err");
       } finally { this.settingsSaving = false; }
+    },
+    async clearExtCache() {
+      try {
+        const r = await api("/api/external/cache/clear", { method: "POST" });
+        this.extStatus = await api("/api/external/status");
+        this.notify(`Zwischenspeicher geleert (${r.cleared})`, "ok");
+      } catch (e) { this.notify(e.message, "err"); }
     },
     revertSettings() { this.appSettingsDraft = { ...this.appSettings }; this.settingsErrors = {}; },
     fmtBytes(n) {
@@ -1881,6 +1902,38 @@ createApp({
 
       <!-- ================= SEKTION A: System ================= -->
       <template v-if="settingsTab==='app'">
+        <div class="card set-card killswitch" :class="{armed: appSettingsDraft && appSettingsDraft.offline_mode}">
+          <h3>Internetzugriff</h3>
+          <p class="hint">Zählwerk funktioniert vollständig ohne Internet. Externe Abrufe sind
+            im Auslieferungszustand gesperrt und müssen bewusst freigegeben werden.</p>
+          <div class="field" v-if="appSettingsDraft">
+            <label class="check ks-toggle">
+              <input type="checkbox" v-model="appSettingsDraft.offline_mode" @change="validateSettings" />
+              <span>
+                <strong>Offline-Modus (Kill-Switch)</strong>
+                <small>{{ appSettingsDraft.offline_mode
+                  ? 'Aktiv – alle ausgehenden Verbindungen ins Internet werden blockiert.'
+                  : 'Aus – Abrufe bei Wetter- und Tarifdienst sind erlaubt.' }}</small>
+              </span>
+            </label>
+          </div>
+          <table class="info-table" v-if="extStatus">
+            <tr><td>Zustand</td><td>{{ extStatus.offline_mode ? 'gesperrt' : 'freigegeben' }}</td></tr>
+            <tr><td>Socket-Sperre</td><td>{{ extStatus.socket_guard_active ? 'installiert' : 'nicht aktiv' }}</td></tr>
+            <tr v-for="p in extStatus.providers" :key="p.key">
+              <td>{{ p.label }}</td><td class="num">{{ p.host }}</td>
+            </tr>
+          </table>
+          <div class="hint ks-note">
+            Die Sperre gilt für das Backend. Die Oberfläche lädt Vue, Chart.js und die
+            Schriftart weiterhin per CDN – für vollständige Datensouveränität müssen diese
+            Dateien lokal ausgeliefert werden.
+          </div>
+          <div class="settings-actions" v-if="extStatus && extStatus.cache.length">
+            <button class="btn btn-sm" @click="clearExtCache">↺ Zwischenspeicher leeren ({{ extStatus.cache.length }})</button>
+          </div>
+        </div>
+
         <div class="card set-card">
           <h3>Anwendungsparameter</h3>
           <p class="hint">Serverseitig in SQLite gespeichert, gilt für alle Geräte. Wird vor dem Speichern validiert.</p>

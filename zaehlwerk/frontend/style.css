@@ -900,3 +900,12 @@ html { scrollbar-gutter: stable; }
   .meter-head { flex-direction: column; }
   .m-actions { width: 100%; }
 }
+
+/* ---------- Kill-Switch ---------- */
+.killswitch { border-left: 4px solid var(--md-outline); }
+.killswitch.armed { border-left-color: var(--md-primary); }
+.ks-toggle { align-items: flex-start; gap: 12px; }
+.ks-toggle span { display: flex; flex-direction: column; gap: 2px; }
+.ks-toggle small { color: var(--md-on-surface-variant); font-size: 12px; line-height: 17px; }
+.ks-note { margin-top: 14px; padding: 10px 12px; border-radius: 12px;
+  background: var(--md-surface-c); border-left: 3px solid var(--md-warn); }

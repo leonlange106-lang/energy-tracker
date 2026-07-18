@@ -100,6 +100,7 @@ class ImportResult(BaseModel):
 
 # ---------- Anwendungseinstellungen ----------
 class AppSettingsRead(BaseModel):
+    offline_mode: bool
     notify_enabled: bool
     notify_interval_hours: int
     default_interval_days: int
@@ -116,6 +117,9 @@ class AppSettingsUpdate(BaseModel):
     - outlier_sigma 1.0..5.0: unter 1 sigma waere fast jeder Wert ein
       Ausreisser, ueber 5 sigma praktisch keiner mehr.
     """
+    # Kill-Switch. Standard ist AN: externe Abfragen muessen bewusst
+    # freigeschaltet werden, nicht bewusst abgeschaltet.
+    offline_mode: Optional[bool] = None
     notify_enabled: Optional[bool] = None
     notify_interval_hours: Optional[int] = Field(None, ge=1, le=168)
     default_interval_days: Optional[int] = Field(None, ge=0, le=3650)
@@ -143,6 +147,8 @@ class SystemInfo(BaseModel):
     system_count: int
     reading_count: int
     meter_count: int = 0
+    offline_mode: bool = True
+    socket_guard_active: bool = False
 
 
 # ---------- Zähler-Metadaten ----------
@@ -218,3 +224,33 @@ class MeterCalibrationEntry(BaseModel):
     eichung_bis: date
     faellig_in_tagen: int
     abgelaufen: bool
+
+
+# ---------- Externe Daten / Kill-Switch ----------
+class ExternalStatus(BaseModel):
+    offline_mode: bool
+    socket_guard_active: bool
+    providers: list[dict[str, Any]]
+    cache: list[dict[str, Any]]
+
+
+class WeatherRead(BaseModel):
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    dates: list[str] = []
+    temp_max: list[Optional[float]] = []
+    temp_min: list[Optional[float]] = []
+    cached: bool = False
+    stale: bool = False
+    age_seconds: int = 0
+
+
+class TariffRead(BaseModel):
+    market: str
+    slots: list[dict[str, Any]] = []
+    min_ct: Optional[float] = None
+    max_ct: Optional[float] = None
+    avg_ct: Optional[float] = None
+    cached: bool = False
+    stale: bool = False
+    age_seconds: int = 0

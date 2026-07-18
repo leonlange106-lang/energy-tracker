@@ -14,6 +14,26 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.12.0] - 2026-07-18
+
+### Added
+
+- [Backend/outbound.py] Ergänzt ein zentrales Gate für ausgehende Verbindungen mit Anbieter-Allowlist, HTTPS-Zwang, Weiterleitungsprüfung und Zwischenspeicher je Anbieter.
+- [Backend/routers/external.py] Ergänzt `GET /api/external/weather` (Open-Meteo) und `GET /api/external/tariff` (aWATTar Day-Ahead) sowie `GET /api/external/status` und `POST /api/external/cache/clear`.
+- [Backend/routers/settings.py] Ergänzt den Anwendungsparameter `offline_mode`; der Auslieferungszustand ist gesperrt.
+- [Frontend/UI] Ergänzt den Kill-Switch samt Zustandsanzeige, Anbieterliste und Zwischenspeicher-Verwaltung in Sektion A der Einstellungen.
+- [Backend/outbound.py] Liefert im Offline-Modus vorhandene zwischengespeicherte Daten weiter aus, auch abgelaufene, statt einen Fehler zu werfen.
+
+### Security
+
+- [Backend/outbound.py] Sperrt ausgehende Verbindungen bei aktivem Kill-Switch auf Netzwerkebene: `install_socket_guard()` ersetzt `socket.getaddrinfo` und verweigert die Auflösung öffentlicher Adressen. Die Sperre greift damit auch für Code, der das Anwendungs-Gate umgeht. Loopback, private Netze und die Supervisor-Namen bleiben erreichbar, damit Benachrichtigungen und Entity-Abfragen weiterlaufen.
+- [Backend/main.py] Installiert die Sperre vor der Datenbankinitialisierung; die Flagge startet auf gesperrt und wird erst danach aus den Einstellungen gesetzt, sodass in der Startphase keine Verbindung durchrutschen kann.
+- [Backend/outbound.py] Hält die Anbieter-Allowlist fest im Code. Frei konfigurierbare Zieladressen wären hinter dem Ingress-Proxy eine SSRF-Lücke. Beide Anbieter arbeiten ohne Zugangsschlüssel, es liegen keine Geheimnisse im Repository.
+- [Backend/outbound.py] Prüft nach einer Weiterleitung erneut gegen die Allowlist; ein 302 auf einen fremden Host würde die Prüfung sonst aushebeln.
+- [Backend/routers/external.py] Reduziert die übertragenen Koordinaten auf drei Nachkommastellen (rund 110 m), da der Wetterdienst keine genauere Standortangabe benötigt.
+
+---
+
 ## [2.11.0] - 2026-07-18
 
 ### Added
@@ -269,7 +289,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.0...HEAD
+[2.12.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.1...v2.10.0

@@ -21,6 +21,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends
 from sqlmodel import Session, func, select
 
+from .. import outbound
 from ..config import settings as runtime_settings
 from ..database import engine, get_session
 from ..migrations import schema_version
@@ -32,13 +33,18 @@ router = APIRouter(tags=["settings"])
 # Anwendungsparameter mit Standardwerten. Nur diese Schlüssel werden gelesen
 # und geschrieben – unbekannte Keys in der Tabelle werden ignoriert.
 DEFAULTS: dict[str, object] = {
+    # Kill-Switch: Auslieferungszustand ist offline.
+    "offline_mode": True,
     "notify_enabled": True,
     "notify_interval_hours": 6,
     "default_interval_days": 0,
     "outlier_sigma": 2.0,
 }
 
+_BOOL = lambda v: str(v).lower() in {"1", "true", "ja", "yes"}  # noqa: E731
+
 _CASTS = {
+    "offline_mode": _BOOL,
     "notify_enabled": lambda v: str(v).lower() in {"1", "true", "ja", "yes"},
     "notify_interval_hours": int,
     "default_interval_days": int,
@@ -86,7 +92,11 @@ def update_settings(payload: AppSettingsUpdate, session: Session = Depends(get_s
             row = AppSetting(key=key, value=raw)
         session.add(row)
     session.commit()
-    return AppSettingsRead(**read_settings(session))
+    values = read_settings(session)
+    # Modulweite Flagge sofort nachziehen, sonst greift der Socket-Guard erst
+    # nach einem Neustart.
+    outbound.set_offline(bool(values.get("offline_mode", True)))
+    return AppSettingsRead(**values)
 
 
 @router.get("/api/system/info", response_model=SystemInfo)
@@ -117,6 +127,8 @@ def system_info(session: Session = Depends(get_session)):
         foreign_keys=fk,
         runtime="Home Assistant Add-on" if supervised else "Standalone (Docker/lokal)",
         supervisor_available=supervised,
+        offline_mode=outbound.is_offline(),
+        socket_guard_active=outbound._guard_installed,
         system_count=session.exec(select(func.count()).select_from(System)).one(),
         reading_count=session.exec(select(func.count()).select_from(Reading)).one(),
         meter_count=session.exec(select(func.count()).select_from(Meter)).one(),
