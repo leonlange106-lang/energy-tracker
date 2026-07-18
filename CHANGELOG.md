@@ -14,6 +14,20 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.10.1] - 2026-07-18
+
+### Fixed
+
+- [Frontend/UI] Stellt die Systemverwaltung wieder her. Mit dem Umbau der Einstellungen zur eigenen Seite in 2.9.0 entfiel der einzige Aufrufer von `editSystem`; das in `SystemDetail` deklarierte `edit`-Ereignis wurde nie ausgelöst. Damit waren Umbenennen, Einheit, Farbe, Ø-Preis, Ableseintervall, HA-Entity und Archivieren unerreichbar. Die Systemansicht hat jetzt eine Schaltfläche „✎ Bearbeiten“.
+- [Frontend/UI] Verdrahtet das endgültige Löschen eines Systems. `confirmDeleteSystem()` und der Endpunkt `DELETE /api/systems/{id}` bestehen seit 2.4.0, eine auslösende Schaltfläche gab es nie. Der Dialog enthält sie nun als Halten-Schaltfläche.
+- [Frontend/app.js] Löst nach dem Speichern einer Ablesung das `changed`-Ereignis aus; Kachelwerte und Fälligkeits-Badges der Übersicht blieben bis zum nächsten Wechsel in die Systemliste veraltet.
+
+### Changed
+
+- [Frontend/UI] Ersetzt die native `confirm()`-Rückfrage beim Systemlöschen durch das Drei-Sekunden-Halten, das seit 2.4.0 für alle übrigen Löschvorgänge gilt; `confirm()` kann im WebView der Home-Assistant-App unterdrückt werden.
+
+---
+
 ## [2.10.0] - 2026-07-18
 
 ### Added
@@ -239,7 +253,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.1...HEAD
+[2.10.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.1...v2.10.0
 [2.9.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.8.0...v2.9.0

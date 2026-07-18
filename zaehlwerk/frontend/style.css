@@ -848,3 +848,15 @@ html { scrollbar-gutter: stable; }
   .scan-trigger { width: 64px; min-height: 64px; font-size: 24px; }
   .input-scan { gap: 10px; align-items: stretch; }
 }
+
+/* ---------- Modal-Footer mit destruktiver Aktion ---------- */
+.modal-foot .foot-spacer { flex: 1; }
+.modal-foot.has-danger { flex-wrap: wrap; }
+@media (max-width: 640px) {
+  /* Auf dem Sheet: Loeschen bewusst in eine eigene Zeile OBERHALB der
+     Primaeraktion - nicht in die Daumenzone neben "Speichern". */
+  .modal-foot.has-danger { flex-direction: column-reverse; align-items: stretch; }
+  .modal-foot.has-danger .foot-spacer { display: none; }
+  .modal-foot.has-danger .holdbtn { width: 100%; margin-top: 4px; }
+  .modal-foot.has-danger > .btn { flex: 1 1 auto; }
+}

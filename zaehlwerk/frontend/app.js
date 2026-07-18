@@ -4,8 +4,18 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.9.1";
+const APP_VERSION = "2.10.1";
 const APP_CHANGELOG = [
+  { v: "2.10.1", d: "18.07.2026", items: [
+    "Systemverwaltung wieder erreichbar: „✎ Bearbeiten\" in der Systemansicht",
+    "Systeme endgültig löschbar – der Button fehlte seit 2.4.0",
+    "Kachelwerte und Fälligkeits-Badges aktualisieren sich nach dem Erfassen sofort",
+  ]},
+  { v: "2.10.0", d: "18.07.2026", items: [
+    "Zähler-Metadaten: Hersteller, Modell, Zählernummer, Bauart, Eichfrist je System",
+    "Eichfristen-Übersicht über die API",
+    "Zähler-Metadaten im Gesamt-Export enthalten",
+  ]},
   { v: "2.9.1", d: "18.07.2026", items: [
     "Dialoge auf dem Handy als Bottom-Sheet mit feststehender Aktionsleiste",
     "Alle Trefferflächen auf 48 px, Formularfelder auf 16 px (kein iOS-Auto-Zoom mehr)",
@@ -900,6 +910,7 @@ const SystemDetail = {
         this.showReading = false;
         this.notify(this.reading.id ? "Ablesung aktualisiert" : "Ablesung gespeichert", "ok");
         await this.loadDynamic();
+        this.$emit("changed");   // Parent aktualisiert Kachelwerte und Fälligkeits-Badges
       } catch (e) { this.notify(e.message, "err"); }
       finally { this.busy = false; }
     },
@@ -956,6 +967,7 @@ const SystemDetail = {
         </div>
       </div>
       <div class="dh-actions">
+        <button class="btn btn-sm" @click="$emit('edit', system)" title="System bearbeiten, archivieren oder löschen">✎ Bearbeiten</button>
         <button class="btn btn-sm" @click="openImport">⇪ Import</button>
         <button class="btn btn-sm" @click="openExport">⇩ CSV</button>
         <button class="btn btn-tonal btn-sm" @click="openReport">⇩ PDF</button>
@@ -1286,9 +1298,11 @@ createApp({
       else this.newSystem();
     },
     async confirmDeleteSystem() {
+      // Bestaetigung liefert bereits das 3-Sekunden-Halten des HoldButton -
+      // kein zusaetzliches confirm(), das im HA-WebView ohnehin unterdrueckt
+      // werden kann.
       const sys = this.sysForm;
       if (!sys || !sys.id) return;
-      if (!confirm(`System "${sys.name}" und ALLE zugehörigen Ablesungen endgültig löschen?\n\nDas kann nicht rückgängig gemacht werden.`)) return;
       try {
         await api(`/api/systems/${sys.id}`, { method: "DELETE" });
         this.showSystem = false;
@@ -1667,7 +1681,9 @@ createApp({
           <label class="check"><input type="checkbox" v-model="sysForm.aktiv" /> aktiv (deaktivieren = archivieren, Werte bleiben erhalten)</label>
         </div>
       </div>
-      <div class="modal-foot">
+      <div class="modal-foot" :class="{'has-danger': sysForm.id}">
+        <hold-button v-if="sysForm.id" @held="confirmDeleteSystem">✕ Löschen (halten)</hold-button>
+        <span class="foot-spacer"></span>
         <button class="btn" @click="showSystem=false">Abbrechen</button>
         <button class="btn btn-primary" :disabled="busy" @click="saveSystem">Speichern</button>
       </div>
