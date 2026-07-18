@@ -8,7 +8,11 @@ statt Statistiken zu verfälschen).
 KOSTEN: Explizit erfasste Kosten haben Vorrang. Fehlen sie und ist ein
 Durchschnittspreis (€/Einheit) am System hinterlegt, wird geschätzt:
 cost_effective = consumption * preis. Geschätzte Werte werden markiert.
+
+TARIFE (seit 2.16.0): Liegen Tarifperioden vor, wird der Verbrauch tageweise
+dem jeweils gültigen Preis zugeordnet - siehe apply_tariffs() unten.
 """
+from datetime import date, timedelta
 import statistics
 from typing import Optional
 
@@ -21,9 +25,13 @@ def compute_intervals(readings: list[dict], price: Optional[float] = None) -> li
         e = dict(r)
         e["consumption"] = None
         e["consumption_per_day"] = None
+        e["days"] = None
+        e["prev_datum"] = None
         if i > 0:
             prev = readings[i - 1]
             days = (r["datum"] - prev["datum"]).total_seconds() / 86400
+            e["days"] = int(round(days))
+            e["prev_datum"] = prev["datum"]
             if r.get("meter_replaced"):
                 cons = float(r["value"])                    # neuer Zähler ab 0
             else:
@@ -103,4 +111,109 @@ def compute_stats(enriched: list[dict], sigma: float = DEFAULT_SIGMA) -> dict:
         "outlier_threshold": outlier_threshold(enriched, sigma),
         "reading_count": len(enriched),
         "cost_estimated": any_estimated,
+    }
+
+
+# ==========================================================================
+# Tarifbasierte Kostenberechnung
+# ==========================================================================
+# Grundgedanke: Zwischen zwei Ablesungen ist nur der Gesamtverbrauch bekannt,
+# nicht sein zeitlicher Verlauf. Er wird deshalb gleichmäßig über die Tage des
+# Intervalls verteilt (`consumption_per_day`) und anschließend tageweise dem
+# jeweils gültigen Tarif zugeordnet. Ein Intervall, das über einen Tarifwechsel
+# hinweggeht, wird also korrekt aufgeteilt – genau der Fall, den eine simple
+# Multiplikation mit einem einzigen Preis falsch berechnet.
+#
+# Der Grundpreis ist ein Monatsbetrag. Er wird mit 12/365.25 auf einen Tagessatz
+# umgerechnet. Die Abweichung gegenüber taggenauer Monatslänge liegt unter einem
+# Prozent und ist bei jährlichen Ablesungen ohne Belang.
+_DAYS_PER_MONTH = 365.25 / 12
+
+
+def _tariff_for(tariffs: list[dict], day: date) -> Optional[dict]:
+    """Erste Periode, die diesen Tag abdeckt. Perioden sind überschneidungsfrei
+    (wird beim Speichern geprüft), daher ist die erste zugleich die einzige."""
+    for t in tariffs:
+        if t["gueltig_ab"] <= day and (t["gueltig_bis"] is None or day <= t["gueltig_bis"]):
+            return t
+    return None
+
+
+def apply_tariffs(enriched: list[dict], tariffs: list[dict]) -> list[dict]:
+    """Ergänzt je Intervall die tarifbasierten Kosten.
+
+    Neue Felder je Eintrag:
+      cost_tariff         Gesamt (Arbeits- + Grundpreis) oder None
+      cost_tariff_energy  nur Arbeitspreis
+      cost_tariff_base    nur Grundpreis
+      tariff_coverage     Anteil der Tage mit hinterlegtem Tarif (0.0-1.0)
+      tariff_names        beteiligte Tarife, für die Anzeige
+
+    Die vorhandenen Felder `cost` (erfasst) und `cost_estimated` bleiben
+    unangetastet – die Tarifrechnung tritt daneben, nicht an ihre Stelle.
+    """
+    if not tariffs:
+        return enriched
+
+    for e in enriched:
+        e["cost_tariff"] = None
+        e["cost_tariff_energy"] = None
+        e["cost_tariff_base"] = None
+        e["tariff_coverage"] = 0.0
+        e["tariff_names"] = []
+
+        per_day = e.get("consumption_per_day")
+        days = e.get("days")
+        prev = e.get("prev_datum")
+        if per_day is None or not days or not prev:
+            continue
+
+        energy = 0.0
+        base = 0.0
+        covered = 0
+        names = []
+        # Verbrauchstage sind die Tage NACH der Vorablesung bis einschließlich
+        # der aktuellen - die Vorablesung selbst gehört zum vorigen Intervall.
+        for i in range(1, days + 1):
+            day = prev + timedelta(days=i)
+            t = _tariff_for(tariffs, day)
+            if not t:
+                continue
+            covered += 1
+            energy += per_day * t["arbeitspreis"]
+            base += (t.get("grundpreis") or 0.0) / _DAYS_PER_MONTH
+            label = t.get("name") or t.get("anbieter") or "Tarif"
+            if label not in names:
+                names.append(label)
+
+        if covered:
+            e["cost_tariff_energy"] = round(energy, 2)
+            e["cost_tariff_base"] = round(base, 2)
+            e["cost_tariff"] = round(energy + base, 2)
+            e["tariff_coverage"] = round(covered / days, 4)
+            e["tariff_names"] = names
+    return enriched
+
+
+def tariff_summary(enriched: list[dict]) -> dict:
+    """Kennzahlen über alle Intervalle mit Tarifabdeckung."""
+    rows = [e for e in enriched if e.get("cost_tariff") is not None]
+    if not rows:
+        return {"total_cost_tariff": None, "total_energy_cost": None,
+                "total_base_cost": None, "avg_price_effective": None,
+                "covered_intervals": 0, "coverage_ratio": 0.0}
+    total = sum(r["cost_tariff"] for r in rows)
+    energy = sum(r["cost_tariff_energy"] for r in rows)
+    base = sum(r["cost_tariff_base"] for r in rows)
+    consumption = sum(r["consumption"] for r in rows if r.get("consumption"))
+    with_interval = [e for e in enriched if e.get("consumption") is not None]
+    return {
+        "total_cost_tariff": round(total, 2),
+        "total_energy_cost": round(energy, 2),
+        "total_base_cost": round(base, 2),
+        # Effektivpreis inklusive Grundgebühr - die Zahl, die man mit dem
+        # beworbenen Arbeitspreis vergleichen will.
+        "avg_price_effective": round(total / consumption, 4) if consumption else None,
+        "covered_intervals": len(rows),
+        "coverage_ratio": round(len(rows) / len(with_interval), 4) if with_interval else 0.0,
     }

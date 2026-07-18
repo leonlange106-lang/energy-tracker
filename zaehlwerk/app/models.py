@@ -83,6 +83,34 @@ class Meter(SQLModel, table=True):
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
 
 
+class Tariff(SQLModel, table=True):
+    """Tarifperiode eines Systems.
+
+    Zeitscheiben statt eines einzelnen Preises am System: Preise ändern sich,
+    und ein Bestand über 24 Jahre mit einem heutigen Arbeitspreis zu bewerten
+    wäre schlicht falsch. Jede Periode gilt ab `gueltig_ab` bis `gueltig_bis`;
+    ist letzteres leer, läuft sie bis auf Weiteres.
+
+    Der bestehende Ø-Preis in `System.zusatzfelder["preis"]` bleibt unberührt
+    und dient weiter als grobe Schätzung, wenn für einen Zeitraum kein Tarif
+    hinterlegt ist.
+    """
+    __tablename__ = "tariffs"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    system_id: str = Field(index=True, foreign_key="systems.id")
+
+    name: Optional[str] = None                 # z. B. "Grundversorgung 2024"
+    anbieter: Optional[str] = None
+    gueltig_ab: date = Field(index=True)
+    gueltig_bis: Optional[date] = Field(default=None, index=True)   # None = offen
+
+    arbeitspreis: float                        # € je Einheit (kWh, m³ …), brutto
+    grundpreis: float = 0.0                    # € je Monat, brutto
+    notiz: Optional[str] = None
+    erstellt_am: datetime = Field(default_factory=datetime.utcnow)
+
+
 class AppSetting(SQLModel, table=True):
     """Anwendungsweite Einstellungen als Key/Value.
 

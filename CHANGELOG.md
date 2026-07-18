@@ -14,6 +14,31 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.16.0] - 2026-07-18
+
+### Added
+
+- [Backend/database.py] Ergänzt die Tabelle `tariffs` mit Bezeichnung, Anbieter, Gültigkeitsbeginn und -ende, Arbeitspreis je Einheit und monatlichem Grundpreis. Fremdschlüssel auf `systems.id`, Indizes auf `system_id`, `gueltig_ab` und `gueltig_bis`.
+- [Backend/migrations.py] Ergänzt Migration 3, die die Tabelle samt Indizes idempotent anlegt und `PRAGMA user_version` auf 3 hebt.
+- [Backend/logic.py] Ergänzt `apply_tariffs()`. Der Verbrauch eines Intervalls wird gleichmäßig über dessen Tage verteilt und tageweise dem jeweils gültigen Tarif zugeordnet; ein Tarifwechsel innerhalb eines Intervalls wird dadurch korrekt aufgeteilt statt mit einem einzigen Preis überschlagen.
+- [Backend/logic.py] Ergänzt `tariff_summary()` mit Gesamtkosten, getrennten Anteilen für Arbeits- und Grundpreis, Effektivpreis einschließlich Grundgebühr sowie dem Anteil der Intervalle mit hinterlegtem Tarif.
+- [Backend/routers/tariffs.py] Ergänzt `GET`/`POST /api/systems/{id}/tariffs` sowie `PATCH`/`DELETE /api/tariffs/{id}`.
+- [Backend/schemas.py] Ergänzt `TariffPlanCreate`, `TariffPlanUpdate` und `TariffPlanRead` mit Prüfung der Datumsreihenfolge und Obergrenzen für beide Preise.
+- [Frontend/UI] Ergänzt den Reiter Tarife in der Systemansicht mit Anlegen, Bearbeiten und Löschen sowie Kennzeichnung der aktuell laufenden Periode.
+- [Frontend/UI] Ergänzt in der Auswertung die Kacheln Kosten nach Tarif und Effektivpreis; bei unvollständiger Abdeckung wird der Anteil ausgewiesen.
+
+### Changed
+
+- [Backend/logic.py] Führt in `compute_intervals()` zusätzlich Intervalllänge und Datum der Vorablesung mit; beides wird für die Tarifzuordnung benötigt.
+- [Backend/routers/readings.py] Reicht die Tarifperioden in die Anreicherung und mischt die Tarifkennzahlen in die Statistik beider Endpunkte.
+- [Backend/routers/systems.py] Löscht beim endgültigen Entfernen eines Systems auch dessen Tarifperioden.
+
+### Security
+
+- [Backend/routers/tariffs.py] Weist einander überschneidende Zeiträume je System mit HTTP 409 ab. Ohne diese Prüfung wäre für einen Tag nicht eindeutig, welcher Preis gilt, und die Kostenrechnung würde stillschweigend den zuerst gefundenen Tarif verwenden.
+
+---
+
 ## [2.15.0] - 2026-07-18
 
 ### Added
@@ -380,7 +405,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.15.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.16.0...HEAD
+[2.16.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.2...v2.13.0

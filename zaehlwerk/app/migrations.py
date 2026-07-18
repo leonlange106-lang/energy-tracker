@@ -81,9 +81,35 @@ def _m002_meters(conn: Connection) -> None:
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meters_eichung_bis ON meters (eichung_bis)"))
 
 
+# --------------------------------------------------------------------------
+# Migration 3: Tarifperioden
+# --------------------------------------------------------------------------
+def _m003_tariffs(conn: Connection) -> None:
+    if not _table_exists(conn, "tariffs"):
+        conn.execute(text("""
+            CREATE TABLE tariffs (
+                id           VARCHAR NOT NULL PRIMARY KEY,
+                system_id    VARCHAR NOT NULL,
+                name         VARCHAR,
+                anbieter     VARCHAR,
+                gueltig_ab   DATE NOT NULL,
+                gueltig_bis  DATE,
+                arbeitspreis FLOAT NOT NULL,
+                grundpreis   FLOAT NOT NULL DEFAULT 0.0,
+                notiz        VARCHAR,
+                erstellt_am  DATETIME NOT NULL,
+                FOREIGN KEY(system_id) REFERENCES systems(id)
+            )
+        """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tariffs_system_id ON tariffs (system_id)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tariffs_gueltig_ab ON tariffs (gueltig_ab)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tariffs_gueltig_bis ON tariffs (gueltig_bis)"))
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
     (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
+    (3, "tariffs-Tabelle fuer Tarifperioden anlegen", _m003_tariffs),
 ]
 
 

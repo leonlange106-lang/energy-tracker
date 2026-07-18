@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 from .. import logic, report
 from ..due import system_due_entries
 from ..database import get_session
-from ..models import Meter, Reading, System
+from ..models import Meter, Reading, System, Tariff
 from ..schemas import ChartData, ReadingCreate, ReadingRead, StatsRead
 from .settings import read_settings
 
@@ -67,12 +67,24 @@ def _sigma(session: Session) -> float:
     return float(read_settings(session).get("outlier_sigma", logic.DEFAULT_SIGMA))
 
 
+def _tariffs(session: Session, system_id: str) -> list[dict]:
+    """Tarifperioden als schlichte Dicts – logic.py soll keine ORM-Objekte kennen."""
+    rows = session.exec(
+        select(Tariff).where(Tariff.system_id == system_id).order_by(Tariff.gueltig_ab)
+    ).all()
+    return [{"name": t.name, "anbieter": t.anbieter,
+             "gueltig_ab": t.gueltig_ab, "gueltig_bis": t.gueltig_bis,
+             "arbeitspreis": t.arbeitspreis, "grundpreis": t.grundpreis} for t in rows]
+
+
 def _enriched(session: Session, system: System,
               from_: Optional[date] = None, to: Optional[date] = None) -> list[dict]:
     raw = _query_readings(session, system.id, from_, to)
-    return logic.mark_outliers(
+    enriched = logic.mark_outliers(
         logic.compute_intervals(raw, price=_price(system)), _sigma(session)
     )
+    # Tarifkosten treten NEBEN die erfassten Kosten, nicht an deren Stelle.
+    return logic.apply_tariffs(enriched, _tariffs(session, system.id))
 
 
 def _latest(session: Session, system_id: str) -> Optional[Reading]:
@@ -155,7 +167,10 @@ def get_stats(
     session: Session = Depends(get_session),
 ):
     system = _require_system(system_id, session)
-    return logic.compute_stats(_enriched(session, system, from_, to), _sigma(session))
+    enriched = _enriched(session, system, from_, to)
+    stats = logic.compute_stats(enriched, _sigma(session))
+    stats.update(logic.tariff_summary(enriched))
+    return stats
 
 
 @router.get("/api/systems/{system_id}/chart-data", response_model=ChartData)
@@ -192,6 +207,7 @@ def get_dashboard(
     system = _require_system(system_id, session)
     enriched = _enriched(session, system, from_, to)
     stats = logic.compute_stats(enriched, _sigma(session))
+    stats.update(logic.tariff_summary(enriched))
     chart = {
         "system_id": system_id, "name": system.name, "unit": system.einheit,
         "color": system.farbe,

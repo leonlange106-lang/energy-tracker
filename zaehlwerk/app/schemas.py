@@ -77,6 +77,13 @@ class StatsRead(BaseModel):
     outlier_threshold: Optional[float] = None
     reading_count: int = 0
     cost_estimated: bool = False
+    # Tarifbasierte Kosten (2.16.0). None, solange keine Tarifperiode greift.
+    total_cost_tariff: Optional[float] = None
+    total_energy_cost: Optional[float] = None
+    total_base_cost: Optional[float] = None
+    avg_price_effective: Optional[float] = None
+    covered_intervals: int = 0
+    coverage_ratio: float = 0.0
 
 
 class ChartData(BaseModel):
@@ -280,3 +287,61 @@ class BackupStatus(BaseModel):
     keep_days: int
     entries: list[BackupEntry]
     total_bytes: int
+
+
+# ---------- Tarifperioden ----------
+class TariffStats(BaseModel):
+    """Tarifkennzahlen, werden der Statistik beigemischt."""
+    total_cost_tariff: Optional[float] = None
+    total_energy_cost: Optional[float] = None
+    total_base_cost: Optional[float] = None
+    avg_price_effective: Optional[float] = None
+    covered_intervals: int = 0
+    coverage_ratio: float = 0.0
+
+
+class TariffPlanBase(BaseModel):
+    name: Optional[str] = Field(None, max_length=120)
+    anbieter: Optional[str] = Field(None, max_length=120)
+    gueltig_ab: date
+    gueltig_bis: Optional[date] = None
+    # Obergrenzen als Tippfehlerbremse: 100 €/Einheit und 1000 €/Monat sind
+    # weit jenseits realer Tarife, fangen aber ein verrutschtes Komma ab.
+    arbeitspreis: float = Field(..., ge=0, le=100)
+    grundpreis: float = Field(0.0, ge=0, le=1000)
+    notiz: Optional[str] = Field(None, max_length=500)
+
+    @field_validator("name", "anbieter", "notiz", mode="before")
+    @classmethod
+    def _trim(cls, v):
+        if v is None:
+            return None
+        v = str(v).strip()
+        return v or None
+
+    @model_validator(mode="after")
+    def _check_range(self):
+        if self.gueltig_bis and self.gueltig_bis < self.gueltig_ab:
+            raise ValueError("gueltig_bis darf nicht vor gueltig_ab liegen")
+        return self
+
+
+class TariffPlanCreate(TariffPlanBase):
+    pass
+
+
+class TariffPlanUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=120)
+    anbieter: Optional[str] = Field(None, max_length=120)
+    gueltig_ab: Optional[date] = None
+    gueltig_bis: Optional[date] = None
+    arbeitspreis: Optional[float] = Field(None, ge=0, le=100)
+    grundpreis: Optional[float] = Field(None, ge=0, le=1000)
+    notiz: Optional[str] = Field(None, max_length=500)
+
+
+class TariffPlanRead(TariffPlanBase):
+    id: str
+    system_id: str
+    erstellt_am: datetime
+    aktiv: bool = False        # Periode umfasst das heutige Datum

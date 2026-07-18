@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.15.0";
+const APP_VERSION = "2.16.0";
 const APP_CHANGELOG = [
+  { v: "2.16.0", d: "18.07.2026", items: [
+    "Tarifperioden je System: Arbeitspreis, Grundgebühr, Gültigkeitszeitraum",
+    "Kostenrechnung tageweise – ein Tarifwechsel mitten im Intervall wird korrekt aufgeteilt",
+    "Effektivpreis inklusive Grundgebühr in der Auswertung",
+  ]},
   { v: "2.15.0", d: "18.07.2026", items: [
     "Sidebar: „Zählwerk\" lässt sich aufklappen und listet alle aktiven Systeme",
     "Direkter Sprung in ein System aus der Sidebar, aktives System hervorgehoben",
@@ -638,6 +643,10 @@ const SystemDetail = {
     showMeter: false,
     meterForm: null,
     bauarten: [],
+    tariffs: [],
+    tariffsLoaded: false,
+    showTariff: false,
+    tariffForm: null,
     loading: true,
     readings: [],
     stats: null,
@@ -786,7 +795,10 @@ const SystemDetail = {
   },
   watch: {
     range() { this.loadDynamic(); },
-    tab(v) { if (v === "meters" && !this.metersLoaded) this.loadMeters(); },
+    tab(v) {
+      if (v === "meters" && !this.metersLoaded) this.loadMeters();
+      if (v === "tariffs" && !this.tariffsLoaded) this.loadTariffs();
+    },
     overlayIds() { this.loadOverlays(); },
   },
   async mounted() {
@@ -850,6 +862,57 @@ const SystemDetail = {
         this.notify("Zähler gelöscht", "ok");
         await this.loadMeters();
       } catch (e) { this.notify(e.message, "err"); }
+    },
+
+    /* ---------- Tarife ---------- */
+    async loadTariffs() {
+      try {
+        this.tariffs = await api(`/api/systems/${this.system.id}/tariffs`);
+        this.tariffsLoaded = true;
+      } catch (e) { this.notify("Tarife nicht ladbar: " + e.message, "err"); }
+    },
+    openTariff(t) {
+      this.tariffForm = t
+        ? { ...t }
+        : { id: null, name: "", anbieter: "", gueltig_ab: today(), gueltig_bis: null,
+            arbeitspreis: null, grundpreis: 0, notiz: "" };
+      this.showTariff = true;
+    },
+    async saveTariff() {
+      const f = this.tariffForm;
+      if (f.arbeitspreis === null || f.arbeitspreis === "") {
+        this.notify("Arbeitspreis fehlt", "err"); return;
+      }
+      const clean = (v) => (v === "" || v === undefined ? null : v);
+      const body = JSON.stringify({
+        name: clean(f.name), anbieter: clean(f.anbieter),
+        gueltig_ab: f.gueltig_ab, gueltig_bis: clean(f.gueltig_bis),
+        arbeitspreis: Number(f.arbeitspreis),
+        grundpreis: Number(f.grundpreis || 0),
+        notiz: clean(f.notiz),
+      });
+      this.busy = true;
+      try {
+        if (f.id) await api(`/api/tariffs/${f.id}`, { method: "PATCH", body });
+        else await api(`/api/systems/${this.system.id}/tariffs`, { method: "POST", body });
+        this.showTariff = false;
+        this.notify(f.id ? "Tarif aktualisiert" : "Tarif angelegt", "ok");
+        await this.loadTariffs();
+        await this.loadDynamic();      // Kosten neu rechnen lassen
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.busy = false; }
+    },
+    async deleteTariff(t) {
+      try {
+        await api(`/api/tariffs/${t.id}`, { method: "DELETE" });
+        this.notify("Tarif gelöscht", "ok");
+        await this.loadTariffs();
+        await this.loadDynamic();
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    tariffRange(t) {
+      const ab = fmtDate(t.gueltig_ab);
+      return t.gueltig_bis ? `${ab} – ${fmtDate(t.gueltig_bis)}` : `ab ${ab}`;
     },
 
     /* ---------- Hardware-Empfehlung ---------- */
@@ -1265,6 +1328,7 @@ const SystemDetail = {
       <button class="tab" :class="{active: tab==='chart'}" @click="tab='chart'">Auswertung</button>
       <button class="tab" :class="{active: tab==='list'}" @click="tab='list'">Werte ({{ readings.length }})</button>
       <button class="tab" :class="{active: tab==='meters'}" @click="tab='meters'">Zähler<span v-if="metersLoaded && meters.length"> ({{ meters.length }})</span></button>
+      <button class="tab" :class="{active: tab==='tariffs'}" @click="tab='tariffs'">Tarife<span v-if="tariffsLoaded && tariffs.length"> ({{ tariffs.length }})</span></button>
     </div>
 
     <transition name="m3sw" mode="out-in">
@@ -1280,6 +1344,18 @@ const SystemDetail = {
         <div class="stat"><div class="s-label">Max / Tag</div><div class="s-val num">{{ fmt(stats.max_per_day, 3) }}</div><div class="s-sub">{{ fmtDate(stats.max_per_day_datum) }}</div></div>
         <div class="stat"><div class="s-label">Min / Tag</div><div class="s-val num">{{ fmt(stats.min_per_day, 3) }}</div><div class="s-sub">{{ fmtDate(stats.min_per_day_datum) }}</div></div>
         <div class="stat" v-if="gasKwh"><div class="s-label">Gesamt in kWh <span class="s-tag">Zusatz</span></div><div class="s-val num">{{ fmt(gasKwh.total) }}<span class="u">kWh</span></div><div class="s-sub">Brennwert × Zustandszahl = {{ fmt(gasKwh.faktor, 3) }}</div></div>
+        <div class="stat tariff" v-if="stats.total_cost_tariff !== null && stats.total_cost_tariff !== undefined">
+          <div class="s-label">Kosten nach Tarif
+            <span class="s-tag" v-if="stats.coverage_ratio < 1">{{ Math.round(stats.coverage_ratio*100) }} % abgedeckt</span>
+          </div>
+          <div class="s-val num">{{ fmt(stats.total_cost_tariff) }}<span class="u">€</span></div>
+          <div class="s-sub">{{ fmt(stats.total_energy_cost) }} € Arbeit + {{ fmt(stats.total_base_cost) }} € Grund</div>
+        </div>
+        <div class="stat tariff" v-if="stats.avg_price_effective">
+          <div class="s-label">Effektivpreis <span class="s-tag">inkl. Grundgebühr</span></div>
+          <div class="s-val num">{{ fmt(stats.avg_price_effective, 4) }}<span class="u">€/{{ system.einheit }}</span></div>
+          <div class="s-sub">{{ stats.covered_intervals }} Intervalle mit Tarif</div>
+        </div>
         <div class="stat forecast" v-if="forecast"><div class="s-label">⌁ Hochrechnung Jahr <span class="s-tag warn">Prognose</span></div><div class="s-val num">{{ fmt(forecast.cons) }}<span class="u">{{ system.einheit }}</span></div><div class="s-sub" v-if="forecast.cost !== null">≈ {{ fmt(forecast.cost) }} € Kosten</div></div>
       </div>
 
@@ -1439,7 +1515,77 @@ const SystemDetail = {
       </div>
     </div>
 
+    <!-- TAB: Tarife -->
+    <div v-else-if="tab==='tariffs'" key="tariffs">
+      <div v-if="!tariffsLoaded" class="center-load"><span class="spin"></span></div>
+      <div class="empty" v-else-if="!tariffs.length">
+        <h3>Noch kein Tarif hinterlegt</h3>
+        <p>Mit Arbeitspreis und Grundgebühr je Zeitraum rechnet Zählwerk die Kosten
+           jedes Intervalls selbst aus – auch wenn mitten darin der Tarif gewechselt hat.</p>
+        <button class="btn btn-primary" @click="openTariff(null)">＋ Tarif anlegen</button>
+      </div>
+      <div v-else>
+        <div class="eyebrow">Tarife <button class="btn btn-sm" @click="openTariff(null)">＋ Tarif</button></div>
+        <div v-for="t in tariffs" :key="t.id" class="card tariff-card" :class="{current: t.aktiv}">
+          <div class="tf-head">
+            <div>
+              <div class="tf-name">{{ t.name || 'Ohne Bezeichnung' }}<span v-if="t.anbieter"> · {{ t.anbieter }}</span></div>
+              <div class="tf-range">{{ tariffRange(t) }}<span v-if="t.aktiv" class="tf-now">aktuell</span></div>
+            </div>
+            <div class="m-actions">
+              <button class="btn btn-sm" @click="openTariff(t)">✎</button>
+              <hold-button :small="true" @held="deleteTariff(t)">✕ halten</hold-button>
+            </div>
+          </div>
+          <div class="tf-prices">
+            <span><small>Arbeitspreis</small>{{ fmt(t.arbeitspreis, 4) }} €/{{ system.einheit }}</span>
+            <span><small>Grundpreis</small>{{ fmt(t.grundpreis, 2) }} €/Monat</span>
+          </div>
+          <div class="hint" v-if="t.notiz">{{ t.notiz }}</div>
+        </div>
+      </div>
+    </div>
+
     </transition>
+
+    <!-- MODAL: Tarif -->
+    <div class="overlay" v-if="showTariff" @click.self="showTariff=false">
+      <div class="modal" v-if="tariffForm">
+        <div class="modal-head"><h3>{{ tariffForm.id ? 'Tarif bearbeiten' : 'Neuer Tarif' }}</h3></div>
+        <div class="modal-body">
+          <div class="field-row">
+            <div class="field"><label>Bezeichnung</label>
+              <input class="input" v-model="tariffForm.name" placeholder="z. B. Grundversorgung 2024" /></div>
+            <div class="field"><label>Anbieter</label>
+              <input class="input" v-model="tariffForm.anbieter" /></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Gültig ab</label>
+              <input class="input" type="date" v-model="tariffForm.gueltig_ab" /></div>
+            <div class="field"><label>Gültig bis</label>
+              <input class="input" type="date" v-model="tariffForm.gueltig_bis" />
+              <div class="hint">Leer = läuft bis auf Weiteres.</div></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Arbeitspreis (€/{{ system.einheit }})</label>
+              <input class="input" type="number" step="0.0001" min="0" inputmode="decimal"
+                     v-model="tariffForm.arbeitspreis" placeholder="0,2950" /></div>
+            <div class="field"><label>Grundpreis (€/Monat)</label>
+              <input class="input" type="number" step="0.01" min="0" inputmode="decimal"
+                     v-model="tariffForm.grundpreis" /></div>
+          </div>
+          <label class="tf"><input class="tf-input" v-model="tariffForm.notiz" placeholder=" " /><span class="tf-label">Notiz (optional)</span></label>
+          <div class="hint">
+            Zeiträume dürfen sich nicht überschneiden – sonst wäre für einen Tag nicht
+            eindeutig, welcher Preis gilt. Der Server weist das ab.
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" @click="showTariff=false">Abbrechen</button>
+          <button class="btn btn-primary" :disabled="busy" @click="saveTariff">Speichern</button>
+        </div>
+      </div>
+    </div>
 
     <!-- MODAL: Zähler -->
     <div class="overlay" v-if="showMeter" @click.self="showMeter=false">
