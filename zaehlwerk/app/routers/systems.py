@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
 from ..database import get_session
-from ..models import Reading, System
+from ..models import Meter, Reading, System
 from ..schemas import SystemCreate, SystemRead, SystemUpdate
 
 router = APIRouter(prefix="/api/systems", tags=["systems"])
@@ -54,11 +54,15 @@ def update_system(
 
 @router.delete("/{system_id}", status_code=204)
 def delete_system(system_id: str, session: Session = Depends(get_session)):
-    """Endgültige Löschung (Falschanlage): System + ALLE zugehörigen Ablesungen."""
+    """Endgültige Löschung (Falschanlage): System + ALLE zugehörigen Ablesungen
+    UND Zähler-Metadaten. Ohne das Mitlöschen schlägt der Commit fehl, weil
+    PRAGMA foreign_keys=ON gesetzt ist."""
     system = session.get(System, system_id)
     if not system:
         raise HTTPException(404, "System nicht gefunden")
     for r in session.exec(select(Reading).where(Reading.system_id == system_id)).all():
         session.delete(r)
+    for m in session.exec(select(Meter).where(Meter.system_id == system_id)).all():
+        session.delete(m)
     session.delete(system)
     session.commit()

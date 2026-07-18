@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 from .. import logic, report
 from ..due import system_due_entries
 from ..database import get_session
-from ..models import Reading, System
+from ..models import Meter, Reading, System
 from ..schemas import ChartData, ReadingCreate, ReadingRead, StatsRead
 from .settings import read_settings
 
@@ -264,6 +264,22 @@ def export_all(session: Session = Depends(get_session)):
             "icon": s.icon, "zusatzfelder": s.zusatzfelder, "aktiv": s.aktiv,
         } for s in systems]
         z.writestr("systeme.json", json.dumps(cfg, ensure_ascii=False, indent=2))
+        # Zaehler-Metadaten mitsichern: SETUP.md/MIGRATION.md verweisen auf
+        # diesen Export als Backup-Weg - ohne sie waeren sie beim Neuaufbau weg.
+        meters = session.exec(select(Meter).order_by(Meter.system_id)).all()
+        by_id = {s.id: s.name for s in systems}
+        z.writestr("zaehler.json", json.dumps([{
+            "system": by_id.get(m.system_id, m.system_id),
+            "hersteller": m.hersteller, "modell": m.modell,
+            "zaehlernummer": m.zaehlernummer, "bauart": m.bauart,
+            "baujahr": m.baujahr,
+            "eichung_bis": m.eichung_bis.isoformat() if m.eichung_bis else None,
+            "messstellenbetreiber": m.messstellenbetreiber,
+            "stellen_vor": m.stellen_vor, "stellen_nach": m.stellen_nach,
+            "eingebaut_am": m.eingebaut_am.isoformat() if m.eingebaut_am else None,
+            "ausgebaut_am": m.ausgebaut_am.isoformat() if m.ausgebaut_am else None,
+            "notiz": m.notiz,
+        } for m in meters], ensure_ascii=False, indent=2))
         for sy in systems:
             raw = _query_readings(session, sy.id)
             z.writestr(f"zaehlwerk_{sy.name.replace(' ', '_')}.csv", _readings_csv(raw))

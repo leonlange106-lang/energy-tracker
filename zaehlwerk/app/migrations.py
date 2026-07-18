@@ -49,8 +49,41 @@ def _m001_app_settings(conn: Connection) -> None:
     """))
 
 
+# --------------------------------------------------------------------------
+# Migration 2: Zaehler-Metadaten
+# --------------------------------------------------------------------------
+def _m002_meters(conn: Connection) -> None:
+    if not _table_exists(conn, "meters"):
+        conn.execute(text("""
+            CREATE TABLE meters (
+                id                   VARCHAR NOT NULL PRIMARY KEY,
+                system_id            VARCHAR NOT NULL,
+                hersteller           VARCHAR,
+                modell               VARCHAR,
+                zaehlernummer        VARCHAR,
+                bauart               VARCHAR,
+                baujahr              INTEGER,
+                eichung_bis          DATE,
+                messstellenbetreiber VARCHAR,
+                stellen_vor          INTEGER,
+                stellen_nach         INTEGER,
+                eingebaut_am         DATE,
+                ausgebaut_am         DATE,
+                notiz                VARCHAR,
+                erstellt_am          DATETIME NOT NULL,
+                FOREIGN KEY(system_id) REFERENCES systems(id)
+            )
+        """))
+    # Indizes getrennt und mit IF NOT EXISTS: laeuft auch, wenn die Tabelle
+    # bei einer Neuinstallation schon von create_all() angelegt wurde.
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meters_system_id ON meters (system_id)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meters_zaehlernummer ON meters (zaehlernummer)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meters_eichung_bis ON meters (eichung_bis)"))
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
+    (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
 ]
 
 

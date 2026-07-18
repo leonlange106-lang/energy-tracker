@@ -24,7 +24,7 @@ from sqlmodel import Session, func, select
 from ..config import settings as runtime_settings
 from ..database import engine, get_session
 from ..migrations import schema_version
-from ..models import AppSetting, Reading, System
+from ..models import AppSetting, Meter, Reading, System
 from ..schemas import AppSettingsRead, AppSettingsUpdate, SystemInfo
 
 router = APIRouter(tags=["settings"])
@@ -106,7 +106,7 @@ def system_info(session: Session = Depends(get_session)):
 
     supervised = bool(os.environ.get("SUPERVISOR_TOKEN"))
     return SystemInfo(
-        app_version=os.environ.get("ZW_VERSION", "2.9.0"),
+        app_version=os.environ.get("ZW_VERSION", "2.10.0"),
         schema_version=schema_version(engine),
         python_version=sys.version.split()[0],
         platform=platform.machine(),
@@ -119,4 +119,5 @@ def system_info(session: Session = Depends(get_session)):
         supervisor_available=supervised,
         system_count=session.exec(select(func.count()).select_from(System)).one(),
         reading_count=session.exec(select(func.count()).select_from(Reading)).one(),
+        meter_count=session.exec(select(func.count()).select_from(Meter)).one(),
     )

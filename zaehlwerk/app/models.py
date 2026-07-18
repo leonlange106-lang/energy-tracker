@@ -1,6 +1,6 @@
-"""Datenmodell (SQLite) – Stammdaten UND Messwerte. Kein InfluxDB mehr."""
+"""Datenmodell (SQLite) – Stammdaten, Messwerte, Zähler-Metadaten, Einstellungen."""
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Optional
 
@@ -44,6 +44,43 @@ class Reading(SQLModel, table=True):
     meter_replaced: bool = False
     note: Optional[str] = None
 
+
+
+class Meter(SQLModel, table=True):
+    """Physischer Zähler als eigene Entität, 1:N unter einem System.
+
+    Warum nicht als Spalten am System: Ein System (z. B. "Strom Hauptzähler")
+    überlebt mehrere physische Zähler – der Zählertausch ist bereits über
+    `Reading.meter_replaced` abgebildet. Metadaten am System würden beim
+    Tausch die Historie des alten Geräts überschreiben.
+
+    Bewusst NICHT verknüpft mit der Verbrauchsberechnung: `logic.py` bleibt
+    unverändert. Diese Tabelle ist reine Dokumentation (Eichfrist, Seriennummer,
+    Hersteller) und kann fehlen, ohne dass eine Auswertung bricht.
+    """
+    __tablename__ = "meters"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    system_id: str = Field(index=True, foreign_key="systems.id")
+
+    hersteller: Optional[str] = None          # z. B. "Pipersberg", "EasyMeter", "Landis+Gyr"
+    modell: Optional[str] = None              # z. B. "mMe4.0", "Q4000"
+    zaehlernummer: Optional[str] = Field(default=None, index=True)   # aufgedruckte Nummer
+    bauart: Optional[str] = None              # z. B. "Balgengaszaehler", "Ferraris", "mME"
+    baujahr: Optional[int] = None
+
+    # Eichfrist: in D je nach Medium 5-16 Jahre. Praktischer Kern dieser Tabelle.
+    eichung_bis: Optional[date] = Field(default=None, index=True)
+    messstellenbetreiber: Optional[str] = None
+
+    # Stellenzahl -> Grundlage fuer Plausibilitaet und Ueberlauferkennung
+    stellen_vor: Optional[int] = None
+    stellen_nach: Optional[int] = None
+
+    eingebaut_am: Optional[date] = None
+    ausgebaut_am: Optional[date] = None        # None = aktuell verbaut
+    notiz: Optional[str] = None
+    erstellt_am: datetime = Field(default_factory=datetime.utcnow)
 
 
 class AppSetting(SQLModel, table=True):

@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ---------- Systeme ----------
@@ -142,3 +142,79 @@ class SystemInfo(BaseModel):
     supervisor_available: bool
     system_count: int
     reading_count: int
+    meter_count: int = 0
+
+
+# ---------- Zähler-Metadaten ----------
+# Vorschlagswerte für die UI. Bewusst KEIN Enum in der DB: der Markt bringt
+# laufend neue Bauarten, ein Enum würde bei jedem neuen Typ eine Migration
+# erzwingen. Freitext + Vorschlagsliste ist hier robuster.
+BAUART_VORSCHLAEGE = [
+    "mME (moderne Messeinrichtung)", "iMSys (intelligentes Messsystem)",
+    "Ferraris-Zähler", "Drehstromzähler", "Wechselstromzähler",
+    "Balgengaszähler", "Ultraschall-Gaszähler", "Drehkolbengaszähler",
+    "Flügelradzähler", "Woltmannzähler", "Ultraschall-Wasserzähler",
+]
+
+
+class MeterBase(BaseModel):
+    hersteller: Optional[str] = Field(None, max_length=120)
+    modell: Optional[str] = Field(None, max_length=120)
+    zaehlernummer: Optional[str] = Field(None, max_length=80)
+    bauart: Optional[str] = Field(None, max_length=120)
+    baujahr: Optional[int] = Field(None, ge=1900, le=2100)
+    eichung_bis: Optional[date] = None
+    messstellenbetreiber: Optional[str] = Field(None, max_length=160)
+    stellen_vor: Optional[int] = Field(None, ge=1, le=12)
+    stellen_nach: Optional[int] = Field(None, ge=0, le=6)
+    eingebaut_am: Optional[date] = None
+    ausgebaut_am: Optional[date] = None
+    notiz: Optional[str] = Field(None, max_length=1000)
+
+    @field_validator("hersteller", "modell", "zaehlernummer", "bauart",
+                     "messstellenbetreiber", "notiz", mode="before")
+    @classmethod
+    def _trim(cls, v):
+        """Leerstrings aus Formularen zu None – sonst steht in der DB "" statt NULL."""
+        if v is None:
+            return None
+        v = str(v).strip()
+        return v or None
+
+    @model_validator(mode="after")
+    def _check_dates(self):
+        if self.eingebaut_am and self.ausgebaut_am and self.ausgebaut_am < self.eingebaut_am:
+            raise ValueError("ausgebaut_am darf nicht vor eingebaut_am liegen")
+        if self.baujahr and self.eingebaut_am and self.eingebaut_am.year < self.baujahr:
+            raise ValueError("eingebaut_am liegt vor dem Baujahr")
+        return self
+
+
+class MeterCreate(MeterBase):
+    pass
+
+
+class MeterUpdate(MeterBase):
+    pass
+
+
+class MeterRead(MeterBase):
+    id: str
+    system_id: str
+    erstellt_am: datetime
+    # abgeleitet, nicht gespeichert
+    aktiv: bool = True                        # ausgebaut_am is None
+    eichung_faellig_in_tagen: Optional[int] = None
+    eichung_abgelaufen: bool = False
+
+
+class MeterCalibrationEntry(BaseModel):
+    """Eintrag der Eichfristen-Übersicht."""
+    meter_id: str
+    system_id: str
+    system_name: str
+    zaehlernummer: Optional[str] = None
+    hersteller: Optional[str] = None
+    eichung_bis: date
+    faellig_in_tagen: int
+    abgelaufen: bool

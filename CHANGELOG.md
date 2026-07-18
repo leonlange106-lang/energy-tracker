@@ -14,6 +14,25 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.10.0] - 2026-07-18
+
+### Added
+
+- [Backend/database.py] Ergänzt die Tabelle `meters` für Zähler-Metadaten: Hersteller, Modell, Zählernummer, Bauart, Baujahr, Eichfrist, Messstellenbetreiber, Stellenzahl vor und nach dem Komma, Ein- und Ausbaudatum, Notiz. Fremdschlüssel auf `systems.id`, Indizes auf `system_id`, `zaehlernummer` und `eichung_bis`.
+- [Backend/migrations.py] Ergänzt Migration 2, die die Tabelle samt Indizes idempotent anlegt und `PRAGMA user_version` auf 2 hebt.
+- [Backend/routers/meters.py] Ergänzt CRUD-Endpunkte: `GET`/`POST /api/systems/{id}/meters` sowie `GET`/`PATCH`/`DELETE /api/meters/{id}`.
+- [Backend/routers/meters.py] Ergänzt `GET /api/meters/calibration-due` mit Vorlauf in Tagen für abgelaufene und demnächst fällige Eichfristen.
+- [Backend/routers/meters.py] Ergänzt `GET /api/meters/bauarten` als Vorschlagsliste für die Oberfläche.
+- [Backend/schemas.py] Ergänzt `MeterCreate`, `MeterUpdate`, `MeterRead` und `MeterCalibrationEntry`; Datumsplausibilität und Längen werden vor dem Schreibzugriff geprüft, die Zählernummer ist je System eindeutig.
+
+### Changed
+
+- [Backend/routers/readings.py] Nimmt die Zähler-Metadaten als `zaehler.json` in den Gesamt-Export auf, da `SETUP.md` und `MIGRATION.md` diesen Export als Backup-Weg ausweisen.
+- [Backend/routers/systems.py] Löscht beim endgültigen Entfernen eines Systems auch dessen Zähler-Metadaten; andernfalls scheitert der Commit an der aktiven Fremdschlüsselprüfung.
+- [Backend/routers/settings.py] Ergänzt die Anzahl erfasster Zähler in der Laufzeitdiagnose.
+
+---
+
 ## [2.9.1] - 2026-07-18
 
 ### Changed
@@ -220,7 +239,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.1...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.0...HEAD
+[2.10.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.1...v2.10.0
 [2.9.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.7.0...v2.8.0
