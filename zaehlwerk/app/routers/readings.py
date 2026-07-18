@@ -15,6 +15,7 @@ from ..due import system_due_entries
 from ..database import get_session
 from ..models import Reading, System
 from ..schemas import ChartData, ReadingCreate, ReadingRead, StatsRead
+from .settings import read_settings
 
 router = APIRouter(tags=["readings"])
 
@@ -61,10 +62,17 @@ def _price(system: System) -> Optional[float]:
         return None
 
 
+def _sigma(session: Session) -> float:
+    """Ausreisser-Schwelle aus den Anwendungseinstellungen (Standard 2 sigma)."""
+    return float(read_settings(session).get("outlier_sigma", logic.DEFAULT_SIGMA))
+
+
 def _enriched(session: Session, system: System,
               from_: Optional[date] = None, to: Optional[date] = None) -> list[dict]:
     raw = _query_readings(session, system.id, from_, to)
-    return logic.mark_outliers(logic.compute_intervals(raw, price=_price(system)))
+    return logic.mark_outliers(
+        logic.compute_intervals(raw, price=_price(system)), _sigma(session)
+    )
 
 
 def _latest(session: Session, system_id: str) -> Optional[Reading]:
@@ -147,7 +155,7 @@ def get_stats(
     session: Session = Depends(get_session),
 ):
     system = _require_system(system_id, session)
-    return logic.compute_stats(_enriched(session, system, from_, to))
+    return logic.compute_stats(_enriched(session, system, from_, to), _sigma(session))
 
 
 @router.get("/api/systems/{system_id}/chart-data", response_model=ChartData)
@@ -183,7 +191,7 @@ def get_dashboard(
     """Kombiniert readings + stats + chart-data in EINEM Request/EINER Berechnung."""
     system = _require_system(system_id, session)
     enriched = _enriched(session, system, from_, to)
-    stats = logic.compute_stats(enriched)
+    stats = logic.compute_stats(enriched, _sigma(session))
     chart = {
         "system_id": system_id, "name": system.name, "unit": system.einheit,
         "color": system.farbe,
@@ -278,7 +286,7 @@ def get_report(
     pdf = report.build_report_pdf(
         system={"name": system.name, "typ": system.typ, "einheit": system.einheit},
         enriched=enriched,
-        stats=logic.compute_stats(enriched),
+        stats=logic.compute_stats(enriched, _sigma(session)),
         from_label=from_.strftime("%d.%m.%Y") if from_ else None,
         to_label=to.strftime("%d.%m.%Y") if to else None,
     )
@@ -302,7 +310,7 @@ def get_combined_report(
         sections.append({
             "system": {"name": system.name, "typ": system.typ, "einheit": system.einheit},
             "enriched": enriched,
-            "stats": logic.compute_stats(enriched),
+            "stats": logic.compute_stats(enriched, _sigma(session)),
         })
     pdf = report.build_combined_report_pdf(
         sections,

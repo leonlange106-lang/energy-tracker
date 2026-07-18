@@ -4,8 +4,15 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.8.0";
+const APP_VERSION = "2.9.0";
 const APP_CHANGELOG = [
+  { v: "2.9.0", d: "18.07.2026", items: [
+    "Einstellungen als eigene Seite mit Sektion A (System) und B (Web-App)",
+    "Serverseitige Anwendungsparameter: Benachrichtigungsintervall, Standard-Ableseintervall, Ausreißer-Schwelle",
+    "Schema-Migrationen über PRAGMA user_version",
+    "Laufzeit- und Datenbankdiagnose (read-only)",
+    "Import/Export direkt in der Systemansicht statt in den Einstellungen",
+  ]},
   { v: "2.8.0", d: "18.07.2026", items: [
     "Freie Farbwahl je System zusätzlich zu den acht Presets",
     "Diagrammfarben für Ausreißer, Gitternetz und Achsen in den Einstellungen konfigurierbar",
@@ -934,6 +941,8 @@ const SystemDetail = {
         </div>
       </div>
       <div class="dh-actions">
+        <button class="btn btn-sm" @click="openImport">⇪ Import</button>
+        <button class="btn btn-sm" @click="openExport">⇩ CSV</button>
         <button class="btn btn-tonal btn-sm" @click="openReport">⇩ PDF</button>
       </div>
     </div>
@@ -1159,8 +1168,14 @@ createApp({
     chartPrefs,
     types: SYSTEM_TYPES,
     latest: {},                // system_id -> { value, datum }
-    showSettings: false,
     showChangelog: false,
+    /* Sektion A: serverseitige Anwendungsparameter */
+    appSettings: null,
+    appSettingsDraft: null,
+    settingsErrors: {},
+    settingsSaving: false,
+    sysInfo: null,
+    settingsTab: "app",
     appVersion: APP_VERSION,
     changelog: APP_CHANGELOG,
     /* Sidebar: navExpanded = Desktop (Rail <-> Drawer), navDrawer = Mobile-Overlay */
@@ -1176,7 +1191,7 @@ createApp({
     themePalette() { return themeStore.palette; },
     themeContrast() { return themeStore.contrast; },
     /* aktiver Navigationspunkt (Einstellungen als Modal hat Vorrang vor der Ansicht) */
-    activeNav() { return this.showSettings ? "einstellungen" : "zaehlwerk"; },
+    activeNav() { return this.view === "settings" ? "einstellungen" : "zaehlwerk"; },
     navMenuIcon() { return SVG.menu; },
     visibleNavItems() { return this.navItems.filter((i) => !i.needsSystems || this.systems.length); },
   },
@@ -1200,7 +1215,11 @@ createApp({
     },
     closeDrawer() { this.navDrawer = false; },
     onNavKey(ev) { if (ev.key === "Escape" && this.navDrawer) this.navDrawer = false; },
-    openSettings() { this.showSettings = true; },
+    openSettings() {
+      this.view = "settings";
+      window.scrollTo(0, 0);
+      this.loadSettings();
+    },
     goNav(item) {
       if (item.disabled || !item.action) return;
       this.closeDrawer();
@@ -1242,7 +1261,8 @@ createApp({
       return r !== null && r < 3 ? `Kontrast ${r.toFixed(1)}:1 – auf dieser Fläche schwer erkennbar` : null;
     },
     fabAction() {
-      if (this.view === 'detail' && this.$refs.detail) this.$refs.detail.openReading();
+      if (this.view === "settings") return;
+      if (this.view === "detail" && this.$refs.detail) this.$refs.detail.openReading();
       else this.newSystem();
     },
     async confirmDeleteSystem() {
@@ -1257,9 +1277,64 @@ createApp({
         await this.load();
       } catch (e) { this.notify(e.message, "err"); }
     },
-    detailAction(fn) {
-      this.showSettings = false;
-      if (this.$refs.detail && this.$refs.detail[fn]) this.$refs.detail[fn]();
+    /* ---------- Sektion A: Anwendungsparameter ---------- */
+    async loadSettings() {
+      try {
+        const [s, i] = await Promise.all([api("/api/settings"), api("/api/system/info")]);
+        this.appSettings = s;
+        this.appSettingsDraft = { ...s };
+        this.sysInfo = i;
+        this.settingsErrors = {};
+      } catch (e) { this.notify("Einstellungen nicht ladbar: " + e.message, "err"); }
+    },
+    /* Clientseitige Vorpruefung – spiegelt die Grenzen der Pydantic-Schemas.
+       Der Server prueft unabhaengig davon nochmal; das hier spart nur den Roundtrip. */
+    validateSettings() {
+      const d = this.appSettingsDraft || {};
+      const err = {};
+      const num = (v) => (v === "" || v === null ? NaN : Number(v));
+      const h = num(d.notify_interval_hours);
+      if (!Number.isInteger(h) || h < 1 || h > 168) err.notify_interval_hours = "Ganzzahl zwischen 1 und 168 Stunden";
+      const iv = num(d.default_interval_days);
+      if (!Number.isInteger(iv) || iv < 0 || iv > 3650) err.default_interval_days = "Ganzzahl zwischen 0 und 3650 Tagen";
+      const sg = num(d.outlier_sigma);
+      if (!(sg >= 1 && sg <= 5)) err.outlier_sigma = "Wert zwischen 1,0 und 5,0";
+      this.settingsErrors = err;
+      return Object.keys(err).length === 0;
+    },
+    settingsDirty() {
+      if (!this.appSettings || !this.appSettingsDraft) return false;
+      return Object.keys(this.appSettings).some(
+        (k) => String(this.appSettings[k]) !== String(this.appSettingsDraft[k]));
+    },
+    async saveSettings() {
+      if (!this.validateSettings()) { this.notify("Bitte Eingaben prüfen", "err"); return; }
+      this.settingsSaving = true;
+      const d = this.appSettingsDraft;
+      try {
+        const saved = await api("/api/settings", {
+          method: "PUT",
+          body: JSON.stringify({
+            notify_enabled: !!d.notify_enabled,
+            notify_interval_hours: Number(d.notify_interval_hours),
+            default_interval_days: Number(d.default_interval_days),
+            outlier_sigma: Number(d.outlier_sigma),
+          }),
+        });
+        this.appSettings = saved;
+        this.appSettingsDraft = { ...saved };
+        this.notify("Einstellungen gespeichert", "ok");
+      } catch (e) {
+        // 422 vom Server: Feldfehler sichtbar machen statt nur zu toasten
+        this.notify("Nicht gespeichert: " + e.message, "err");
+      } finally { this.settingsSaving = false; }
+    },
+    revertSettings() { this.appSettingsDraft = { ...this.appSettings }; this.settingsErrors = {}; },
+    fmtBytes(n) {
+      if (!n) return "0 B";
+      const u = ["B", "KB", "MB", "GB"];
+      const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), u.length - 1);
+      return (n / Math.pow(1024, i)).toFixed(i ? 1 : 0) + " " + u[i];
     },
     dueInfo(id) {
       const l = this.latest[id];
@@ -1314,7 +1389,7 @@ createApp({
               v-html="navMenuIcon"></button>
       <div class="brand">
         <span class="logo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19a9 9 0 1 1 14 0"/><path d="M12 5v2"/><path d="M5.6 8.5l1.5 1.2"/><path d="M18.4 8.5l-1.5 1.2"/><path d="M12 15l3.5-4.5"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg></span>
-        <h1>{{ view==='detail' && selectedSystem ? selectedSystem.name : 'Zählwerk' }}</h1>
+        <h1>{{ view==='settings' ? 'Einstellungen' : (view==='detail' && selectedSystem ? selectedSystem.name : 'Zählwerk') }}</h1>
       </div>
       <div class="spacer"></div>
     </div>
@@ -1386,10 +1461,149 @@ createApp({
       </div>
     </template>
 
+    <!-- EINSTELLUNGEN -->
+    <template v-else-if="view==='settings'">
+      <div class="eyebrow">Einstellungen</div>
+      <div class="seg settings-seg">
+        <button :class="{active: settingsTab==='app'}" @click="settingsTab='app'">A · System</button>
+        <button :class="{active: settingsTab==='ui'}"  @click="settingsTab='ui'">B · Web-App</button>
+      </div>
+
+      <!-- ================= SEKTION A: System ================= -->
+      <template v-if="settingsTab==='app'">
+        <div class="card set-card">
+          <h3>Anwendungsparameter</h3>
+          <p class="hint">Serverseitig in SQLite gespeichert, gilt für alle Geräte. Wird vor dem Speichern validiert.</p>
+
+          <div class="field">
+            <label class="check"><input type="checkbox" v-model="appSettingsDraft.notify_enabled" v-if="appSettingsDraft" />
+              Benachrichtigung bei überfälliger Ablesung</label>
+          </div>
+          <div class="field" v-if="appSettingsDraft">
+            <label>Prüfintervall (Stunden)</label>
+            <input class="input" type="number" min="1" max="168" step="1"
+                   v-model="appSettingsDraft.notify_interval_hours"
+                   :class="{invalid: settingsErrors.notify_interval_hours}" @input="validateSettings" />
+            <div class="err-inline" v-if="settingsErrors.notify_interval_hours">{{ settingsErrors.notify_interval_hours }}</div>
+            <div class="hint" v-else>Wie oft der Hintergrunddienst auf Fälligkeiten prüft. Greift ohne Neustart.</div>
+          </div>
+          <div class="field" v-if="appSettingsDraft">
+            <label>Standard-Ableseintervall (Tage)</label>
+            <input class="input" type="number" min="0" max="3650" step="1"
+                   v-model="appSettingsDraft.default_interval_days"
+                   :class="{invalid: settingsErrors.default_interval_days}" @input="validateSettings" />
+            <div class="err-inline" v-if="settingsErrors.default_interval_days">{{ settingsErrors.default_interval_days }}</div>
+            <div class="hint" v-else>0 = Fälligkeit aus dem Median der bisherigen Intervalle schätzen.</div>
+          </div>
+          <div class="field" v-if="appSettingsDraft">
+            <label>Ausreißer-Schwelle (σ)</label>
+            <input class="input" type="number" min="1" max="5" step="0.1"
+                   v-model="appSettingsDraft.outlier_sigma"
+                   :class="{invalid: settingsErrors.outlier_sigma}" @input="validateSettings" />
+            <div class="err-inline" v-if="settingsErrors.outlier_sigma">{{ settingsErrors.outlier_sigma }}</div>
+            <div class="hint" v-else>Ø + n·σ gilt als Ausreißer. Kleiner = empfindlicher. Standard 2,0.</div>
+          </div>
+
+          <div class="settings-actions">
+            <button class="btn" :disabled="!settingsDirty()" @click="revertSettings">Verwerfen</button>
+            <button class="btn btn-primary" :disabled="settingsSaving || !settingsDirty()" @click="saveSettings">Speichern</button>
+          </div>
+        </div>
+
+        <div class="card set-card" v-if="sysInfo">
+          <h3>Laufzeit &amp; Datenbank</h3>
+          <p class="hint">Read-only. Container, Port und DB-Pfad gehören dem Supervisor und werden über
+            <code>config.yaml</code> bzw. das Add-on-Panel gesteuert, nicht hier.</p>
+          <table class="info-table">
+            <tr><td>Betriebsart</td><td>{{ sysInfo.runtime }}</td></tr>
+            <tr><td>App-Version</td><td class="num">{{ appVersion }}</td></tr>
+            <tr><td>Schema-Version</td><td class="num">{{ sysInfo.schema_version }}</td></tr>
+            <tr><td>Python</td><td class="num">{{ sysInfo.python_version }} · {{ sysInfo.platform }}</td></tr>
+            <tr><td>Supervisor-API</td><td>{{ sysInfo.supervisor_available ? 'verbunden' : 'nicht verfügbar' }}</td></tr>
+            <tr><td>DB-Pfad</td><td class="num">{{ sysInfo.db_path }}</td></tr>
+            <tr><td>DB-Größe</td><td class="num">{{ fmtBytes(sysInfo.db_size_bytes) }}</td></tr>
+            <tr><td>Journal-Modus</td><td class="num">{{ sysInfo.journal_mode }}</td></tr>
+            <tr><td>Foreign Keys</td><td>{{ sysInfo.foreign_keys ? 'aktiv' : 'inaktiv' }}</td></tr>
+            <tr><td>Datenbestand</td><td class="num">{{ sysInfo.system_count }} Systeme · {{ sysInfo.reading_count }} Ablesungen</td></tr>
+          </table>
+        </div>
+
+        <div class="card set-card">
+          <h3>Daten</h3>
+          <div class="settings-actions">
+            <button class="btn" @click="exportAll">⇩ Gesamt-Export (alle Systeme + Konfiguration)</button>
+          </div>
+        </div>
+      </template>
+
+      <!-- ================= SEKTION B: Web-App ================= -->
+      <template v-else>
+        <div class="card set-card">
+          <h3>Darstellung</h3>
+          <p class="hint">Gerätelokal in diesem Browser gespeichert, kein Serverzugriff.</p>
+          <div class="field">
+            <label>Modus</label>
+            <div class="theme-opts">
+              <button class="theme-opt" :class="{sel: themeMode==='auto'}" @click="pickTheme('auto')"><span class="ic">🖥️</span> Automatisch (System)</button>
+              <button class="theme-opt" :class="{sel: themeMode==='light'}" @click="pickTheme('light')"><span class="ic">☀️</span> Hell</button>
+              <button class="theme-opt" :class="{sel: themeMode==='dark'}" @click="pickTheme('dark')"><span class="ic">🌙</span> Dunkel</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Farbpalette</label>
+            <div class="theme-opts">
+              <button v-for="p in palettes" :key="p.key" class="theme-opt"
+                      :class="{sel: themePalette===p.key}" @click="pickPalette(p.key)">
+                <span class="ic pal-dot" :style="{background: p.swatch}"></span> {{ p.label }}
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Kontrast</label>
+            <div class="theme-opts">
+              <button v-for="c in contrasts" :key="c.key" class="theme-opt"
+                      :class="{sel: themeContrast===c.key}" @click="pickContrast(c.key)">
+                <span class="ic">{{ c.key==='high' ? '◐' : '◔' }}</span> {{ c.label }}
+              </button>
+            </div>
+            <div class="hint">Meldet dein System bereits eine Kontrastpräferenz, greift sie automatisch.</div>
+          </div>
+        </div>
+
+        <div class="card set-card">
+          <h3>Diagrammfarben</h3>
+          <div class="chart-colors">
+            <div v-for="c in chartColorKeys" :key="c.key" class="cc-row">
+              <label class="cc-swatch" :style="{background: chartColorValue(c.key)}" :title="c.label">
+                <input type="color" :value="chartColorValue(c.key)" @input="onChartColor(c.key, $event)" />
+              </label>
+              <span class="cc-label">
+                {{ c.label }}
+                <small>{{ isChartColorCustom(c.key) ? chartColorValue(c.key) : 'Theme-Standard' }}</small>
+              </span>
+              <button v-if="isChartColorCustom(c.key)" class="crumb cc-reset"
+                      @click="clearChartColor(c.key)" title="Auf Theme-Standard zurücksetzen">↺</button>
+            </div>
+          </div>
+          <div class="hint">Die <strong>Kurvenfarbe</strong> gehört zum jeweiligen System und wird dort bearbeitet.</div>
+          <div class="settings-actions">
+            <button class="btn btn-sm" @click="resetChartColors">↺ Alle auf Theme-Standard</button>
+          </div>
+        </div>
+
+        <div class="card set-card">
+          <h3>Über</h3>
+          <div class="settings-actions">
+            <button class="btn" @click="showChangelog=true">Zählwerk v{{ appVersion }} · Versionsverlauf</button>
+          </div>
+        </div>
+      </template>
+    </template>
+
     <!-- DETAIL -->
     <system-detail
       ref="detail"
-      v-else-if="selectedSystem"
+      v-else-if="selectedSystem && view==='detail'"
       :key="selectedSystem.id"
       :system="selectedSystem"
       @back="back"
@@ -1436,85 +1650,6 @@ createApp({
       <div class="modal-foot">
         <button class="btn" @click="showSystem=false">Abbrechen</button>
         <button class="btn btn-primary" :disabled="busy" @click="saveSystem">Speichern</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL: Einstellungen -->
-  <div class="overlay" v-if="showSettings" @click.self="showSettings=false">
-    <div class="modal">
-      <div class="modal-head"><h3>Einstellungen</h3></div>
-      <div class="modal-body">
-        <div class="settings-section" v-if="view==='detail' && selectedSystem">
-          <div class="field"><label>System · {{ selectedSystem.name }}</label></div>
-          <div class="settings-actions">
-            <button class="btn" @click="showSettings=false; editSystem(selectedSystem)">✎ System bearbeiten</button>
-            <button class="btn" @click="detailAction('openImport')">⇪ CSV-Import</button>
-            <button class="btn" @click="detailAction('openExport')">⇩ CSV-Export (Backup)</button>
-            <button class="btn" @click="detailAction('openReport')">⇩ PDF-Bericht</button>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="field"><label>Daten</label></div>
-          <div class="settings-actions">
-            <button class="btn" @click="exportAll">⇩ Gesamt-Export (alle Systeme + Konfiguration)</button>
-          </div>
-        </div>
-        <div class="field">
-          <label>Darstellung</label>
-          <div class="theme-opts">
-            <button class="theme-opt" :class="{sel: themeMode==='auto'}" @click="pickTheme('auto')"><span class="ic">🖥️</span> Automatisch (System)</button>
-            <button class="theme-opt" :class="{sel: themeMode==='light'}" @click="pickTheme('light')"><span class="ic">☀️</span> Hell</button>
-            <button class="theme-opt" :class="{sel: themeMode==='dark'}" @click="pickTheme('dark')"><span class="ic">🌙</span> Dunkel</button>
-          </div>
-          <div class="hint">„Automatisch" folgt der System-Einstellung deines Geräts.</div>
-        </div>
-        <div class="field">
-          <label>Farbpalette</label>
-          <div class="theme-opts">
-            <button v-for="p in palettes" :key="p.key" class="theme-opt"
-                    :class="{sel: themePalette===p.key}" @click="pickPalette(p.key)">
-              <span class="ic pal-dot" :style="{background: p.swatch}"></span> {{ p.label }}
-            </button>
-          </div>
-        </div>
-        <div class="field">
-          <label>Kontrast</label>
-          <div class="theme-opts">
-            <button v-for="c in contrasts" :key="c.key" class="theme-opt"
-                    :class="{sel: themeContrast===c.key}" @click="pickContrast(c.key)">
-              <span class="ic">{{ c.key==='high' ? '◐' : '◔' }}</span> {{ c.label }}
-            </button>
-          </div>
-          <div class="hint">„Hoher Kontrast" verstärkt Text, Konturen und Fokusringe. Meldet dein System bereits eine Kontrastpräferenz, greift sie automatisch.</div>
-        </div>
-        <div class="field">
-          <label>Diagrammfarben</label>
-          <div class="chart-colors">
-            <div v-for="c in chartColorKeys" :key="c.key" class="cc-row">
-              <label class="cc-swatch" :style="{background: chartColorValue(c.key)}" :title="c.label">
-                <input type="color" :value="chartColorValue(c.key)" @input="onChartColor(c.key, $event)" />
-              </label>
-              <span class="cc-label">
-                {{ c.label }}
-                <small>{{ isChartColorCustom(c.key) ? chartColorValue(c.key) : 'Theme-Standard' }}</small>
-              </span>
-              <button v-if="isChartColorCustom(c.key)" class="crumb cc-reset"
-                      @click="clearChartColor(c.key)" title="Auf Theme-Standard zurücksetzen">↺</button>
-            </div>
-          </div>
-          <div class="hint">
-            Gilt für alle Diagramme, gerätelokal gespeichert. Die <strong>Kurvenfarbe</strong> gehört zum jeweiligen System
-            und wird dort bearbeitet (System → ✎ Bearbeiten → Farbe).
-          </div>
-          <div class="settings-actions" style="margin-top:8px">
-            <button class="btn btn-sm" @click="resetChartColors">↺ Alle auf Theme-Standard</button>
-          </div>
-        </div>
-      </div>
-      <div class="modal-foot" style="justify-content:space-between;align-items:center">
-        <button class="crumb" @click="showChangelog=true">Zählwerk v{{ appVersion }} · Versionsverlauf</button>
-        <button class="btn btn-primary" @click="showSettings=false">Fertig</button>
       </div>
     </div>
   </div>

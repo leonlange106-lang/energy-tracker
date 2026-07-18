@@ -46,22 +46,25 @@ def compute_intervals(readings: list[dict], price: Optional[float] = None) -> li
     return out
 
 
-def outlier_threshold(enriched: list[dict]) -> Optional[float]:
+DEFAULT_SIGMA = 2.0
+
+
+def outlier_threshold(enriched: list[dict], sigma: float = DEFAULT_SIGMA) -> Optional[float]:
     vals = [e["consumption_per_day"] for e in enriched if e["consumption_per_day"] is not None]
     if len(vals) < 2:
         return None
-    return statistics.mean(vals) + 2 * statistics.pstdev(vals)
+    return statistics.mean(vals) + sigma * statistics.pstdev(vals)
 
 
-def mark_outliers(enriched: list[dict]) -> list[dict]:
-    thr = outlier_threshold(enriched)
+def mark_outliers(enriched: list[dict], sigma: float = DEFAULT_SIGMA) -> list[dict]:
+    thr = outlier_threshold(enriched, sigma)
     for e in enriched:
         pd = e["consumption_per_day"]
         e["is_outlier"] = bool(thr is not None and pd is not None and pd > thr)
     return enriched
 
 
-def compute_stats(enriched: list[dict]) -> dict:
+def compute_stats(enriched: list[dict], sigma: float = DEFAULT_SIGMA) -> dict:
     cons_vals = [e["consumption"] for e in enriched if e["consumption"] is not None]
     per_days = [
         (e["consumption_per_day"], e["datum"])
@@ -97,7 +100,7 @@ def compute_stats(enriched: list[dict]) -> dict:
         "min_per_day_datum": min_dt,
         "max_per_day": round(max_pd, 3) if max_pd is not None else None,
         "max_per_day_datum": max_dt,
-        "outlier_threshold": outlier_threshold(enriched),
+        "outlier_threshold": outlier_threshold(enriched, sigma),
         "reading_count": len(enriched),
         "cost_estimated": any_estimated,
     }

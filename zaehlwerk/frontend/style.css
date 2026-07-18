@@ -720,3 +720,23 @@ td.r { text-align: right; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ---------- Einstellungsseite (Sektion A/B) ---------- */
+.settings-seg { margin: 4px 0 18px; }
+.set-card { padding: 20px; margin-bottom: 16px; }
+.set-card h3 { margin: 0 0 4px; font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: .15px; }
+.set-card > .hint:first-of-type { margin-top: 0; }
+.set-card .settings-actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+.input.invalid, .invalid { border-color: var(--md-error) !important; }
+.err-inline { color: var(--md-error); font-size: 12px; line-height: 16px; margin-top: 4px; }
+
+.info-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.info-table td { padding: 8px 0; border-bottom: 1px solid var(--md-outline-variant); vertical-align: top; }
+.info-table td:first-child { color: var(--md-on-surface-variant); width: 42%; }
+.info-table td:last-child { text-align: right; word-break: break-all; }
+.info-table tr:last-child td { border-bottom: none; }
+@media (max-width: 640px) {
+  .info-table td:first-child { width: 45%; }
+  .info-table td { font-size: 13px; }
+}

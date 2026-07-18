@@ -29,8 +29,12 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 
 
 def init_db() -> None:
+    """Reihenfolge ist wichtig: erst Tabellen anlegen (Neuinstallation),
+    dann Migrationen (Bestandsinstallation). Beide Schritte sind idempotent."""
     from . import models  # noqa: F401
     SQLModel.metadata.create_all(engine)
+    from .migrations import run_migrations
+    run_migrations(engine)
 
 
 def get_session():

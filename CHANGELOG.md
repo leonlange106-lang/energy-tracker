@@ -14,6 +14,27 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.9.0] - 2026-07-18
+
+### Added
+
+- [Backend/migrations.py] Führt ein Schema-Migrationsverfahren über `PRAGMA user_version` ein; Migrationen laufen beim Start genau einmal, aufsteigend und in einer Transaktion.
+- [Backend/models.py] Ergänzt die Tabelle `app_settings` als Key/Value-Speicher für anwendungsweite Parameter.
+- [Backend/routers/settings.py] Ergänzt `GET`/`PUT /api/settings` für Benachrichtigungsschalter, Prüfintervall, Standard-Ableseintervall und Ausreißer-Schwelle.
+- [Backend/routers/settings.py] Ergänzt `GET /api/system/info` als read-only Laufzeitdiagnose (Betriebsart, Schema-Version, DB-Pfad und -Größe, Journal-Modus, Datenbestand).
+- [Backend/schemas.py] Ergänzt `AppSettingsUpdate` mit Wertebereichen; ungültige Eingaben werden mit HTTP 422 abgewiesen, bevor geschrieben wird.
+- [Frontend/UI] Ergänzt eine Einstellungsseite mit Sektion A (System) und Sektion B (Web-App) samt clientseitiger Vorprüfung und Feldfehlern.
+
+### Changed
+
+- [Frontend/UI] Löst die Einstellungen aus dem Modal und führt sie als eigene Ansicht; der Sidebar-Eintrag navigiert dorthin, statt ein Overlay zu öffnen.
+- [Frontend/UI] Verschiebt CSV-Import und -Export aus den Einstellungen in die Kopfzeile der Systemansicht, wo sie fachlich hingehören.
+- [Backend/logic.py] Nimmt die Ausreißer-Schwelle als Parameter entgegen, statt 2 σ fest zu verdrahten.
+- [Backend/notifier.py] Liest Intervall und Ein/Aus in jedem Zyklus neu aus den Einstellungen; Änderungen greifen ohne Add-on-Neustart.
+- [Backend/database.py] Ruft nach `create_all()` die Migrationen auf; beide Schritte sind idempotent.
+
+---
+
 ## [2.8.0] - 2026-07-18
 
 ### Added
@@ -184,7 +205,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.5.1...v2.6.0

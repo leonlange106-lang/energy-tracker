@@ -44,3 +44,16 @@ class Reading(SQLModel, table=True):
     meter_replaced: bool = False
     note: Optional[str] = None
 
+
+
+class AppSetting(SQLModel, table=True):
+    """Anwendungsweite Einstellungen als Key/Value.
+
+    Bewusst KV statt einer Spalte je Option: neue Optionen brauchen dann keine
+    Schemaänderung und damit keine weitere Migration. Werte werden als Text
+    abgelegt und beim Lesen typisiert (siehe routers/settings.py).
+    """
+    __tablename__ = "app_settings"
+
+    key: str = Field(primary_key=True)
+    value: str

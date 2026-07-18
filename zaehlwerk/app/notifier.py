@@ -50,12 +50,18 @@ def check_and_notify() -> None:
 
 
 async def watcher() -> None:
+    """Intervall und Ein/Aus kommen aus den Anwendungseinstellungen und werden
+    in JEDEM Zyklus neu gelesen -> Änderungen greifen ohne Add-on-Neustart."""
     if not os.environ.get("SUPERVISOR_TOKEN"):
         return                                   # Standalone ohne HA
     await asyncio.sleep(90)                      # HA nach Add-on-Start Zeit geben
     while True:
+        hours = 6
         try:
-            await asyncio.to_thread(check_and_notify)
+            from .routers.settings import get_setting
+            if await asyncio.to_thread(get_setting, "notify_enabled", True):
+                await asyncio.to_thread(check_and_notify)
+            hours = int(await asyncio.to_thread(get_setting, "notify_interval_hours", 6))
         except Exception:  # noqa: BLE001
-            pass                                 # HA temporär weg -> nächster Zyklus
-        await asyncio.sleep(6 * 3600)
+            pass                                 # HA/DB temporär weg -> nächster Zyklus
+        await asyncio.sleep(max(1, hours) * 3600)

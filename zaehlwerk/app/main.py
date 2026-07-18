@@ -8,9 +8,9 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .database import init_db
 from . import notifier
-from .routers import ha, imports, readings, systems
+from .routers import ha, imports, readings, settings as settings_router, systems
 
-app = FastAPI(title="Zählwerk API", version="2.8.0")
+app = FastAPI(title="Zählwerk API", version="2.9.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,6 +22,7 @@ app.add_middleware(
 app.include_router(systems.router)
 app.include_router(readings.router)
 app.include_router(imports.router)
+app.include_router(settings_router.router)
 app.include_router(ha.router)
 
 
