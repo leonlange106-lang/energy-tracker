@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.7.0";
+const APP_VERSION = "2.8.0";
 const APP_CHANGELOG = [
+  { v: "2.8.0", d: "18.07.2026", items: [
+    "Freie Farbwahl je System zusätzlich zu den acht Presets",
+    "Diagrammfarben für Ausreißer, Gitternetz und Achsen in den Einstellungen konfigurierbar",
+    "Kontrastwarnung bei schwer erkennbaren Farben (WCAG-Verhältnis unter 3:1)",
+  ]},
   { v: "2.7.0", d: "18.07.2026", items: [
     "Wählbare Farbpaletten: Teal, Indigo, Ember – unabhängig vom Hell-/Dunkel-Modus",
     "Hochkontrast-Theme (WCAG AAA) für beide Modi und alle Paletten",
@@ -101,6 +106,64 @@ window.matchMedia("(prefers-contrast: more)").addEventListener("change", () => {
 });
 // aktuelle Theme-Farbe aus CSS lesen (für Chart.js)
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/* ---------- Chart-Farben (nutzerdefiniert, geraetelokal) ----------
+   Bewusst localStorage statt SQLite: das Repo hat KEIN Schema-Migrations-
+   verfahren (SQLModel.create_all legt nur an, aendert nichts). Eine neue
+   Spalte wuerde Bestandsinstallationen mit "no such column" brechen.
+   Systemfarben (System.farbe) bleiben dagegen in SQLite - sie werden auch
+   serverseitig fuer die PDF-Berichte gebraucht.
+   null / "" = Theme-Standard verwenden (Fallback auf die M3-Rolle).        */
+const CHART_COLOR_KEYS = [
+  { key: "outlier", label: "Ausreißer-Markierung", role: "--md-outlier" },
+  { key: "grid",    label: "Gitternetz",           role: "--chart-grid" },
+  { key: "axis",    label: "Achsenbeschriftung",   role: "--ink-soft" },
+];
+function loadChartPrefs() {
+  try { return JSON.parse(localStorage.getItem("zw_chart_colors")) || {}; }
+  catch (_) { return {}; }
+}
+const chartPrefs = reactive(loadChartPrefs());
+function setChartColor(key, value) {
+  if (value) chartPrefs[key] = value; else delete chartPrefs[key];
+  localStorage.setItem("zw_chart_colors", JSON.stringify(chartPrefs));
+}
+function resetChartColors() {
+  Object.keys(chartPrefs).forEach((k) => delete chartPrefs[k]);
+  localStorage.removeItem("zw_chart_colors");
+}
+/* Nutzerwert schlaegt Theme-Rolle schlaegt Literal-Fallback */
+function chartColor(key, fallback) {
+  const def = CHART_COLOR_KEYS.find((c) => c.key === key);
+  return chartPrefs[key] || (def && cssVar(def.role)) || fallback;
+}
+
+/* ---------- Kontrastpruefung (WCAG 2.1 relative Luminanz) ---------- */
+function hexToRgb(hex) {
+  const h = String(hex || "").replace("#", "");
+  const f = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  if (f.length !== 6) return null;
+  return [0, 2, 4].map((i) => parseInt(f.slice(i, i + 2), 16));
+}
+function luminance(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return null;
+  const [r, g, b] = rgb.map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrastRatio(a, b) {
+  const la = luminance(a), lb = luminance(b);
+  if (la === null || lb === null) return null;
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+/* Verhaeltnis der Farbe zur aktuellen Chart-Flaeche; <3:1 = auf dem Untergrund kaum sichtbar */
+function contrastToSurface(hex) {
+  const surface = cssVar("--md-surface-c-low") || (themeStore.dark ? "#161D1D" : "#EFF5F5");
+  return contrastRatio(hex, surface);
+}
 
 /* ---------- Stammdaten / Konstanten ---------- */
 const SYSTEM_TYPES = [
@@ -240,8 +303,12 @@ const EnergyChart = {
   template: `<div class="chart-box"><canvas ref="cv"></canvas></div>`,
   mounted() { this.schedule(); },
   beforeUnmount() { this.destroy(); },
-  computed: { isDark() { return themeStore.dark; } },
+  computed: {
+    isDark() { return themeStore.dark; },
+    prefSignature() { return JSON.stringify(chartPrefs); },
+  },
   watch: {
+    prefSignature() { this.schedule(); },   // Farbwahl -> Chart sofort neu zeichnen
     labels() { this.schedule(); },
     datasets() { this.schedule(); },
     chartType() { this.schedule(); },
@@ -266,8 +333,8 @@ const EnergyChart = {
       if (!cv || typeof Chart === "undefined") return;
       this.destroy();
       const ctx = cv.getContext("2d");
-      const grid = cssVar("--chart-grid") || "#e2e8ee";
-      const tick = cssVar("--ink-soft") || "#5b6b7b";
+      const grid = chartColor("grid", "#e2e8ee");
+      const tick = chartColor("axis", "#5b6b7b");
 
       // Datasets klonen (Props nicht mutieren) + Gradient-Fläche fürs Primärsystem (Linie)
       const datasets = this.datasets.map((d, i) => {
@@ -392,6 +459,7 @@ const SystemDetail = {
     overlayOptions() {
       return this.allSystems.filter((s) => s.id !== this.system.id && s.aktiv);
     },
+    outlierColor() { return chartColor("outlier", "#9A6A00"); },
     chart() {
       if (!this.chartData) return { labels: [], datasets: [] };
       const pick = (cd) =>
@@ -405,7 +473,7 @@ const SystemDetail = {
       const pm = toMap(this.chartData);
       const idxOf = (l) => this.chartData.labels.indexOf(l);
       const primData = labels.map((l) => (l in pm ? pm[l] : null));
-      const ptColor = labels.map((l) => { const i = idxOf(l); return i >= 0 && this.chartData.outliers[i] ? (cssVar("--md-outlier") || "#9A6A00") : this.chartData.color; });
+      const ptColor = labels.map((l) => { const i = idxOf(l); return i >= 0 && this.chartData.outliers[i] ? chartColor("outlier", "#9A6A00") : this.chartData.color; });
       const ptRad = labels.map((l) => { const i = idxOf(l); return i >= 0 && this.chartData.outliers[i] ? 5 : this.chartType === "bar" ? 0 : 2; });
 
       // E: im Zählerstand-Modus die Linie an Zählertausch-Punkten trennen (Segmente je Zähler)
@@ -914,7 +982,7 @@ const SystemDetail = {
         <energy-chart :labels="chart.labels" :datasets="chart.datasets" :chart-type="chartType" :has-y2="chart.hasY2" :y2-label="chart.y2Label" />
         <div class="legend-hint">
           <span><span class="dot" :style="{background: chartData ? chartData.color : '#0e7c86'}"></span>{{ modeLabel }}</span>
-          <span><span class="dot" style="background:var(--md-outlier)"></span>Ausreißer (Ø + 2σ)</span>
+          <span><span class="dot" :style="{background: outlierColor}"></span>Ausreißer (Ø + 2σ)</span>
         </div>
       </div>
     </div>
@@ -1087,6 +1155,8 @@ createApp({
     palette: PALETTE,
     palettes: PALETTES,
     contrasts: CONTRASTS,
+    chartColorKeys: CHART_COLOR_KEYS,
+    chartPrefs,
     types: SYSTEM_TYPES,
     latest: {},                // system_id -> { value, datum }
     showSettings: false,
@@ -1159,6 +1229,18 @@ createApp({
     pickTheme(mode) { setTheme(mode); },
     pickPalette(key) { setPalette(key); },
     pickContrast(key) { setContrast(key); },
+
+    /* ---------- Chart-Farben ---------- */
+    chartColorValue(key) { return chartColor(key, "#000000"); },
+    isChartColorCustom(key) { return !!this.chartPrefs[key]; },
+    onChartColor(key, ev) { setChartColor(key, ev.target.value); },
+    clearChartColor(key) { setChartColor(key, null); },
+    resetChartColors() { resetChartColors(); this.notify("Chart-Farben zurückgesetzt", "ok"); },
+    /* Warnt, wenn eine Farbe auf der Chart-Fläche zu schwach kontrastiert */
+    colorWarning(hex) {
+      const r = contrastToSurface(hex);
+      return r !== null && r < 3 ? `Kontrast ${r.toFixed(1)}:1 – auf dieser Fläche schwer erkennbar` : null;
+    },
     fabAction() {
       if (this.view === 'detail' && this.$refs.detail) this.$refs.detail.openReading();
       else this.newSystem();
@@ -1333,7 +1415,12 @@ createApp({
           <label>Farbe</label>
           <div class="swatch-row">
             <span v-for="c in palette" :key="c" class="swatch-pick" :class="{sel: sysForm.farbe===c}" :style="{background:c}" @click="sysForm.farbe=c"></span>
+            <label class="swatch-pick swatch-custom" :class="{sel: !palette.includes(sysForm.farbe)}"
+                   :style="{background: sysForm.farbe}" title="Eigene Farbe wählen">
+              <input type="color" v-model="sysForm.farbe" />
+            </label>
           </div>
+          <div class="hint">{{ sysForm.farbe }}<span v-if="colorWarning(sysForm.farbe)" class="warn-inline"> · {{ colorWarning(sysForm.farbe) }}</span></div>
         </div>
         <div class="field" v-for="f in formExtra" :key="f.key">
           <label>{{ f.label }}</label>
@@ -1400,6 +1487,29 @@ createApp({
             </button>
           </div>
           <div class="hint">„Hoher Kontrast" verstärkt Text, Konturen und Fokusringe. Meldet dein System bereits eine Kontrastpräferenz, greift sie automatisch.</div>
+        </div>
+        <div class="field">
+          <label>Diagrammfarben</label>
+          <div class="chart-colors">
+            <div v-for="c in chartColorKeys" :key="c.key" class="cc-row">
+              <label class="cc-swatch" :style="{background: chartColorValue(c.key)}" :title="c.label">
+                <input type="color" :value="chartColorValue(c.key)" @input="onChartColor(c.key, $event)" />
+              </label>
+              <span class="cc-label">
+                {{ c.label }}
+                <small>{{ isChartColorCustom(c.key) ? chartColorValue(c.key) : 'Theme-Standard' }}</small>
+              </span>
+              <button v-if="isChartColorCustom(c.key)" class="crumb cc-reset"
+                      @click="clearChartColor(c.key)" title="Auf Theme-Standard zurücksetzen">↺</button>
+            </div>
+          </div>
+          <div class="hint">
+            Gilt für alle Diagramme, gerätelokal gespeichert. Die <strong>Kurvenfarbe</strong> gehört zum jeweiligen System
+            und wird dort bearbeitet (System → ✎ Bearbeiten → Farbe).
+          </div>
+          <div class="settings-actions" style="margin-top:8px">
+            <button class="btn btn-sm" @click="resetChartColors">↺ Alle auf Theme-Standard</button>
+          </div>
         </div>
       </div>
       <div class="modal-foot" style="justify-content:space-between;align-items:center">

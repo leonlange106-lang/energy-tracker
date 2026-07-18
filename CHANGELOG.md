@@ -14,6 +14,21 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.8.0] - 2026-07-18
+
+### Added
+
+- [Frontend/UI] Ergänzt einen freien Farbwähler (`input[type=color]`) im Systemdialog zusätzlich zu den acht Presets; der gewählte Wert landet wie bisher in `System.farbe` in SQLite.
+- [Frontend/UI] Ergänzt in den Einstellungen einen Abschnitt Diagrammfarben für Ausreißer-Markierung, Gitternetz und Achsenbeschriftung, jeweils mit Rücksetzer auf den Theme-Standard.
+- [Frontend/app.js] Ergänzt den Store `chartPrefs` mit Persistenz in `localStorage` unter `zw_chart_colors`; leere Werte fallen auf die M3-Rolle zurück.
+- [Frontend/app.js] Ergänzt eine WCAG-Kontrastprüfung und warnt, sobald eine gewählte Farbe gegenüber der Diagrammfläche unter 3:1 liegt.
+
+### Changed
+
+- [Frontend/app.js] Bezieht Gitternetz-, Achsen- und Ausreißerfarbe über `chartColor()` statt direkt aus `cssVar()`; die Chart-Komponente zeichnet bei Farbwechsel über den Watcher `prefSignature` sofort neu.
+
+---
+
 ## [2.7.0] - 2026-07-18
 
 ### Added
@@ -169,7 +184,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.8.0...HEAD
+[2.8.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.5.0...v2.5.1
