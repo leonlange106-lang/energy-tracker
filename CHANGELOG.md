@@ -14,6 +14,34 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.17.0] - 2026-07-18
+
+### Added
+
+- [Backend/MQTT] Ergänzt einen MQTT-Listener auf Basis von `paho-mqtt`, der Zählerstände aus Broker-Nachrichten übernimmt. Der Neuaufbau der Verbindung erfolgt mit wachsendem Abstand über die Bibliothek selbst.
+- [Backend/MQTT] Bezieht Host, Port, Benutzer und Passwort über die Supervisor-Schnittstelle `/services/mqtt`, sofern das Mosquitto-Add-on installiert ist; in diesem Fall muss kein Zugangsdatum gespeichert werden. Die manuelle Eingabe bleibt als Rückfallebene für den Standalone-Betrieb.
+- [Backend/MQTT] Wertet drei Nutzlastformen aus: reine Zahl, flaches JSON und verschachteltes JSON. Der Schlüsselvergleich erfolgt ohne Rücksicht auf Groß- und Kleinschreibung, sodass unter anderem das Tasmota-Format `{"ENERGY":{"Total":…}}` erkannt wird. Komma als Dezimaltrennzeichen ist zulässig.
+- [Backend/MQTT] Ordnet Topics über `zusatzfelder["mqtt_topic"]` einem System zu, analog zur bestehenden `ha_entity`; eine Schemaänderung ist dafür nicht nötig.
+- [Backend/routers/mqtt.py] Ergänzt `GET /api/mqtt/status`, `POST /api/mqtt/restart` und `POST /api/mqtt/resubscribe`.
+- [Backend/routers/settings.py] Ergänzt die Parameter `mqtt_enabled`, `mqtt_use_supervisor`, `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password` und `mqtt_base_topic`.
+- [Frontend/UI] Ergänzt die MQTT-Konfiguration in Sektion A der Einstellungen samt Verbindungsstatus, Topic-Zuordnung und Protokoll der letzten Ereignisse.
+- [Frontend/UI] Ergänzt das Feld MQTT-Topic im Systemdialog.
+- [Deployment/config.yaml] Ergänzt `services: mqtt:want`, damit der Supervisor die Zugangsdaten durchreicht; ohne Broker startet das Add-on unverändert.
+- [Deployment/requirements.txt] Ergänzt `paho-mqtt>=2.1`.
+
+### Changed
+
+- [Backend/MQTT] Schreibt höchstens eine Ablesung je System und Tag und aktualisiert den Wert des laufenden Tages, statt anzuhängen. Ein Zähler, der im Sekundentakt sendet, würde die Datenbank sonst um Millionen Zeilen erweitern und die auf Intervallen beruhende Auswertung entwerten.
+- [Backend/routers/settings.py] Verbindet den Listener nach dem Speichern der Einstellungen neu, sodass Änderungen ohne Neustart des Add-ons greifen.
+
+### Security
+
+- [Backend/routers/settings.py] Gibt das MQTT-Passwort nie zurück. Die Leseantwort meldet über `mqtt_password_set` lediglich, ob eines hinterlegt ist; ein leeres Feld beim Speichern lässt den bestehenden Wert unverändert, statt ihn zu löschen.
+- [Backend/MQTT] Verwirft Werte, die unter dem zuletzt erfassten Zählerstand liegen, und protokolliert die Ablehnung. Ein Zählertausch oder eine Fehlmessung gehört von Hand erfasst und darf nicht automatisch in die Verbrauchsrechnung laufen.
+- [Frontend/UI] Weist bei manuell eingetragenen Zugangsdaten darauf hin, dass diese unverschlüsselt in der Datenbankdatei liegen.
+
+---
+
 ## [2.16.0] - 2026-07-18
 
 ### Added
@@ -405,7 +433,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.16.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.17.0...HEAD
+[2.17.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.16.0...v2.17.0
 [2.16.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.13.0...v2.14.0

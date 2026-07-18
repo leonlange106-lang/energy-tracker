@@ -7,11 +7,11 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import init_db
-from . import backup as backup_mod, notifier, outbound
-from .routers import (backups, external, ha, imports, meters, readings,
-                      settings as settings_router, systems)
+from . import backup as backup_mod, mqtt_client, notifier, outbound
+from .routers import (backups, external, ha, imports, meters, mqtt, readings,
+                      settings as settings_router, systems, tariffs)
 
-app = FastAPI(title="Zählwerk API", version="2.16.0")
+app = FastAPI(title="Zählwerk API", version="2.17.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,6 +26,8 @@ app.include_router(imports.router)
 app.include_router(backups.router)
 app.include_router(external.router)
 app.include_router(meters.router)
+app.include_router(tariffs.router)
+app.include_router(mqtt.router)
 app.include_router(settings_router.router)
 app.include_router(ha.router)
 
@@ -42,6 +44,9 @@ async def _startup():
     import asyncio
     asyncio.create_task(notifier.watcher())
     asyncio.create_task(backup_mod.scheduler())
+    # MQTT nach dem Socket-Guard starten: ein Broker im eigenen Netz ist von
+    # der Sperre nicht betroffen, ein oeffentlicher schon - und genau so soll es sein.
+    await asyncio.to_thread(mqtt_client.boot)
 
 
 @app.get("/api/health")

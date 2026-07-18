@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.16.0";
+const APP_VERSION = "2.17.0";
 const APP_CHANGELOG = [
+  { v: "2.17.0", d: "18.07.2026", items: [
+    "MQTT-Ingestion: Zählerstände aus Broker-Nachrichten übernehmen",
+    "Zugangsdaten kommen vom Mosquitto-Add-on – kein Passwort nötig",
+    "Höchstens eine Ablesung je System und Tag; Werte laufen nie rückwärts",
+    "Topic je System im Bearbeiten-Dialog, Ereignisprotokoll in den Einstellungen",
+  ]},
   { v: "2.16.0", d: "18.07.2026", items: [
     "Tarifperioden je System: Arbeitspreis, Grundgebühr, Gültigkeitszeitraum",
     "Kostenrechnung tageweise – ein Tarifwechsel mitten im Intervall wird korrekt aufgeteilt",
@@ -243,6 +249,7 @@ const COMMON_FIELDS = [
   { key: "preis", label: "Ø-Preis €/Einheit (für Kostenschätzung, optional)", type: "number" },
   { key: "ablese_intervall_tage", label: "Ablese-Intervall in Tagen (für Fälligkeit, optional)", type: "number" },
   { key: "ha_entity", label: "HA-Entity Zählerstand (optional, z. B. sensor.stromzaehler)", type: "text" },
+  { key: "mqtt_topic", label: "MQTT-Topic (optional, z. B. tele/hichi/SENSOR)", type: "text" },
   { key: "ha_unit", label: "Einheit des HA-Sensors (leer = wie von HA gemeldet)", type: "select",
     options: ["", "Wh", "kWh", "MWh", "L", "m³"] },
 ];
@@ -1764,6 +1771,8 @@ createApp({
     extStatus: null,
     backupStatus: null,
     backupBusy: false,
+    mqttStatus: null,
+    mqttPassword: "",
     settingsTab: "app",
     /* Pre-Export-Dialog */
     showExportCfg: false,
@@ -2013,6 +2022,7 @@ createApp({
           api("/api/backup"),
         ]);
         this.backupStatus = b;
+        this.loadMqtt();
         this.appSettings = s;
         this.appSettingsDraft = { ...s };
         this.sysInfo = i;
@@ -2061,10 +2071,20 @@ createApp({
             backup_enabled: !!d.backup_enabled,
             backup_time: d.backup_time,
             backup_keep_days: Number(d.backup_keep_days),
+            mqtt_enabled: !!d.mqtt_enabled,
+            mqtt_use_supervisor: !!d.mqtt_use_supervisor,
+            mqtt_host: d.mqtt_host || "",
+            mqtt_port: Number(d.mqtt_port || 1883),
+            mqtt_username: d.mqtt_username || "",
+            mqtt_base_topic: d.mqtt_base_topic || "zaehlwerk",
+            // Leeres Feld = unveraendert lassen, nicht loeschen
+            ...(this.mqttPassword ? { mqtt_password: this.mqttPassword } : {}),
           }),
         });
         this.appSettings = saved;
         this.appSettingsDraft = { ...saved };
+        this.mqttPassword = "";
+        this.loadMqtt();
         this.notify(saved.offline_mode
           ? "Gespeichert – Internetzugriff gesperrt"
           : "Gespeichert – Internetzugriff freigegeben", "ok");
@@ -2073,6 +2093,19 @@ createApp({
         // 422 vom Server: Feldfehler sichtbar machen statt nur zu toasten
         this.notify("Nicht gespeichert: " + e.message, "err");
       } finally { this.settingsSaving = false; }
+    },
+    async loadMqtt() {
+      try { this.mqttStatus = await api("/api/mqtt/status"); }
+      catch (_) { this.mqttStatus = null; }
+    },
+    async restartMqtt() {
+      try {
+        await api("/api/mqtt/restart", { method: "POST" });
+        await this.loadMqtt();
+        this.notify(this.mqttStatus && this.mqttStatus.connected
+          ? "MQTT verbunden" : "Nicht verbunden – siehe Status", 
+          this.mqttStatus && this.mqttStatus.connected ? "ok" : "err");
+      } catch (e) { this.notify(e.message, "err"); }
     },
     async runBackup() {
       this.backupBusy = true;
@@ -2342,6 +2375,77 @@ createApp({
             <tr><td>Foreign Keys</td><td>{{ sysInfo.foreign_keys ? 'aktiv' : 'inaktiv' }}</td></tr>
             <tr><td>Datenbestand</td><td class="num">{{ sysInfo.system_count }} Systeme · {{ sysInfo.reading_count }} Ablesungen</td></tr>
           </table>
+        </div>
+
+        <div class="card set-card" v-if="appSettingsDraft">
+          <h3>MQTT-Ingestion</h3>
+          <p class="hint">Übernimmt Zählerstände aus Broker-Nachrichten. Je System und Tag
+            wird höchstens eine Ablesung geschrieben – der Wert des laufenden Tages wird
+            aktualisiert statt angehängt.</p>
+
+          <div class="hint ks-note" v-if="mqttStatus && !mqttStatus.available">
+            <code>paho-mqtt</code> fehlt im Image. Das Add-on nach dem Update neu bauen lassen.
+          </div>
+
+          <div class="field">
+            <label class="check"><input type="checkbox" v-model="appSettingsDraft.mqtt_enabled" @change="validateSettings" />
+              <span>MQTT aktiv</span></label>
+          </div>
+
+          <template v-if="appSettingsDraft.mqtt_enabled">
+            <div class="field">
+              <label class="check"><input type="checkbox" v-model="appSettingsDraft.mqtt_use_supervisor" />
+                <span>Zugangsdaten von Home Assistant beziehen
+                  <small>{{ mqttStatus && mqttStatus.supervisor_offer
+                    ? 'Mosquitto-Add-on erkannt – kein Passwort nötig'
+                    : 'Kein MQTT-Dienst gemeldet; unten manuell eintragen' }}</small></span></label>
+            </div>
+
+            <template v-if="!appSettingsDraft.mqtt_use_supervisor || (mqttStatus && !mqttStatus.supervisor_offer)">
+              <div class="field-row">
+                <div class="field"><label>Broker-Host</label>
+                  <input class="input" v-model="appSettingsDraft.mqtt_host" placeholder="192.168.1.10" /></div>
+                <div class="field"><label>Port</label>
+                  <input class="input" type="number" min="1" max="65535" v-model="appSettingsDraft.mqtt_port" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label>Benutzer</label>
+                  <input class="input" v-model="appSettingsDraft.mqtt_username" autocomplete="off" /></div>
+                <div class="field"><label>Passwort</label>
+                  <input class="input" type="password" v-model="mqttPassword" autocomplete="new-password"
+                         :placeholder="appSettings && appSettings.mqtt_password_set ? '•••••••• (hinterlegt)' : ''" />
+                  <div class="hint">Nur ausfüllen, um es zu ändern.</div></div>
+              </div>
+              <div class="hint ks-note">
+                Manuell eingetragene Zugangsdaten liegen unverschlüsselt in der SQLite-Datei.
+                Über das Mosquitto-Add-on entfällt das.
+              </div>
+            </template>
+
+            <div class="settings-actions">
+              <button class="btn" @click="restartMqtt">↻ Neu verbinden</button>
+              <button class="btn btn-sm" @click="loadMqtt">Status aktualisieren</button>
+            </div>
+
+            <table class="info-table" v-if="mqttStatus">
+              <tr><td>Verbindung</td><td>{{ mqttStatus.connected ? 'verbunden' : 'getrennt' }}</td></tr>
+              <tr v-if="mqttStatus.broker"><td>Broker</td><td class="num">{{ mqttStatus.broker }} · {{ mqttStatus.source }}</td></tr>
+              <tr v-if="mqttStatus.last_error"><td>Letzter Fehler</td><td>{{ mqttStatus.last_error }}</td></tr>
+              <tr><td>Nachrichten</td><td class="num">{{ mqttStatus.messages }} empfangen · {{ mqttStatus.written }} geschrieben</td></tr>
+              <tr v-for="m in mqttStatus.mapped" :key="m.topic"><td>{{ m.system }}</td><td class="num">{{ m.topic }}</td></tr>
+            </table>
+            <div class="hint" v-if="mqttStatus && !mqttStatus.mapped.length">
+              Noch kein Topic zugeordnet. Trag es je System unter „✎ Bearbeiten“ im Feld
+              <strong>MQTT-Topic</strong> ein.
+            </div>
+
+            <div class="mqtt-log" v-if="mqttStatus && mqttStatus.events.length">
+              <div class="hw-head">Letzte Ereignisse</div>
+              <div v-for="(e,i) in mqttStatus.events" :key="i" class="mq-row" :class="e.level">
+                <span class="mq-ts">{{ e.ts.slice(11,19) }}</span><span>{{ e.text }}</span>
+              </div>
+            </div>
+          </template>
         </div>
 
         <div class="card set-card" v-if="appSettingsDraft">

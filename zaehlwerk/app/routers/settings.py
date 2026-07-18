@@ -43,6 +43,15 @@ DEFAULTS: dict[str, object] = {
     "backup_enabled": True,
     "backup_time": "03:30",
     "backup_keep_days": 7,
+    # MQTT. Der Supervisor liefert die Zugangsdaten, wenn Mosquitto laeuft -
+    # dann bleiben Host/Benutzer/Passwort hier leer.
+    "mqtt_enabled": False,
+    "mqtt_use_supervisor": True,
+    "mqtt_host": "",
+    "mqtt_port": 1883,
+    "mqtt_username": "",
+    "mqtt_password": "",
+    "mqtt_base_topic": "zaehlwerk",
 }
 
 _BOOL = lambda v: str(v).lower() in {"1", "true", "ja", "yes"}  # noqa: E731
@@ -56,7 +65,18 @@ _CASTS = {
     "backup_enabled": _BOOL,
     "backup_time": str,
     "backup_keep_days": int,
+    "mqtt_enabled": _BOOL,
+    "mqtt_use_supervisor": _BOOL,
+    "mqtt_host": str,
+    "mqtt_port": int,
+    "mqtt_username": str,
+    "mqtt_password": str,
+    "mqtt_base_topic": str,
 }
+
+# Diese Schluessel verlassen den Server NIE im Klartext. Die Leseantwort meldet
+# nur, OB ein Wert gesetzt ist.
+SECRET_KEYS = {"mqtt_password"}
 
 
 def read_settings(session: Session) -> dict:
@@ -79,9 +99,16 @@ def get_setting(key: str, default=None):
         return read_settings(session).get(key, default)
 
 
+def _redacted(values: dict) -> dict:
+    """Geheimnisse durch ein Ja/Nein ersetzen, bevor etwas den Server verlaesst."""
+    out = {k: v for k, v in values.items() if k not in SECRET_KEYS}
+    out["mqtt_password_set"] = bool(values.get("mqtt_password"))
+    return out
+
+
 @router.get("/api/settings", response_model=AppSettingsRead)
 def get_settings(session: Session = Depends(get_session)):
-    return AppSettingsRead(**read_settings(session))
+    return AppSettingsRead(**_redacted(read_settings(session)))
 
 
 @router.put("/api/settings", response_model=AppSettingsRead)
@@ -103,7 +130,16 @@ def update_settings(payload: AppSettingsUpdate, session: Session = Depends(get_s
     # Modulweite Flagge sofort nachziehen, sonst greift der Socket-Guard erst
     # nach einem Neustart.
     outbound.set_offline(bool(values.get("offline_mode", True)))
-    return AppSettingsRead(**values)
+    # MQTT-Verbindung an den neuen Stand anpassen, ohne Add-on-Neustart
+    try:
+        from .. import mqtt_client
+        if values.get("mqtt_enabled"):
+            mqtt_client.start(values)
+        else:
+            mqtt_client.stop()
+    except Exception:  # noqa: BLE001
+        pass
+    return AppSettingsRead(**_redacted(values))
 
 
 @router.get("/api/system/info", response_model=SystemInfo)

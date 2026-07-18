@@ -111,6 +111,14 @@ class AppSettingsRead(BaseModel):
     backup_enabled: bool
     backup_time: str
     backup_keep_days: int
+    mqtt_enabled: bool = False
+    mqtt_use_supervisor: bool = True
+    mqtt_host: str = ""
+    mqtt_port: int = 1883
+    mqtt_username: str = ""
+    mqtt_base_topic: str = "zaehlwerk"
+    # Kein Passwortfeld: der Server gibt nur bekannt, ob eines hinterlegt ist.
+    mqtt_password_set: bool = False
     notify_enabled: bool
     notify_interval_hours: int
     default_interval_days: int
@@ -139,6 +147,13 @@ class AppSettingsUpdate(BaseModel):
     backup_time: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     # Untergrenze 1 Tag; oben 365, darueber laeuft /backup unnoetig voll.
     backup_keep_days: Optional[int] = Field(None, ge=1, le=365)
+    mqtt_enabled: Optional[bool] = None
+    mqtt_use_supervisor: Optional[bool] = None
+    mqtt_host: Optional[str] = Field(None, max_length=200)
+    mqtt_port: Optional[int] = Field(None, ge=1, le=65535)
+    mqtt_username: Optional[str] = Field(None, max_length=120)
+    mqtt_password: Optional[str] = Field(None, max_length=256)
+    mqtt_base_topic: Optional[str] = Field(None, max_length=120)
 
     @field_validator("outlier_sigma")
     @classmethod
