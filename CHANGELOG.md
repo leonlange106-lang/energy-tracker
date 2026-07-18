@@ -14,6 +14,21 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.12.1] - 2026-07-18
+
+### Fixed
+
+- [Frontend/UI] Beseitigt die doppelte Navigation auf schmalen Viewports. Der in 2.6.0 eingeführte Drawer lag dort zusätzlich zur Bottom-Bar an; unterhalb von 841 px sind Rail, Drawer, Scrim und Menü-Button jetzt vollständig abgeschaltet, oberhalb ist es die Bottom-Bar.
+- [Frontend/UI] Behebt den vertikalen Versatz des Kamera-Buttons im Ablesedialog. `.btn` fehlte `justify-content: center`, wodurch der Inhalt linksbündig saß; zusätzlich zog `align-items: stretch` aus 2.9.1 den Button auf die volle Feldhöhe statt ihn quadratisch zu lassen.
+- [Frontend/style.css] Stellt `.input-scan` auf ein zweispaltiges Grid mit `minmax(0, 1fr)` um. Feld und Button liegen damit auf einer gemeinsamen Mittelachse, unabhängig von Schriftgröße und Fokusrahmen; lange Einheiten laufen nicht mehr über.
+- [Frontend/app.js] Schließt einen offenen Drawer beim Verkleinern des Fensters; andernfalls blieb er unsichtbar über der Bottom-Bar liegen und fing Klicks ab.
+
+### Changed
+
+- [Frontend/style.css] Reduziert die Ziffernhöhe im Zählerstandsfeld auf Touch-Geräten von 24 px auf 22 px mit symmetrischem Innenabstand, sodass Feld und 60-px-Scanner-Button bündig abschließen.
+
+---
+
 ## [2.12.0] - 2026-07-18
 
 ### Added
@@ -289,7 +304,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.1...HEAD
+[2.12.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.0...v2.12.1
 [2.12.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.0...v2.10.1

@@ -384,7 +384,8 @@ body.nav-expanded { --rail-w: 264px; }
   font-family: var(--sans); font-size: 14px; font-weight: 500; letter-spacing: .1px;
   border-radius: 20px; padding: 10px 20px; height: 40px; cursor: pointer;
   border: 1px solid var(--md-outline); background: transparent; color: var(--md-primary);
-  display: inline-flex; align-items: center; gap: 8px; position: relative; overflow: hidden;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  position: relative; overflow: hidden;
   transition: background var(--dur-short) var(--ease-standard), box-shadow var(--dur-short) var(--ease-standard);
 }
 .btn:hover { background: color-mix(in srgb, var(--md-primary) 8%, transparent); }
@@ -608,8 +609,14 @@ td.r { text-align: right; }
 .settings-actions .btn { justify-content: flex-start; width: 100%; border-radius: 16px; height: 46px; }
 
 /* ---------- Scanner ---------- */
-.input-scan { display: flex; gap: 8px; align-items: center; }
-.input-scan .tf { flex: 1; margin-bottom: 0; min-width: 0; }
+/* Grid statt Flex: die erste Spalte darf schrumpfen (minmax(0,1fr) verhindert
+   das Ueberlaufen langer Einheiten), die zweite behaelt ihre feste Groesse.
+   align-items: center legt Feld und Button auf eine gemeinsame Mittelachse -
+   unabhaengig davon, wie hoch das Feld durch Schriftgroesse oder Fokus-Rahmen
+   gerade ist. */
+.input-scan { display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; gap: 12px; }
+.input-scan .tf { margin-bottom: 0; min-width: 0; }
 .input-scan .tf-input { min-width: 0; }
 .modal-scan { max-width: 560px; }
 .scan-stage { position: relative; background: #000; border-radius: 16px; overflow: hidden; }
@@ -780,9 +787,13 @@ html { scrollbar-gutter: stable; }
     .topbar-inner, .wrap { margin-left: calc(var(--rail-w) + 16px); margin-right: 16px; }
   }
   .nav-scrim { display: none; }
+  .nav-bottom { display: none !important; }   /* nur Sidebar auf Desktop */
 }
 @media (max-width: 840px) {
-  /* Rail ausgeblendet; nur als modaler Drawer sichtbar */
+  /* Genau EINE Navigation je Viewport: unterhalb von 841px ausschliesslich die
+     Bottom-Bar. Rail, Drawer, Scrim und der Menue-Button sind vollstaendig
+     abgeschaltet - vorher lagen Drawer und Bottom-Bar gleichzeitig an. */
+  .nav-rail, .nav-scrim, .nav-toggle { display: none !important; }
   .nav-rail { transform: translateX(-100%); width: 280px; align-items: stretch; padding: 12px; box-shadow: var(--md-shadow-3); }
   .nav-rail .rail-fab { width: auto; align-self: flex-start; padding: 0 20px; gap: 8px; }
   .nav-rail .fab-text { display: inline; font-size: 14px; font-weight: 500; }
@@ -797,7 +808,6 @@ html { scrollbar-gutter: stable; }
   .nav-rail .nav-label { flex: 1; white-space: nowrap; }
   .nav-rail .nav-badge { display: inline-block; }
   .nav-rail .nav-foot { opacity: 1; padding-left: 12px; }
-  .nav-rail.drawer { transform: translateX(0); }
   .nav-bottom { display: flex; }
   .fab-screen { display: block; bottom: 96px; }
   .wrap { padding-bottom: 170px; }
@@ -840,13 +850,18 @@ html { scrollbar-gutter: stable; }
 /* ---------- Ablesedialog: Primaerfeld + Scanner ---------- */
 .reading-value { margin-bottom: 18px; }
 .reading-value .tf-input { font-size: 20px; font-weight: 500; font-family: var(--mono); letter-spacing: -.01em; }
-.scan-trigger { flex: 0 0 auto; font-size: 20px; padding: 0; width: 56px; }
+.scan-trigger {
+  width: 56px; height: 56px; aspect-ratio: 1; padding: 0; border-radius: 16px;
+  font-size: 22px; line-height: 1;
+}
 @media (pointer: coarse) {
   /* Zaehlerstaende werden im Keller oft aus schraegem Winkel abgetippt -
      groessere Ziffern, groesserer Scanner-Button. */
-  .reading-value .tf-input { font-size: 24px; padding: 18px 15px 16px; }
-  .scan-trigger { width: 64px; min-height: 64px; font-size: 24px; }
-  .input-scan { gap: 10px; align-items: stretch; }
+  /* Feldhoehe bewusst gezaehmt: 22px Ziffern + symmetrisches Padding ergeben
+     rund 60px - passend zur 60px-Kachel des Scanners auf einer Linie.
+     KEIN align-items: stretch mehr, das war die Ursache des Versatzes. */
+  .reading-value .tf-input { font-size: 22px; padding: 16px 15px 14px; }
+  .scan-trigger { width: 60px; height: 60px; font-size: 24px; }
 }
 
 /* ---------- Modal-Footer mit destruktiver Aktion ---------- */

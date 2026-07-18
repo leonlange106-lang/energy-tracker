@@ -4,8 +4,12 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.12.0";
+const APP_VERSION = "2.12.1";
 const APP_CHANGELOG = [
+  { v: "2.12.1", d: "18.07.2026", items: [
+    "Nur noch eine Navigation je Viewport: mobil Bottom-Bar, Desktop Sidebar",
+    "Kamera-Button im Ablesedialog wieder quadratisch und mittig zum Eingabefeld",
+  ]},
   { v: "2.12.0", d: "18.07.2026", items: [
     "Internet-Kill-Switch: sperrt ausgehende Verbindungen auf Socket-Ebene, Standard ist gesperrt",
     "Optionale externe Daten: Wetter (Open-Meteo) und Day-Ahead-Preise (aWATTar)",
@@ -1613,9 +1617,13 @@ createApp({
   async mounted() {
     this.applyNavClass();
     window.addEventListener("keydown", this.onNavKey);
+    window.addEventListener("resize", this.onNavResize);
     await this.load();
   },
-  unmounted() { window.removeEventListener("keydown", this.onNavKey); },
+  unmounted() {
+    window.removeEventListener("keydown", this.onNavKey);
+    window.removeEventListener("resize", this.onNavResize);
+  },
   methods: {
     fmt, typeIcon, fmtDate,
 
@@ -1623,13 +1631,19 @@ createApp({
     isCompact() { return window.innerWidth <= NAV_BREAKPOINT; },
     applyNavClass() { document.body.classList.toggle("nav-expanded", this.navExpanded); },
     toggleNav() {
-      if (this.isCompact()) { this.navDrawer = !this.navDrawer; return; }
+      // Unterhalb des Breakpoints gibt es ausschliesslich die Bottom-Bar; der
+      // Menue-Button ist dort per CSS ausgeblendet. Der Guard bleibt als
+      // Absicherung, falls der Klick auf anderem Weg ausgeloest wird.
+      if (this.isCompact()) return;
       this.navExpanded = !this.navExpanded;
       localStorage.setItem("zw_nav_expanded", this.navExpanded ? "1" : "0");
       this.applyNavClass();
     },
     closeDrawer() { this.navDrawer = false; },
     onNavKey(ev) { if (ev.key === "Escape" && this.navDrawer) this.navDrawer = false; },
+    /* Beim Wechsel auf einen schmalen Viewport darf kein Drawer offen bleiben,
+       sonst laege er unsichtbar ueber der Bottom-Bar und blockierte Klicks. */
+    onNavResize() { if (this.isCompact() && this.navDrawer) this.navDrawer = false; },
     openSettings() {
       this.view = "settings";
       window.scrollTo(0, 0);
