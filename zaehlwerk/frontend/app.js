@@ -4,8 +4,12 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.12.1";
+const APP_VERSION = "2.12.2";
 const APP_CHANGELOG = [
+  { v: "2.12.2", d: "18.07.2026", items: [
+    "Tabs schließen sich gegenseitig aus – Werte und Zähler wurden gleichzeitig angezeigt",
+    "FAB passt sich dem aktiven Tab an (Zähler statt Ablesung)",
+  ]},
   { v: "2.12.1", d: "18.07.2026", items: [
     "Nur noch eine Navigation je Viewport: mobil Bottom-Bar, Desktop Sidebar",
     "Kamera-Button im Ablesedialog wieder quadratisch und mittig zum Eingabefeld",
@@ -1291,7 +1295,7 @@ const SystemDetail = {
     </div>
 
     <!-- WERTE-TABELLE -->
-    <div v-else key="list">
+    <div v-else-if="tab==='list'" key="list">
       <div class="table-tools">
         <input class="input" v-model="filter" placeholder="Filtern (Notiz / Datum)…" />
         <label class="check"><input type="checkbox" v-model="onlyOutliers" /> nur Ausreißer</label>
@@ -1360,11 +1364,10 @@ const SystemDetail = {
       </div>
     </div>
 
-    </transition>
-
     <!-- TAB: Zähler + Hardware-Empfehlung -->
-    <div v-if="tab==='meters'" key="meters">
-      <div class="empty" v-if="metersLoaded && !meters.length">
+    <div v-else-if="tab==='meters'" key="meters">
+      <div v-if="!metersLoaded" class="center-load"><span class="spin"></span></div>
+      <div class="empty" v-else-if="!meters.length">
         <h3>Noch kein Zähler hinterlegt</h3>
         <p>Trag Hersteller, Modell und Bauart ein – daraus leitet Zählwerk passende Auslese-Hardware für die Smart-Meter-Nachrüstung ab.</p>
         <button class="btn btn-primary" @click="openMeter(null)">＋ Zähler anlegen</button>
@@ -1418,6 +1421,8 @@ const SystemDetail = {
         </div>
       </div>
     </div>
+
+    </transition>
 
     <!-- MODAL: Zähler -->
     <div class="overlay" v-if="showMeter" @click.self="showMeter=false">
@@ -1612,6 +1617,11 @@ createApp({
     /* aktiver Navigationspunkt (Einstellungen als Modal hat Vorrang vor der Ansicht) */
     activeNav() { return this.view === "settings" ? "einstellungen" : "zaehlwerk"; },
     navMenuIcon() { return SVG.menu; },
+    fabLabel() {
+      if (this.view === "menu") return "System";
+      const d = this.$refs.detail;
+      return d && d.tab === "meters" ? "Zähler" : "Wert";
+    },
     visibleNavItems() { return this.navItems.filter((i) => !i.needsSystems || this.systems.length); },
   },
   async mounted() {
@@ -1691,8 +1701,14 @@ createApp({
     },
     fabAction() {
       if (this.view === "settings") return;
-      if (this.view === "detail" && this.$refs.detail) this.$refs.detail.openReading();
-      else this.newSystem();
+      const d = this.$refs.detail;
+      if (this.view === "detail" && d) {
+        // Kontextbezogen: im Zähler-Tab legt der FAB einen Zähler an
+        if (d.tab === "meters") d.openMeter(null);
+        else d.openReading();
+        return;
+      }
+      this.newSystem();
     },
     async confirmDeleteSystem() {
       // Bestaetigung liefert bereits das 3-Sekunden-Halten des HoldButton -

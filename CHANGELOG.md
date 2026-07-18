@@ -14,6 +14,17 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.12.2] - 2026-07-18
+
+### Fixed
+
+- [Frontend/Tabs] Schließt die Panels der Systemansicht gegenseitig aus. Das Werte-Panel war ein `v-else` ohne Bedingung und fing damit auch den Zustand `tab === "meters"` ab; das in 2.11.0 ergänzte Zähler-Panel stand zudem außerhalb des `transition`-Blocks und bildete eine zweite, unabhängige Bedingungskette. Bei aktivem Zähler-Tab wurden Ablesungstabelle samt Filter und Blätterleiste zusätzlich gerendert.
+- [Frontend/Tabs] Führt alle drei Panels in einer durchgehenden Kette `loading → chart → list → meters` innerhalb des `transition`-Blocks zusammen, sodass genau eines im DOM liegt.
+- [Frontend/Tabs] Zeigt im Zähler-Tab während des Ladens einen Ladeindikator statt kurzzeitig einer leeren Zählerliste.
+- [Frontend/UI] Bezieht die Aktion der Plus-Schaltfläche auf den aktiven Tab: im Zähler-Tab legt sie einen Zähler an statt einer Ablesung. Die Beschriftung folgt entsprechend.
+
+---
+
 ## [2.12.1] - 2026-07-18
 
 ### Fixed
@@ -304,7 +315,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.1...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.2...HEAD
+[2.12.2]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.0...v2.12.1
 [2.12.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.10.1...v2.11.0

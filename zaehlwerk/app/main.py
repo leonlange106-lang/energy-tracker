@@ -11,7 +11,7 @@ from . import notifier, outbound
 from .routers import (external, ha, imports, meters, readings,
                       settings as settings_router, systems)
 
-app = FastAPI(title="Zählwerk API", version="2.12.1")
+app = FastAPI(title="Zählwerk API", version="2.12.2")
 
 app.add_middleware(
     CORSMiddleware,
