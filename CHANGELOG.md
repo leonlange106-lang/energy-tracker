@@ -14,6 +14,30 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.13.0] - 2026-07-18
+
+### Added
+
+- [Frontend/Export] Ergänzt einen Konfigurationsdialog vor dem Export. Der Menüpunkt Bericht startet den Download nicht mehr unmittelbar, sondern öffnet Zeitraum-, System- und Darstellungsoptionen.
+- [Frontend/Export] Ergänzt die Zeitraum-Vorauswahl Gesamt, laufendes Jahr, zwölf Monate und Vorjahr sowie freie Von-bis-Eingabe.
+- [Frontend/Export] Ergänzt die Systemauswahl über Kontrollkästchen samt Alle- und Keins-Schaltfläche und optionaler Einbeziehung archivierter Systeme.
+- [Frontend/Export] Übernimmt auf Wunsch die Farbrollen der aktiven Palette in den Bericht und zeigt die übergebenen Werte als Farbmuster an.
+- [Backend/report.py] Ergänzt die Klasse `Theme`, über die Akzent-, Text-, Linien- und Ausreißerfarbe je Export gesetzt werden; ohne Angabe gilt die bisherige Werkseinstellung.
+- [Backend/report.py] Ergänzt `system_colors`: im Gesamtbericht wird jedes Diagramm in der Farbe seines Systems gezeichnet statt durchgehend in der Akzentfarbe.
+- [Backend/routers/readings.py] Ergänzt an beiden PDF-Endpunkten die Parameter `systems`, `include_inactive`, `accent`, `ink`, `ink_soft`, `line`, `warn`, `system_colors`, `include_chart` und `include_table`.
+
+### Changed
+
+- [Backend/report.py] Löst die Farbwerte aus den Modulkonstanten und reicht sie über das Theme-Objekt bis in Diagramm, Tabellenraster und Fließtext durch.
+- [Frontend/Export] Bildet die Farbrollen für den Export im Dunkelmodus auf helle Entsprechungen ab, da der Bericht auf weißem Papier erscheint.
+
+### Security
+
+- [Backend/report.py] Prüft alle Farbparameter gegen `^#[0-9a-fA-F]{6}$` und fällt sonst auf die Werkseinstellung zurück; die Werte stammen aus der Anfrage und fließen unmittelbar in die PDF-Erzeugung.
+- [Backend/routers/readings.py] Filtert die Systemauswahl über die Datenbank statt über die Eingabe; unbekannte Kennungen entfallen still.
+
+---
+
 ## [2.12.2] - 2026-07-18
 
 ### Fixed
@@ -315,7 +339,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.2...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.13.0...HEAD
+[2.13.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.2...v2.13.0
 [2.12.2]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.0...v2.12.1
 [2.12.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.11.0...v2.12.0

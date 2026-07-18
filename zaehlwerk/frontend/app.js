@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.12.2";
+const APP_VERSION = "2.13.0";
 const APP_CHANGELOG = [
+  { v: "2.13.0", d: "18.07.2026", items: [
+    "Bericht öffnet einen Konfigurationsdialog statt sofort zu exportieren",
+    "Zeitraum-Vorauswahl, System-Checkboxen, Diagramm/Tabelle abwählbar",
+    "PDF übernimmt auf Wunsch die App-Farben; Diagramme je System in Systemfarbe",
+  ]},
   { v: "2.12.2", d: "18.07.2026", items: [
     "Tabs schließen sich gegenseitig aus – Werte und Zähler wurden gleichzeitig angezeigt",
     "FAB passt sich dem aktiven Tab an (Zähler statt Ablesung)",
@@ -1600,6 +1605,9 @@ createApp({
     sysInfo: null,
     extStatus: null,
     settingsTab: "app",
+    /* Pre-Export-Dialog */
+    showExportCfg: false,
+    expCfg: null,
     appVersion: APP_VERSION,
     changelog: APP_CHANGELOG,
     /* Sidebar: navExpanded = Desktop (Rail <-> Drawer), navDrawer = Mobile-Overlay */
@@ -1680,7 +1688,98 @@ createApp({
         .then(() => this.notify("Backup erstellt (alle Systeme + Konfiguration)", "ok"))
         .catch((e) => this.notify("Export fehlgeschlagen: " + e.message, "err"));
     },
+    /* Sammelt die Theme-Farben aus dem lebenden CSS – so spiegelt der Export
+       exakt die aktive Palette samt Kontraststufe und Nutzer-Chartfarben.
+       Der Export ist ein Dokument auf weißem Papier: im Dunkelmodus wären die
+       hellen Rollen unbrauchbar, deshalb wird dort auf die Hell-Werte gemappt. */
+    exportTheme() {
+      const dark = themeStore.dark;
+      const v = (n, fb) => cssVar(n) || fb;
+      return {
+        accent:   dark ? v("--md-primary-container", "#0e7c86") : v("--md-primary", "#0e7c86"),
+        ink:      dark ? "#172533" : v("--md-on-surface", "#172533"),
+        ink_soft: dark ? "#5b6b7b" : v("--md-on-surface-variant", "#5b6b7b"),
+        line:     dark ? "#cfd8e1" : v("--md-outline-variant", "#cfd8e1"),
+        warn:     chartColor("outlier", "#d9820a"),
+      };
+    },
+    openExportConfig() {
+      const t = this.exportTheme();
+      this.expCfg = {
+        format: "pdf",
+        preset: "all",
+        from: "", to: "",
+        systemIds: this.systems.filter((s) => s.aktiv).map((s) => s.id),
+        includeInactive: false,
+        useTheme: true,
+        systemColors: true,
+        includeChart: true,
+        includeTable: true,
+        theme: t,
+      };
+      this.showExportCfg = true;
+    },
+    expApplyPreset(p) {
+      const c = this.expCfg;
+      c.preset = p;
+      const today = new Date();
+      const iso = (d) => d.toISOString().slice(0, 10);
+      if (p === "all") { c.from = ""; c.to = ""; return; }
+      if (p === "ytd") { c.from = `${today.getFullYear()}-01-01`; c.to = iso(today); return; }
+      if (p === "12m") {
+        const d = new Date(today); d.setFullYear(d.getFullYear() - 1);
+        c.from = iso(d); c.to = iso(today); return;
+      }
+      if (p === "lastyear") {
+        const y = today.getFullYear() - 1;
+        c.from = `${y}-01-01`; c.to = `${y}-12-31`;
+      }
+    },
+    expToggleSystem(id) {
+      const a = this.expCfg.systemIds;
+      const i = a.indexOf(id);
+      if (i >= 0) a.splice(i, 1); else a.push(id);
+    },
+    expSelectAll(on) {
+      this.expCfg.systemIds = on
+        ? this.systems.filter((s) => this.expCfg.includeInactive || s.aktiv).map((s) => s.id)
+        : [];
+    },
+    expQuery() {
+      const c = this.expCfg;
+      const p = new URLSearchParams();
+      if (c.from) p.set("from", c.from);
+      if (c.to) p.set("to", c.to);
+      // Nur einschraenken, wenn nicht ohnehin alles gewaehlt ist – kuerzere URL
+      const all = this.systems.filter((s) => c.includeInactive || s.aktiv);
+      if (c.systemIds.length && c.systemIds.length < all.length) {
+        p.set("systems", c.systemIds.join(","));
+      }
+      if (c.includeInactive) p.set("include_inactive", "true");
+      if (c.useTheme) Object.entries(c.theme).forEach(([k, v]) => v && p.set(k, v));
+      if (c.systemColors) p.set("system_colors", "true");
+      if (!c.includeChart) p.set("include_chart", "false");
+      if (!c.includeTable) p.set("include_table", "false");
+      return p.toString() ? "?" + p.toString() : "";
+    },
+    expCount() { return this.expCfg ? this.expCfg.systemIds.length : 0; },
+    runExport() {
+      const c = this.expCfg;
+      if (!c.systemIds.length) { this.notify("Kein System ausgewählt", "err"); return; }
+      const q = this.expQuery();
+      this.showExportCfg = false;
+      if (c.format === "zip") {
+        fetchBlobDownload("api/export.zip", "zaehlwerk-export.zip")
+          .catch((e) => this.notify(e.message, "err"));
+        return;
+      }
+      fetchBlobDownload(`api/report.pdf${q}`, "zaehlwerk-gesamtbericht.pdf")
+        .catch((e) => this.notify(e.message, "err"));
+    },
     openCombinedReport() {
+      this.openExportConfig();
+    },
+    _legacyCombinedReport() {
       fetchBlobDownload("api/report.pdf", "zaehlwerk-gesamtbericht.pdf")
         .catch((e) => this.notify("PDF fehlgeschlagen: " + e.message, "err"));
     },
@@ -2145,6 +2244,93 @@ createApp({
         <span class="foot-spacer"></span>
         <button class="btn" @click="showSystem=false">Abbrechen</button>
         <button class="btn btn-primary" :disabled="busy" @click="saveSystem">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Bericht konfigurieren (Pre-Export) -->
+  <div class="overlay" v-if="showExportCfg" @click.self="showExportCfg=false">
+    <div class="modal modal-wide" v-if="expCfg">
+      <div class="modal-head"><h3>Bericht erstellen</h3></div>
+      <div class="modal-body">
+
+        <div class="field">
+          <label>Zeitraum</label>
+          <div class="seg exp-seg">
+            <button :class="{active: expCfg.preset==='all'}"      @click="expApplyPreset('all')">Gesamt</button>
+            <button :class="{active: expCfg.preset==='ytd'}"      @click="expApplyPreset('ytd')">Lfd. Jahr</button>
+            <button :class="{active: expCfg.preset==='12m'}"      @click="expApplyPreset('12m')">12 Monate</button>
+            <button :class="{active: expCfg.preset==='lastyear'}" @click="expApplyPreset('lastyear')">Vorjahr</button>
+          </div>
+          <div class="field-row exp-dates">
+            <div class="field"><label>Von</label>
+              <input class="input" type="date" v-model="expCfg.from" @change="expCfg.preset='custom'" /></div>
+            <div class="field"><label>Bis</label>
+              <input class="input" type="date" v-model="expCfg.to" @change="expCfg.preset='custom'" /></div>
+          </div>
+          <div class="hint" v-if="!expCfg.from && !expCfg.to">Ohne Angabe wird der gesamte Bestand ausgewertet.</div>
+        </div>
+
+        <div class="field">
+          <label>Systeme ({{ expCount() }} ausgewählt)</label>
+          <div class="exp-actions">
+            <button class="btn btn-sm" @click="expSelectAll(true)">Alle</button>
+            <button class="btn btn-sm" @click="expSelectAll(false)">Keins</button>
+            <label class="check exp-inactive">
+              <input type="checkbox" v-model="expCfg.includeInactive" />
+              <span>Archivierte einbeziehen</span>
+            </label>
+          </div>
+          <div class="exp-systems">
+            <label v-for="s in systems.filter(x => expCfg.includeInactive || x.aktiv)" :key="s.id"
+                   class="exp-sys" :class="{sel: expCfg.systemIds.includes(s.id)}">
+              <input type="checkbox" :checked="expCfg.systemIds.includes(s.id)" @change="expToggleSystem(s.id)" />
+              <span class="dot" :style="{background: s.farbe}"></span>
+              <span class="exp-name">{{ typeIcon(s.typ) }} {{ s.name }}</span>
+              <small v-if="!s.aktiv">archiviert</small>
+            </label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Darstellung</label>
+          <label class="check">
+            <input type="checkbox" v-model="expCfg.useTheme" />
+            <span>App-Farben übernehmen
+              <small>Akzent, Text und Linien aus der aktiven Palette</small></span>
+          </label>
+          <div class="exp-swatches" v-if="expCfg.useTheme">
+            <span v-for="(v,k) in expCfg.theme" :key="k" class="exp-sw" :title="k">
+              <i :style="{background: v}"></i>{{ k }}
+            </span>
+          </div>
+          <label class="check">
+            <input type="checkbox" v-model="expCfg.systemColors" />
+            <span>Diagramm je System in dessen Farbe
+              <small>Sonst durchgehend Akzentfarbe</small></span>
+          </label>
+          <label class="check"><input type="checkbox" v-model="expCfg.includeChart" /><span>Diagramm einschließen</span></label>
+          <label class="check"><input type="checkbox" v-model="expCfg.includeTable" /><span>Ablesungstabelle einschließen</span></label>
+        </div>
+
+        <div class="field">
+          <label>Format</label>
+          <div class="seg">
+            <button :class="{active: expCfg.format==='pdf'}" @click="expCfg.format='pdf'">PDF-Bericht</button>
+            <button :class="{active: expCfg.format==='zip'}" @click="expCfg.format='zip'">ZIP (CSV + Konfiguration)</button>
+          </div>
+          <div class="hint" v-if="expCfg.format==='zip'">
+            Der ZIP-Export sichert immer den vollständigen Bestand – Zeitraum, Auswahl und
+            Farben gelten nur für den PDF-Bericht.
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-foot">
+        <button class="btn" @click="showExportCfg=false">Abbrechen</button>
+        <button class="btn btn-primary" :disabled="!expCount()" @click="runExport">
+          {{ expCfg.format==='zip' ? 'ZIP herunterladen' : 'PDF erstellen' }}
+        </button>
       </div>
     </div>
   </div>

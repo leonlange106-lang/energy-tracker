@@ -290,11 +290,25 @@ def export_all(session: Session = Depends(get_session)):
 
 
 # ---------- PDF ----------
+def _theme_from_query(accent, ink, ink_soft, line, warn) -> dict:
+    """Farbrollen aus der Anfrage einsammeln. Die Pruefung auf #RRGGBB passiert
+    zentral in report._col() – hier wird nur weitergereicht, None bleibt None."""
+    return {"accent": accent, "ink": ink, "ink_soft": ink_soft, "line": line, "warn": warn}
+
+
 @router.get("/api/systems/{system_id}/report.pdf")
 def get_report(
     system_id: str,
     from_: Optional[date] = Query(None, alias="from"),
     to: Optional[date] = Query(None),
+    accent: Optional[str] = Query(None, max_length=7),
+    ink: Optional[str] = Query(None, max_length=7),
+    ink_soft: Optional[str] = Query(None, max_length=7),
+    line: Optional[str] = Query(None, max_length=7),
+    warn: Optional[str] = Query(None, max_length=7),
+    system_colors: bool = Query(False, description="Diagramm in der Systemfarbe zeichnen"),
+    include_chart: bool = Query(True),
+    include_table: bool = Query(True),
     session: Session = Depends(get_session),
 ):
     system = _require_system(system_id, session)
@@ -305,6 +319,9 @@ def get_report(
         stats=logic.compute_stats(enriched, _sigma(session)),
         from_label=from_.strftime("%d.%m.%Y") if from_ else None,
         to_label=to.strftime("%d.%m.%Y") if to else None,
+        theme=_theme_from_query(accent, ink, ink_soft, line, warn),
+        accent=system.farbe if system_colors else None,
+        include_chart=include_chart, include_table=include_table,
     )
     fname = f"zaehlwerk-bericht_{system.name.replace(' ', '_')}.pdf"
     return Response(content=pdf, media_type="application/pdf",
@@ -315,16 +332,36 @@ def get_report(
 def get_combined_report(
     from_: Optional[date] = Query(None, alias="from"),
     to: Optional[date] = Query(None),
+    systems_param: Optional[str] = Query(None, alias="systems",
+                                         description="Komma-getrennte System-IDs; leer = alle aktiven"),
+    include_inactive: bool = Query(False),
+    accent: Optional[str] = Query(None, max_length=7),
+    ink: Optional[str] = Query(None, max_length=7),
+    ink_soft: Optional[str] = Query(None, max_length=7),
+    line: Optional[str] = Query(None, max_length=7),
+    warn: Optional[str] = Query(None, max_length=7),
+    system_colors: bool = Query(False),
+    include_chart: bool = Query(True),
+    include_table: bool = Query(True),
     session: Session = Depends(get_session),
 ):
-    systems = session.exec(
-        select(System).where(System.aktiv == True).order_by(System.name)  # noqa: E712
-    ).all()
+    stmt = select(System)
+    if not include_inactive:
+        stmt = stmt.where(System.aktiv == True)  # noqa: E712
+    if systems_param:
+        # Auswahl gegen die DB filtern statt der Eingabe zu vertrauen:
+        # unbekannte IDs fallen still weg, statt einen Fehler auszuloesen.
+        wanted = {s.strip() for s in systems_param.split(",") if s.strip()}
+        if wanted:
+            stmt = stmt.where(System.id.in_(wanted))
+    systems = session.exec(stmt.order_by(System.name)).all()
+
     sections = []
     for system in systems:
         enriched = _enriched(session, system, from_, to)
         sections.append({
-            "system": {"name": system.name, "typ": system.typ, "einheit": system.einheit},
+            "system": {"name": system.name, "typ": system.typ,
+                       "einheit": system.einheit, "farbe": system.farbe},
             "enriched": enriched,
             "stats": logic.compute_stats(enriched, _sigma(session)),
         })
@@ -332,6 +369,9 @@ def get_combined_report(
         sections,
         from_label=from_.strftime("%d.%m.%Y") if from_ else None,
         to_label=to.strftime("%d.%m.%Y") if to else None,
+        theme=_theme_from_query(accent, ink, ink_soft, line, warn),
+        system_colors=system_colors,
+        include_chart=include_chart, include_table=include_table,
     )
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="zaehlwerk-gesamtbericht.pdf"'})
