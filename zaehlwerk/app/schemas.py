@@ -101,6 +101,9 @@ class ImportResult(BaseModel):
 # ---------- Anwendungseinstellungen ----------
 class AppSettingsRead(BaseModel):
     offline_mode: bool
+    backup_enabled: bool
+    backup_time: str
+    backup_keep_days: int
     notify_enabled: bool
     notify_interval_hours: int
     default_interval_days: int
@@ -124,6 +127,11 @@ class AppSettingsUpdate(BaseModel):
     notify_interval_hours: Optional[int] = Field(None, ge=1, le=168)
     default_interval_days: Optional[int] = Field(None, ge=0, le=3650)
     outlier_sigma: Optional[float] = Field(None, ge=1.0, le=5.0)
+    backup_enabled: Optional[bool] = None
+    # HH:MM, 24h. Muster statt Freitext -> _seconds_until() bekommt nie Muell.
+    backup_time: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    # Untergrenze 1 Tag; oben 365, darueber laeuft /backup unnoetig voll.
+    backup_keep_days: Optional[int] = Field(None, ge=1, le=365)
 
     @field_validator("outlier_sigma")
     @classmethod
@@ -254,3 +262,21 @@ class TariffRead(BaseModel):
     cached: bool = False
     stale: bool = False
     age_seconds: int = 0
+
+
+# ---------- Sicherungen ----------
+class BackupEntry(BaseModel):
+    file: str
+    created: str
+    size_bytes: int
+    age_days: int
+
+
+class BackupStatus(BaseModel):
+    enabled: bool
+    directory: str
+    supervisor_backup_dir: bool     # True = /backup gemappt, False = Rückfall auf /share
+    time: str
+    keep_days: int
+    entries: list[BackupEntry]
+    total_bytes: int

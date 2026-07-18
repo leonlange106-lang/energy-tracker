@@ -39,6 +39,10 @@ DEFAULTS: dict[str, object] = {
     "notify_interval_hours": 6,
     "default_interval_days": 0,
     "outlier_sigma": 2.0,
+    # Automatische Sicherung
+    "backup_enabled": True,
+    "backup_time": "03:30",
+    "backup_keep_days": 7,
 }
 
 _BOOL = lambda v: str(v).lower() in {"1", "true", "ja", "yes"}  # noqa: E731
@@ -49,6 +53,9 @@ _CASTS = {
     "notify_interval_hours": int,
     "default_interval_days": int,
     "outlier_sigma": float,
+    "backup_enabled": _BOOL,
+    "backup_time": str,
+    "backup_keep_days": int,
 }
 
 

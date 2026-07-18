@@ -7,11 +7,11 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import init_db
-from . import notifier, outbound
-from .routers import (external, ha, imports, meters, readings,
+from . import backup as backup_mod, notifier, outbound
+from .routers import (backups, external, ha, imports, meters, readings,
                       settings as settings_router, systems)
 
-app = FastAPI(title="Zählwerk API", version="2.13.0")
+app = FastAPI(title="Zählwerk API", version="2.14.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(systems.router)
 app.include_router(readings.router)
 app.include_router(imports.router)
+app.include_router(backups.router)
 app.include_router(external.router)
 app.include_router(meters.router)
 app.include_router(settings_router.router)
@@ -40,6 +41,7 @@ async def _startup():
     outbound.set_offline(bool(get_setting("offline_mode", True)))
     import asyncio
     asyncio.create_task(notifier.watcher())
+    asyncio.create_task(backup_mod.scheduler())
 
 
 @app.get("/api/health")

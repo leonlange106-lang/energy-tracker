@@ -14,6 +14,26 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.14.0] - 2026-07-18
+
+### Added
+
+- [Backend/database.py] Ergänzt eine automatische tägliche Sicherung der SQLite-Datenbank nach `/backup`, dem Verzeichnis, das Home Assistant in seine eigenen Voll-Sicherungen aufnimmt. Ist `/backup` nicht gemappt, weicht das Modul auf `/share/zaehlwerk-backups` aus, statt den Dienst scheitern zu lassen.
+- [Backend/database.py] Erstellt die Sicherung über die Online-Backup-Schnittstelle von SQLite statt über einen Dateikopiervorgang; die Kopie ist auch bei parallelen Schreibzugriffen in sich schlüssig und die Anwendung muss nicht angehalten werden.
+- [Backend/database.py] Prüft jede Sicherung mit `PRAGMA integrity_check`, komprimiert sie anschließend und benennt sie erst danach auf den endgültigen Namen um; unvollständige Dateien werden nie sichtbar.
+- [Backend/database.py] Ergänzt eine rollierende Bereinigung mit einstellbarer Aufbewahrungsdauer. Sie fasst ausschließlich Dateien des eigenen Namensmusters an und hält stets die drei neuesten Sicherungen vor, auch wenn alle älter als die Aufbewahrungsdauer sind.
+- [Backend/routers/backups.py] Ergänzt `GET /api/backup`, `POST /api/backup/run`, `POST /api/backup/prune`, `GET /api/backup/{datei}` und `DELETE /api/backup/{datei}`.
+- [Backend/routers/settings.py] Ergänzt die Parameter `backup_enabled`, `backup_time` und `backup_keep_days`; Uhrzeit und Aufbewahrung werden vor dem Speichern geprüft.
+- [Frontend/UI] Ergänzt in Sektion A der Einstellungen die Sicherungsverwaltung mit Zeitplan, Aufbewahrung, sofortiger Sicherung, Übersicht der vorhandenen Stände und Download.
+- [Deployment/config.yaml] Ergänzt `backup:rw` in der Zuordnung, damit `/backup` im Container verfügbar ist.
+
+### Security
+
+- [Backend/routers/backups.py] Prüft den Dateinamen beim Herunterladen und Löschen gegen das eigene Namensmuster; ohne diese Prüfung wäre der Parameter ein Pfadwechsel auf das Dateisystem des Add-ons.
+- [Backend/database.py] Beschränkt die Bereinigung auf Dateien des Musters `zaehlwerk_JJJJMMTT-HHMMSS.db.gz`. In `/backup` liegen die Voll-Sicherungen von Home Assistant; ein unspezifisches Aufräumen nach Alter würde sie mit entfernen.
+
+---
+
 ## [2.13.0] - 2026-07-18
 
 ### Added
@@ -339,7 +359,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.13.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.14.0...HEAD
+[2.14.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.2...v2.13.0
 [2.12.2]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.12.0...v2.12.1

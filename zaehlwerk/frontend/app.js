@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.13.0";
+const APP_VERSION = "2.14.0";
 const APP_CHANGELOG = [
+  { v: "2.14.0", d: "18.07.2026", items: [
+    "Tägliche automatische Sicherung der Datenbank nach /backup",
+    "Konsistent trotz laufender Schreibzugriffe (SQLite Online-Backup + Integritätsprüfung)",
+    "Rollierende Bereinigung; die drei neuesten Sicherungen bleiben immer erhalten",
+    "Manuelle Sicherung und Download in den Einstellungen",
+  ]},
   { v: "2.13.0", d: "18.07.2026", items: [
     "Bericht öffnet einen Konfigurationsdialog statt sofort zu exportieren",
     "Zeitraum-Vorauswahl, System-Checkboxen, Diagramm/Tabelle abwählbar",
@@ -1604,6 +1610,8 @@ createApp({
     settingsSaving: false,
     sysInfo: null,
     extStatus: null,
+    backupStatus: null,
+    backupBusy: false,
     settingsTab: "app",
     /* Pre-Export-Dialog */
     showExportCfg: false,
@@ -1826,9 +1834,11 @@ createApp({
     /* ---------- Sektion A: Anwendungsparameter ---------- */
     async loadSettings() {
       try {
-        const [s, i, x] = await Promise.all([
+        const [s, i, x, b] = await Promise.all([
           api("/api/settings"), api("/api/system/info"), api("/api/external/status"),
+          api("/api/backup"),
         ]);
+        this.backupStatus = b;
         this.appSettings = s;
         this.appSettingsDraft = { ...s };
         this.sysInfo = i;
@@ -1848,6 +1858,11 @@ createApp({
       if (!Number.isInteger(iv) || iv < 0 || iv > 3650) err.default_interval_days = "Ganzzahl zwischen 0 und 3650 Tagen";
       const sg = num(d.outlier_sigma);
       if (!(sg >= 1 && sg <= 5)) err.outlier_sigma = "Wert zwischen 1,0 und 5,0";
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(d.backup_time || ""))) {
+        err.backup_time = "Uhrzeit im Format HH:MM";
+      }
+      const bk = num(d.backup_keep_days);
+      if (!Number.isInteger(bk) || bk < 1 || bk > 365) err.backup_keep_days = "1 bis 365 Tage";
       this.settingsErrors = err;
       return Object.keys(err).length === 0;
     },
@@ -1869,6 +1884,9 @@ createApp({
             notify_interval_hours: Number(d.notify_interval_hours),
             default_interval_days: Number(d.default_interval_days),
             outlier_sigma: Number(d.outlier_sigma),
+            backup_enabled: !!d.backup_enabled,
+            backup_time: d.backup_time,
+            backup_keep_days: Number(d.backup_keep_days),
           }),
         });
         this.appSettings = saved;
@@ -1881,6 +1899,16 @@ createApp({
         // 422 vom Server: Feldfehler sichtbar machen statt nur zu toasten
         this.notify("Nicht gespeichert: " + e.message, "err");
       } finally { this.settingsSaving = false; }
+    },
+    async runBackup() {
+      this.backupBusy = true;
+      try {
+        const r = await api("/api/backup/run", { method: "POST" });
+        this.backupStatus = await api("/api/backup");
+        const pruned = r.pruned && r.pruned.length ? `, ${r.pruned.length} alte entfernt` : "";
+        this.notify(`Gesichert: ${this.fmtBytes(r.size_bytes)} in ${r.duration_ms} ms${pruned}`, "ok");
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.backupBusy = false; }
     },
     async clearExtCache() {
       try {
@@ -2120,11 +2148,53 @@ createApp({
           </table>
         </div>
 
-        <div class="card set-card">
-          <h3>Daten</h3>
-          <div class="settings-actions">
-            <button class="btn" @click="exportAll">⇩ Gesamt-Export (alle Systeme + Konfiguration)</button>
+        <div class="card set-card" v-if="appSettingsDraft">
+          <h3>Automatische Sicherung</h3>
+          <p class="hint">Legt eine konsistente Kopie der Datenbank in
+            <code>{{ backupStatus ? backupStatus.directory : '/backup' }}</code> ab.
+            Home Assistant nimmt dieses Verzeichnis in seine eigenen Voll-Sicherungen auf.</p>
+
+          <div class="hint ks-note" v-if="backupStatus && !backupStatus.supervisor_backup_dir">
+            <code>/backup</code> ist nicht gemappt – es wird nach <code>/share</code> gesichert.
+            Diese Dateien landen NICHT im Home-Assistant-Backup. Ergänze
+            <code>backup:rw</code> unter <code>map:</code> in der <code>config.yaml</code>.
           </div>
+
+          <div class="field">
+            <label class="check"><input type="checkbox" v-model="appSettingsDraft.backup_enabled" @change="validateSettings" />
+              <span>Tägliche Sicherung aktiv</span></label>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Uhrzeit</label>
+              <input class="input" type="time" v-model="appSettingsDraft.backup_time"
+                     :class="{invalid: settingsErrors.backup_time}" @input="validateSettings" />
+              <div class="err-inline" v-if="settingsErrors.backup_time">{{ settingsErrors.backup_time }}</div>
+            </div>
+            <div class="field"><label>Aufbewahrung (Tage)</label>
+              <input class="input" type="number" min="1" max="365" step="1"
+                     v-model="appSettingsDraft.backup_keep_days"
+                     :class="{invalid: settingsErrors.backup_keep_days}" @input="validateSettings" />
+              <div class="err-inline" v-if="settingsErrors.backup_keep_days">{{ settingsErrors.backup_keep_days }}</div>
+              <div class="hint" v-else>Die drei neuesten bleiben immer erhalten.</div>
+            </div>
+          </div>
+
+          <div class="settings-actions">
+            <button class="btn btn-primary" :disabled="backupBusy" @click="runBackup">
+              {{ backupBusy ? 'Sichere …' : '⇩ Jetzt sichern' }}</button>
+            <button class="btn" @click="exportAll">⇩ Gesamt-Export (CSV + Konfiguration)</button>
+          </div>
+
+          <table class="info-table" v-if="backupStatus && backupStatus.entries.length">
+            <tr v-for="b in backupStatus.entries" :key="b.file">
+              <td>{{ fmtDate(b.created.slice(0,10)) }}<small class="bk-age"> · {{ b.age_days }} T</small></td>
+              <td class="num">
+                {{ fmtBytes(b.size_bytes) }}
+                <a class="crumb" :href="'api/backup/' + b.file" download>⇩</a>
+              </td>
+            </tr>
+          </table>
+          <div class="hint" v-else-if="backupStatus">Noch keine Sicherung vorhanden.</div>
         </div>
       </template>
 

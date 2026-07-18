@@ -1,5 +1,5 @@
 name: "Zählwerk"
-version: "2.13.0"
+version: "2.14.0"
 slug: "zaehlwerk"
 description: "Verbrauchs- & Zählerstands-Tracking (Strom, Gas, Wasser, PV). Standalone, nur SQLite."
 url: "https://github.com/leonlange106-lang/energy-tracker"
@@ -13,6 +13,9 @@ panel_icon: "mdi:gauge"
 panel_title: "Zählwerk"
 # addon_config -> /config: DB liegt damit automatisch im normalen HA-Backup.
 # share bleibt lesbar gemappt, damit die Alt-DB einmalig migriert werden kann.
+# backup:rw -> /backup. Ohne dieses Mapping existiert das Verzeichnis im
+# Container nicht und das Backup-Modul weicht auf /share aus.
 map:
   - addon_config:rw
   - share:rw
+  - backup:rw
