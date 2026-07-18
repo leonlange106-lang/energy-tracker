@@ -10,7 +10,7 @@ from .database import init_db
 from . import notifier
 from .routers import ha, imports, readings, settings as settings_router, systems
 
-app = FastAPI(title="Zählwerk API", version="2.9.0")
+app = FastAPI(title="Zählwerk API", version="2.9.1")
 
 app.add_middleware(
     CORSMiddleware,

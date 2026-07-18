@@ -33,6 +33,16 @@
   --md-outlier:              #9A6A00;   /* Ausreisser-Markierung (Charts, Legende) */
   --md-focus:                var(--md-primary);
   --md-focus-width:          3px;
+
+  /* Touch-Layout: eine Quelle fuer alle Trefferflaechen.
+     48px = WCAG 2.5.5 Level AAA und M3-Mindestgroesse.
+     --field-fs: 16px ist KEINE Geschmacksfrage - iOS Safari zoomt jedes
+     fokussierte Formularfeld unter 16px automatisch heran und verschiebt
+     damit das gesamte Layout. */
+  --tap-min:      44px;
+  --tap-min-touch:48px;
+  --field-fs:     14px;
+  --sheet-radius: 28px;
   --md-shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 1px 3px 1px rgba(0,0,0,.10);
   --md-shadow-2: 0 1px 2px rgba(0,0,0,.3), 0 2px 6px 2px rgba(0,0,0,.12);
   --md-shadow-3: 0 4px 8px 3px rgba(0,0,0,.13), 0 1px 3px rgba(0,0,0,.3);
@@ -489,7 +499,7 @@ body.nav-expanded { --rail-w: 264px; }
 /* ---------- Tabelle ---------- */
 .table-tools { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
 .input, .select {
-  font-family: var(--sans); font-size: 14px; padding: 10px 14px;
+  font-family: var(--sans); font-size: var(--field-fs); padding: 10px 14px;
   border: 1px solid var(--md-outline); border-radius: 8px;
   background: transparent; color: var(--md-on-surface);
   transition: border-color var(--dur-short) var(--ease-standard);
@@ -674,6 +684,92 @@ td.r { text-align: right; }
 .theme-opt .pal-dot { width: 18px; height: 18px; border-radius: 50%; display: inline-block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
 .crumb { background: none; border: none; color: var(--md-on-surface-variant); font-size: 14px; cursor: pointer; font-family: var(--sans); }
 
+
+/* =========================================================================
+   Touch-Layout-System (Mobile-First-Schicht)
+   Steuerung ueber (pointer: coarse) statt ueber die Breite: ein Tablet mit
+   Touch braucht dieselben Trefferflaechen wie ein Handy, ein schmales
+   Desktop-Fenster dagegen nicht. Die Breiten-Queries darunter regeln
+   ausschliesslich Anordnung, nicht Groesse.
+   ========================================================================= */
+@media (pointer: coarse) {
+  :root { --field-fs: 16px; --tap-min: var(--tap-min-touch); }
+
+  /* Kein Auto-Zoom mehr: alle Formularelemente >= 16px */
+  .input, .select, .tf-input, input, select, textarea { font-size: var(--field-fs); }
+
+  /* Trefferflaechen auf Daumenmass */
+  .input, .select { min-height: var(--tap-min); padding: 12px 14px; }
+  .btn { min-height: var(--tap-min); padding: 12px 22px; height: auto; }
+  .btn-sm { min-height: var(--tap-min); padding: 10px 18px; height: auto; font-size: 14px; }
+  .iconbtn { min-width: var(--tap-min); min-height: var(--tap-min); }
+  .check { min-height: var(--tap-min); }
+  .check input { width: 24px; height: 24px; }
+  .swatch-pick, .cc-swatch { width: var(--tap-min); height: var(--tap-min); }
+  .tab, .seg button { min-height: var(--tap-min); }
+  .nav-item { min-height: var(--tap-min); }
+
+  /* Zahlenfelder: Spinner weg, sie sind auf Touch unbedienbar und kosten Breite */
+  input[type="number"] { -moz-appearance: textfield; }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+}
+
+/* ---------- Dialoge als Bottom-Sheet (Daumenzone) ---------- */
+@media (max-width: 640px) {
+  /* dvh statt vh: vh ignoriert die ein-/ausfahrende Browserleiste und die
+     Bildschirmtastatur -> der Footer rutschte bisher darunter. */
+  .overlay {
+    padding: 0; align-items: flex-end;
+    height: 100dvh; overflow: hidden;
+  }
+  .modal {
+    max-width: none; width: 100%;
+    border-radius: var(--sheet-radius) var(--sheet-radius) 0 0;
+    max-height: 92dvh; display: flex; flex-direction: column;
+    animation: sheet-in var(--dur-med) var(--ease-emph-decel);
+  }
+  /* Griff-Indikator: signalisiert die Sheet-Metapher */
+  .modal::before {
+    content: ""; width: 32px; height: 4px; border-radius: 2px; flex: 0 0 auto;
+    background: var(--md-outline-variant); margin: 12px auto 0;
+  }
+  .modal-head { padding: 12px 20px 4px; flex: 0 0 auto; }
+  .modal-head h3 { font-size: 20px; line-height: 26px; }
+
+  /* Nur der Rumpf scrollt - Kopf und Aktionen bleiben stehen,
+     dadurch kein Springen beim Tastatur-Ein/Ausblenden. */
+  .modal-body {
+    flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 12px 20px; overscroll-behavior: contain;
+  }
+  .modal-foot {
+    flex: 0 0 auto; padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+    gap: 12px; background: var(--md-surface-c-high);
+    box-shadow: 0 -1px 0 var(--md-outline-variant);
+  }
+  /* Primaeraktion breit und rechts = unter dem Daumen der Greifhand */
+  .modal-foot .btn { flex: 1; justify-content: center; }
+  .modal-foot .btn-primary { flex: 1.6; }
+
+  @keyframes sheet-in {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}
+
+/* ---------- Layout-Stabilitaet ---------- */
+/* Reserviert die Scrollbar-Rinne, damit das Oeffnen eines Dialogs die
+   Seite darunter nicht um die Scrollbar-Breite verschiebt. */
+html { scrollbar-gutter: stable; }
+/* Feste Zeilenhoehe fuer Messwerte: verhindert Umbruch-Sprung, sobald eine
+   Stelle mehr dazukommt (z. B. 9999 -> 10000 kWh). */
+.tile .readout { min-height: 40px; display: flex; align-items: baseline; gap: 6px; }
+.counter .cval { font-variant-numeric: tabular-nums; }
+/* Hinweistexte belegen ihren Platz auch im leeren Zustand -> kein Nachrutschen
+   der Buttons, sobald eine Validierungsmeldung erscheint. */
+.field .err-inline { min-height: 16px; }
+
 /* ---------- Responsive: Rail/Drawer vs. Bottom-Bar ---------- */
 @media (min-width: 841px) {
   .topbar-inner, .wrap {
@@ -739,4 +835,16 @@ td.r { text-align: right; }
 @media (max-width: 640px) {
   .info-table td:first-child { width: 45%; }
   .info-table td { font-size: 13px; }
+}
+
+/* ---------- Ablesedialog: Primaerfeld + Scanner ---------- */
+.reading-value { margin-bottom: 18px; }
+.reading-value .tf-input { font-size: 20px; font-weight: 500; font-family: var(--mono); letter-spacing: -.01em; }
+.scan-trigger { flex: 0 0 auto; font-size: 20px; padding: 0; width: 56px; }
+@media (pointer: coarse) {
+  /* Zaehlerstaende werden im Keller oft aus schraegem Winkel abgetippt -
+     groessere Ziffern, groesserer Scanner-Button. */
+  .reading-value .tf-input { font-size: 24px; padding: 18px 15px 16px; }
+  .scan-trigger { width: 64px; min-height: 64px; font-size: 24px; }
+  .input-scan { gap: 10px; align-items: stretch; }
 }

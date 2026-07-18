@@ -14,6 +14,21 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.9.1] - 2026-07-18
+
+### Changed
+
+- [Frontend/style.css] Führt ein Touch-Layout-System über `(pointer: coarse)` ein: Trefferflächen skalieren auf 48 px (WCAG 2.5.5), Formularfelder auf 16 px. Die Steuerung hängt am Eingabegerät statt an der Fensterbreite.
+- [Frontend/style.css] Hebt die Schriftgröße aller Formularfelder auf Touch-Geräten auf 16 px an; darunter zoomt iOS Safari das fokussierte Feld automatisch heran und verschiebt das gesamte Layout.
+- [Frontend/style.css] Stellt Dialoge unterhalb von 640 px als Bottom-Sheet dar: Kopf und Aktionsleiste stehen fest, nur der Rumpf scrollt; die Primäraktion liegt breit in der Daumenzone.
+- [Frontend/style.css] Ersetzt `vh` durch `dvh` in der Dialoghöhe, damit ein- und ausfahrende Browserleiste und Bildschirmtastatur die Aktionsleiste nicht mehr verdecken.
+- [Frontend/style.css] Reserviert die Scrollbar-Rinne über `scrollbar-gutter: stable`, gibt der Messwertzeile eine feste Mindesthöhe und hält Platz für Validierungsmeldungen frei; alle drei verhinderten Sprünge im Layout.
+- [Frontend/style.css] Entfernt die Spinner an Zahlenfeldern auf Touch-Geräten, da sie unter dem Daumen nicht bedienbar sind und Breite kosten.
+- [Frontend/app.js] Stellt im Ablesedialog den Zählerstand über die volle Breite an den Anfang und vergrößert Ziffernanzeige und Scanner-Button; das Datum ist ohnehin vorbelegt.
+- [Frontend/app.js] Ergänzt `inputmode="decimal"`, `enterkeyhint` und `autocomplete="off"` an den Zahlenfeldern und setzt den Autofokus nur auf Zeigergeräten, damit auf Touch nicht sofort die Tastatur hochfährt.
+
+---
+
 ## [2.9.0] - 2026-07-18
 
 ### Added
@@ -205,7 +220,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.1...HEAD
+[2.9.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.6.0...v2.7.0

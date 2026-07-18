@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.9.0";
+const APP_VERSION = "2.9.1";
 const APP_CHANGELOG = [
+  { v: "2.9.1", d: "18.07.2026", items: [
+    "Dialoge auf dem Handy als Bottom-Sheet mit feststehender Aktionsleiste",
+    "Alle Trefferflächen auf 48 px, Formularfelder auf 16 px (kein iOS-Auto-Zoom mehr)",
+    "Ablesedialog: Zählerstand steht zuoberst, Scanner-Button vergrößert",
+    "Layout springt nicht mehr bei Tastatur, Scrollbar oder Validierungsmeldung",
+  ]},
   { v: "2.9.0", d: "18.07.2026", items: [
     "Einstellungen als eigene Seite mit Sektion A (System) und B (Web-App)",
     "Serverseitige Anwendungsparameter: Benachrichtigungsintervall, Standard-Ableseintervall, Ausreißer-Schwelle",
@@ -588,9 +594,18 @@ const SystemDetail = {
     arrow(k) { return this.sortKey === k ? (this.sortDir === "asc" ? "↑" : "↓") : ""; },
 
     /* Ablesung */
+    focusValue() {
+      // Nur auf Zeigergeraeten automatisch fokussieren: auf Touch wuerde die
+      // Tastatur sofort hochfahren und den Dialog zusammenschieben, bevor der
+      // Nutzer ueberhaupt sieht, welches System er erfasst.
+      if (window.matchMedia("(pointer: fine)").matches) {
+        this.$nextTick(() => this.$refs.valueInput && this.$refs.valueInput.focus());
+      }
+    },
     openReading() {
       this.reading = { id: null, datum: today(), value: null, cost: null, meter_replaced: false, note: "" };
       this.showReading = true;
+      this.focusValue();
     },
     openEditReading(r) {
       this.reading = {
@@ -1073,16 +1088,21 @@ const SystemDetail = {
       <div class="modal">
         <div class="modal-head"><h3>{{ reading.id ? 'Ablesung bearbeiten' : 'Neue Ablesung' }} – {{ system.name }}</h3></div>
         <div class="modal-body">
-          <div class="field-row">
-            <div class="field"><label>Datum</label><input class="input" type="date" v-model="reading.datum" /></div>
-            <div class="field">
-              <div class="input-scan">
-                <label class="tf"><input class="tf-input" type="number" step="any" v-model="reading.value" placeholder=" " /><span class="tf-label">Zählerstand ({{ system.einheit }})</span></label>
-                <button class="btn btn-sm" @click="openScanner" title="Zählerstand per Kamera scannen (Beta)">📷</button>
-              </div>
+          <!-- Primaerfeld zuerst und ueber die volle Breite: im Keller wird
+               zuerst der Zaehlerstand getippt, das Datum ist vorbelegt. -->
+          <div class="field reading-value">
+            <div class="input-scan">
+              <label class="tf"><input class="tf-input" type="number" step="any"
+                     inputmode="decimal" enterkeyhint="done" autocomplete="off"
+                     v-model="reading.value" placeholder=" " ref="valueInput" /><span class="tf-label">Zählerstand ({{ system.einheit }})</span></label>
+              <button class="btn scan-trigger" @click="openScanner"
+                      aria-label="Zählerstand per Kamera scannen" title="Zählerstand per Kamera scannen (Beta)">📷</button>
             </div>
           </div>
-          <label class="tf"><input class="tf-input" type="number" step="any" v-model="reading.cost" placeholder=" " /><span class="tf-label">Kosten € (optional)</span></label>
+          <div class="field"><label>Datum</label><input class="input" type="date" v-model="reading.datum" /></div>
+          <label class="tf"><input class="tf-input" type="number" step="any"
+                 inputmode="decimal" autocomplete="off"
+                 v-model="reading.cost" placeholder=" " /><span class="tf-label">Kosten € (optional)</span></label>
           <div class="field">
             <button v-if="haEntity && !reading.id" class="btn btn-tonal btn-sm" style="margin-bottom:14px" :disabled="busy" @click="fetchHaValue">⌂ Zählerstand aus Home Assistant übernehmen</button>
             <label class="check"><input type="checkbox" v-model="reading.meter_replaced" /> Startstand NEUER Zähler (Zählertausch)</label>
