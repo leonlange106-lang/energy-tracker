@@ -83,6 +83,26 @@ class Meter(SQLModel, table=True):
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
 
 
+class User(SQLModel, table=True):
+    """Benutzerkonto.
+
+    `password_hash` ist bewusst optional: Nutzer, die über Home-Assistant-Ingress
+    kommen, haben hier gar kein Passwort – ihre Anmeldung ist bereits vor dem
+    Add-on erfolgt. `external_id` hält in diesem Fall die HA-Benutzerkennung.
+    """
+    __tablename__ = "users"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    username: str = Field(index=True, unique=True)
+    display_name: Optional[str] = None
+    password_hash: Optional[str] = None          # None = Anmeldung über Ingress
+    external_id: Optional[str] = Field(default=None, index=True)   # HA-Benutzerkennung
+    is_admin: bool = False
+    aktiv: bool = True
+    letzter_login: Optional[datetime] = None
+    erstellt_am: datetime = Field(default_factory=datetime.utcnow)
+
+
 class Tariff(SQLModel, table=True):
     """Tarifperiode eines Systems.
 

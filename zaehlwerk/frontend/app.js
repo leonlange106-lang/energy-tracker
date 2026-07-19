@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.21.1";
+const APP_VERSION = "3.0.0";
 const APP_CHANGELOG = [
+  { v: "3.0.0", d: "18.07.2026", items: [
+    "Benutzerkonten und Anmeldung; alle API-Pfade sind geschützt",
+    "Unter Home Assistant übernimmt Zählwerk die dortige Anmeldung – kein zweiter Login",
+    "Standalone: bcrypt-Passwörter, JWT im HttpOnly-Cookie, Ersteinrichtung beim ersten Start",
+  ]},
   { v: "2.21.1", d: "18.07.2026", items: [
     "Reiter „Zähler\" und „Tarife\" zeigen ihre Anzahl schon beim Laden der Seite",
     "Anzahlen kommen aus dem Dashboard-Request – keine zusätzlichen Abfragen",
@@ -505,11 +510,28 @@ function hwSuggest(meter, system) {
 }
 
 /* ---------- Helfer ---------- */
+/* Zentrale Stelle für Sitzungsverlust. Statt an jedem Aufruf einzeln auf 401
+   zu prüfen, meldet der Interceptor es einmal – die Oberfläche blendet dann
+   die Anmeldung ein. Der Rückruf wird von der App beim Start gesetzt. */
+const authStore = reactive({ status: null, checked: false });
+let onUnauthorized = () => {};
+
 async function api(path, opts = {}) {
   // Führenden Slash entfernen -> relativer Request. Funktioniert direkt (LXC)
   // UND hinter Home-Assistant-Ingress (dynamischer Basis-Pfad).
   const url = path.replace(/^\//, "");
-  const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...opts });
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    // Sitzungscookie mitsenden. Nötig, weil das Token als HttpOnly-Cookie
+    // gehalten wird und für JavaScript unsichtbar ist.
+    credentials: "same-origin",
+    ...opts,
+  });
+  if (res.status === 401) {
+    authStore.status = { ...(authStore.status || {}), authenticated: false };
+    onUnauthorized();
+    throw new Error("Sitzung abgelaufen – bitte neu anmelden");
+  }
   if (!res.ok) {
     let d;
     try { d = await res.json(); } catch (_) {}
@@ -1830,6 +1852,10 @@ createApp({
     navItems: NAV_ITEMS,
     navSubOpen: localStorage.getItem("zw_nav_sub") === "1",
     showSysSheet: false,
+    auth: authStore,
+    authForm: { username: "", display_name: "", password: "", password2: "" },
+    authError: null,
+    authBusy: false,
   }),
   computed: {
     visibleSystems() { return this.systems.filter((s) => this.showArchived || s.aktiv); },
@@ -1843,6 +1869,18 @@ createApp({
     navMenuIcon() { return SVG.menu; },
     chevronIcon() { return SVG.chevron; },
     navHomeIcon() { return SVG.home; },
+    /* Maske nur zeigen, wenn der Status bekannt UND die Anmeldung nötig ist.
+       Vor der ersten Antwort würde sie sonst kurz aufblitzen. */
+    authNeeded() {
+      const s = this.auth.status;
+      return !!(this.auth.checked && s && !s.authenticated);
+    },
+    currentUser() { return (this.auth.status || {}).user || null; },
+    setupValid() {
+      const f = this.authForm;
+      return f.username.trim().length >= 3 && f.password.length >= 12
+             && f.password === f.password2;
+    },
     /* Unterpunkte = aktive Systeme in der Reihenfolge der Übersicht.
        Archivierte bleiben draußen: die Sidebar ist ein Sprungziel für den
        Alltag, nicht der Ort, an dem Altbestand verwaltet wird. */
@@ -1855,10 +1893,13 @@ createApp({
     visibleNavItems() { return this.navItems.filter((i) => !i.needsSystems || this.systems.length); },
   },
   async mounted() {
+    // Rückruf des Interceptors: bei 401 wird der Status neu geholt, wodurch
+    // die Maske erscheint – ohne dass jede Aufrufstelle das selbst behandeln muss.
+    onUnauthorized = () => { this.auth.checked = true; };
     this.applyNavClass();
     window.addEventListener("keydown", this.onNavKey);
     window.addEventListener("resize", this.onNavResize);
-    await this.load();
+    if (await this.checkAuth()) await this.load();
   },
   unmounted() {
     window.removeEventListener("keydown", this.onNavKey);
@@ -1889,6 +1930,53 @@ createApp({
     goSystem(s) {
       this.closeDrawer();
       this.open(s);
+    },
+
+    /* ---------- Anmeldung ---------- */
+    async checkAuth() {
+      try {
+        this.auth.status = await api("/api/auth/status");
+      } catch (_) {
+        this.auth.status = { authenticated: false, setup_required: false,
+                             mode: "lokal", crypto_available: true };
+      } finally {
+        this.auth.checked = true;
+      }
+      return this.auth.status.authenticated;
+    },
+    async doLogin() {
+      this.authBusy = true; this.authError = null;
+      try {
+        await api("/api/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ username: this.authForm.username.trim(),
+                                 password: this.authForm.password }),
+        });
+        this.authForm = { username: "", display_name: "", password: "", password2: "" };
+        await this.checkAuth();
+        await this.load();
+      } catch (e) { this.authError = e.message; }
+      finally { this.authBusy = false; }
+    },
+    async doSetup() {
+      if (!this.setupValid) return;
+      this.authBusy = true; this.authError = null;
+      try {
+        await api("/api/auth/setup", {
+          method: "POST",
+          body: JSON.stringify({ username: this.authForm.username.trim(),
+                                 display_name: this.authForm.display_name || null,
+                                 password: this.authForm.password }),
+        });
+        this.authForm = { username: "", display_name: "", password: "", password2: "" };
+        await this.checkAuth();
+        await this.load();
+      } catch (e) { this.authError = e.message; }
+      finally { this.authBusy = false; }
+    },
+    async doLogout() {
+      try { await api("/api/auth/logout", { method: "POST" }); } catch (_) {}
+      await this.checkAuth();
     },
 
     /* ---------- Mobile Bottom Sheet ---------- */
@@ -2526,6 +2614,23 @@ createApp({
 
         </div>
 
+        <div class="card set-card" v-if="currentUser">
+          <h3>Konto</h3>
+          <table class="info-table">
+            <tr><td>Angemeldet als</td><td>{{ currentUser.display_name }}</td></tr>
+            <tr><td>Benutzername</td><td class="num">{{ currentUser.username }}</td></tr>
+            <tr><td>Herkunft</td><td>{{ currentUser.source === 'homeassistant'
+              ? 'Home Assistant (Ingress)' : 'lokales Konto' }}</td></tr>
+          </table>
+          <p class="hint" v-if="currentUser.source === 'homeassistant'">
+            Die Anmeldung erfolgt bereits in Home Assistant. Zählwerk übernimmt sie und
+            speichert kein Passwort.
+          </p>
+          <div class="settings-actions" v-else>
+            <button class="btn" @click="doLogout">Abmelden</button>
+          </div>
+        </div>
+
         <div class="card set-card" v-if="sysInfo">
           <h3>Laufzeit &amp; Datenbank</h3>
           <p class="hint">Read-only. Container, Port und DB-Pfad gehören dem Supervisor und werden über
@@ -2869,6 +2974,61 @@ createApp({
         <button class="btn" @click="showSystem=false">Abbrechen</button>
         <button class="btn btn-primary" :disabled="busy" @click="saveSystem">Speichern</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ANMELDUNG / ERSTEINRICHTUNG -->
+  <div class="auth-gate" v-if="authNeeded">
+    <div class="auth-card">
+      <div class="auth-brand">◷ Zählwerk</div>
+
+      <template v-if="auth.status && auth.status.setup_required">
+        <h2>Erstes Konto anlegen</h2>
+        <p class="hint">Zählwerk läuft ohne Home Assistant. Lege ein Konto an –
+          danach ist die Anwendung nur noch angemeldet erreichbar.</p>
+        <div class="field"><label>Benutzername</label>
+          <input class="input" v-model="authForm.username" autocomplete="username"
+                 @keyup.enter="doSetup" /></div>
+        <div class="field"><label>Anzeigename (optional)</label>
+          <input class="input" v-model="authForm.display_name" /></div>
+        <div class="field"><label>Passwort</label>
+          <input class="input" type="password" v-model="authForm.password"
+                 autocomplete="new-password" @keyup.enter="doSetup" />
+          <div class="err-inline" v-if="authForm.password && authForm.password.length < 12">
+            Mindestens 12 Zeichen
+          </div>
+          <div class="hint" v-else>Mindestens 12 Zeichen. Länge wirkt stärker als Sonderzeichen.</div>
+        </div>
+        <div class="field"><label>Passwort wiederholen</label>
+          <input class="input" type="password" v-model="authForm.password2"
+                 autocomplete="new-password" @keyup.enter="doSetup" />
+          <div class="err-inline" v-if="authForm.password2 && authForm.password2 !== authForm.password">
+            Stimmt nicht überein
+          </div>
+        </div>
+        <button class="btn btn-primary auth-submit" :disabled="!setupValid || authBusy" @click="doSetup">
+          {{ authBusy ? 'Legt an …' : 'Konto anlegen' }}
+        </button>
+      </template>
+
+      <template v-else>
+        <h2>Anmelden</h2>
+        <div class="hint ks-note" v-if="auth.status && !auth.status.crypto_available">
+          <code>bcrypt</code> oder <code>PyJWT</code> fehlen im Image. Das Add-on
+          nach dem Update neu bauen lassen.
+        </div>
+        <div class="field"><label>Benutzername</label>
+          <input class="input" v-model="authForm.username" autocomplete="username"
+                 @keyup.enter="doLogin" /></div>
+        <div class="field"><label>Passwort</label>
+          <input class="input" type="password" v-model="authForm.password"
+                 autocomplete="current-password" @keyup.enter="doLogin" /></div>
+        <div class="err-inline auth-err" v-if="authError">{{ authError }}</div>
+        <button class="btn btn-primary auth-submit"
+                :disabled="!authForm.username || !authForm.password || authBusy" @click="doLogin">
+          {{ authBusy ? 'Prüft …' : 'Anmelden' }}
+        </button>
+      </template>
     </div>
   </div>
 

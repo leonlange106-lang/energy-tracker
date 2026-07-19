@@ -1175,3 +1175,23 @@ html { scrollbar-gutter: stable; }
 @media (min-width: 841px) {
   .sys-sheet, .sheet-scrim { display: none !important; }
 }
+
+/* ---------- Anmeldung ---------- */
+.auth-gate {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: var(--md-surface);
+  overflow-y: auto;
+}
+.auth-card {
+  width: 100%; max-width: 400px;
+  background: var(--md-surface-c-low); border-radius: 28px;
+  padding: 32px 28px; box-shadow: var(--md-shadow-2);
+  border: 1px solid var(--md-outline-variant);
+}
+.auth-brand { font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--md-primary); margin-bottom: 18px; }
+.auth-card h2 { margin: 0 0 6px; font-size: 24px; line-height: 32px; font-weight: 400; }
+.auth-card .field { margin-top: 16px; }
+.auth-submit { width: 100%; justify-content: center; margin-top: 22px; min-height: 48px; }
+.auth-err { margin-top: 12px; }

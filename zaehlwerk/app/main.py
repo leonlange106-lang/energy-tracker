@@ -1,16 +1,20 @@
 """Zählwerk – FastAPI-App. Liefert API + Frontend (statisch) aus einem Prozess."""
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
-from .database import init_db
+from sqlmodel import Session
+
+from .database import engine, init_db
 from .version import APP_VERSION
-from . import backup as backup_mod, mqtt_client, notifier, outbound
-from .routers import (backups, external, ha, imports, meters, mqtt, readings,
-                      settings as settings_router, systems, tariffs)
+from . import auth as auth_mod, backup as backup_mod, mqtt_client, notifier, outbound
+from .routers import (auth as auth_router, backups, external, ha, imports,
+                      meters, mqtt, readings, settings as settings_router,
+                      systems, tariffs)
 
 app = FastAPI(title="Zählwerk API", version=APP_VERSION)
 
@@ -21,6 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router.router)
 app.include_router(systems.router)
 app.include_router(readings.router)
 app.include_router(imports.router)
@@ -33,6 +38,40 @@ app.include_router(settings_router.router)
 app.include_router(ha.router)
 
 
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Schützt sämtliche /api-Pfade.
+
+    Reihenfolge der Prüfungen:
+      1. Nicht-/api-Pfade (Oberfläche, statische Dateien) laufen durch – ohne
+         sie käme nicht einmal die Anmeldemaske zustande.
+      2. Pfade aus PUBLIC_PATHS laufen durch.
+      3. Identität bestimmen: erst Ingress-Kopfzeilen, dann Cookie bzw.
+         Authorization-Kopfzeile.
+      4. Keine Identität -> 401. Die Oberfläche wertet das aus und zeigt die
+         Anmeldung, statt den Nutzer auf einem Fehler stehen zu lassen.
+
+    Der Nutzer wird an request.state gehängt, damit einzelne Routen ihn über
+    die Abhängigkeit current_user beziehen können, ohne erneut zu prüfen.
+    """
+    path = request.url.path
+    if not path.startswith("/api") or path in auth_mod.PUBLIC_PATHS:
+        return await call_next(request)
+
+    with Session(engine) as session:
+        # Solange kein Konto existiert, ist die Ersteinrichtung offen. Die App
+        # sperrt sich sonst selbst aus, bevor ein Konto angelegt werden kann.
+        if auth_mod.setup_required(session):
+            return await call_next(request)
+        user = auth_mod.resolve_user(request, session)
+
+    if user is None:
+        return JSONResponse({"detail": "Nicht angemeldet"}, status_code=401)
+
+    request.state.user = user
+    return await call_next(request)
+
+
 @app.on_event("startup")
 async def _startup():
     # Reihenfolge zwingend: Guard VOR allem anderen installieren, damit keine
@@ -40,6 +79,12 @@ async def _startup():
     # nichts nach draussen - die Flagge startet auf True.
     outbound.install_socket_guard()
     init_db()
+    if not auth_mod.ingress_mode() and not auth_mod.crypto_available():
+        # Ein stilles Weiterlaufen waere hier die schlechtere Antwort: die App
+        # stuende ohne jeden Schutz im Netz.
+        raise RuntimeError(
+            "Standalone-Betrieb ohne bcrypt/PyJWT: Anmeldung nicht moeglich. "
+            "Image mit aktueller requirements.txt neu bauen.")
     from .routers.settings import get_setting
     outbound.set_offline(bool(get_setting("offline_mode", True)))
     import asyncio

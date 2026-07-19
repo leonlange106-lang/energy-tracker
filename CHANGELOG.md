@@ -14,6 +14,37 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.0.0] - 2026-07-18
+
+### Added
+
+- [Backend/Auth] Ergänzt die Tabelle `users` mit Benutzername, Anzeigename, Passwort-Hash, externer Kennung, Administratorkennzeichen und Zeitpunkt der letzten Anmeldung. Der Passwort-Hash ist bewusst optional, da Konten aus Home Assistant kein Passwort führen.
+- [Backend/migrations.py] Ergänzt Migration 4 und hebt `PRAGMA user_version` auf 4.
+- [Backend/Auth] Übernimmt unter Home Assistant die dort bereits erfolgte Anmeldung über die Ingress-Kopfzeilen und legt das zugehörige Konto bei Bedarf an. Eine zweite Anmeldemaske entfällt.
+- [Backend/Auth] Ergänzt für den Standalone-Betrieb die Anmeldung mit bcrypt-Hash bei Kostenfaktor 12 und JSON Web Token nach HS256.
+- [Backend/routers/auth.py] Ergänzt `GET /api/auth/status`, `POST /api/auth/setup`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` und `POST /api/auth/password`.
+- [Frontend/Auth] Ergänzt Anmeldemaske und Ersteinrichtung sowie die Kontoanzeige mit Abmeldung in Sektion A der Einstellungen.
+- [Frontend/Auth] Ergänzt einen zentralen Abfangpunkt im API-Helfer, der eine abgelaufene Sitzung einmal behandelt und die Anmeldung einblendet, statt jede Aufrufstelle einzeln prüfen zu lassen.
+- [Deployment/requirements.txt] Ergänzt `bcrypt>=4.1` und `PyJWT>=2.8`.
+
+### Security
+
+- [Backend/Auth] Schützt sämtliche Pfade unter `/api` über eine Middleware. Offen bleiben ausschließlich Health-Check, Statusabfrage, Anmeldung, Abmeldung und Ersteinrichtung.
+- [Backend/Auth] Wertet die Ingress-Kopfzeilen nur aus, wenn `SUPERVISOR_TOKEN` gesetzt ist. Ohne diese Bindung könnte im Standalone-Betrieb jeder Aufrufer eine beliebige Identität behaupten, indem er die Kopfzeile selbst setzt.
+- [Backend/Auth] Legt das Token in einem Cookie mit `HttpOnly`, `SameSite=Strict` und `Secure` bei HTTPS ab, statt im localStorage. Ein dort abgelegtes Token wäre für jedes Skript im Dokument lesbar; die Oberfläche bindet Bibliotheken über ein Auslieferungsnetz ein, sodass eine einzelne Cross-Site-Scripting-Lücke zum Verlust des Tokens führen würde.
+- [Backend/Auth] Erzeugt den Signaturschlüssel je Installation und legt ihn in der Datenbank ab. Ein fest im Quelltext stehender Schlüssel wäre für alle Installationen derselbe.
+- [Backend/Auth] Gibt beim Entschlüsseln des Tokens das zulässige Verfahren ausdrücklich an, sodass ein Token mit dem Verfahren `none` abgewiesen wird.
+- [Backend/routers/auth.py] Beantwortet unbekannten Benutzernamen und falsches Passwort mit derselben Meldung, damit sich vorhandene Konten nicht über die Antwort ermitteln lassen.
+- [Backend/routers/auth.py] Lässt die Ersteinrichtung nur zu, solange kein Konto besteht; andernfalls wäre der Endpunkt eine offene Tür zu einem Administratorkonto.
+- [Backend/main.py] Verweigert den Start im Standalone-Betrieb, wenn `bcrypt` oder `PyJWT` fehlen, statt ungeschützt weiterzulaufen.
+
+### BREAKING CHANGES
+
+- Sämtliche API-Pfade erfordern ab dieser Version eine Identität. Unter Home Assistant geschieht das ohne Zutun über Ingress. Im Standalone-Betrieb erscheint beim ersten Aufruf die Ersteinrichtung; bestehende Skripte gegen die API benötigen fortan ein Token in der Kopfzeile `Authorization: Bearer`.
+- Das Image muss neu gebaut werden, da `requirements.txt` zwei neue Abhängigkeiten enthält.
+
+---
+
 ## [2.21.1] - 2026-07-18
 
 ### Fixed
@@ -541,7 +572,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.21.1...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.21.1...v3.0.0
 [2.21.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.21.0...v2.21.1
 [2.21.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.20.0...v2.21.0
 [2.20.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.1...v2.20.0

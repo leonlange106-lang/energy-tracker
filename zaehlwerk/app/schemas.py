@@ -374,3 +374,34 @@ class MqttPath(BaseModel):
     """Fester JSON-Pfad zum Zählerstand, z. B. "MT631.Total_in"."""
     system_id: str
     path: Optional[str] = Field(None, max_length=200)
+
+
+# ---------- Authentifizierung ----------
+class UserRead(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    is_admin: bool = False
+    source: str = "lokal"        # "lokal" | "homeassistant"
+
+
+class AuthStatus(BaseModel):
+    mode: str                    # "lokal" | "homeassistant"
+    authenticated: bool
+    setup_required: bool
+    crypto_available: bool
+    user: Optional[UserRead] = None
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=120)
+    password: str = Field(..., min_length=1, max_length=256)
+
+
+class SetupRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=120,
+                          pattern=r"^[A-Za-z0-9._@-]+$")
+    display_name: Optional[str] = Field(None, max_length=120)
+    # Zwölf Zeichen Untergrenze statt der oft zitierten acht: Länge trägt bei
+    # Passwörtern mehr zur Widerstandsfähigkeit bei als erzwungene Sonderzeichen.
+    password: str = Field(..., min_length=12, max_length=256)

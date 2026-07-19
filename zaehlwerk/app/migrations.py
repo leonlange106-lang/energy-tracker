@@ -106,10 +106,33 @@ def _m003_tariffs(conn: Connection) -> None:
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tariffs_gueltig_bis ON tariffs (gueltig_bis)"))
 
 
+# --------------------------------------------------------------------------
+# Migration 4: Benutzerkonten
+# --------------------------------------------------------------------------
+def _m004_users(conn: Connection) -> None:
+    if not _table_exists(conn, "users"):
+        conn.execute(text("""
+            CREATE TABLE users (
+                id            VARCHAR NOT NULL PRIMARY KEY,
+                username      VARCHAR NOT NULL,
+                display_name  VARCHAR,
+                password_hash VARCHAR,
+                external_id   VARCHAR,
+                is_admin      BOOLEAN NOT NULL DEFAULT 0,
+                aktiv         BOOLEAN NOT NULL DEFAULT 1,
+                letzter_login DATETIME,
+                erstellt_am   DATETIME NOT NULL
+            )
+        """))
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_users_external_id ON users (external_id)"))
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
     (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
     (3, "tariffs-Tabelle fuer Tarifperioden anlegen", _m003_tariffs),
+    (4, "users-Tabelle fuer Benutzerkonten anlegen", _m004_users),
 ]
 
 
