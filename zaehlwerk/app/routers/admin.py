@@ -1,0 +1,291 @@
+"""Admin-Werkzeuge: Diagnose, Protokoll, lesende Datenbankabfrage.
+
+**Bewusst keine Shell.** Ein Endpunkt, der beliebige Befehle im Container
+ausführt, wäre Remote Code Execution als Funktion. Der Container hält
+`SUPERVISOR_TOKEN`; wer darin Befehle absetzen kann, erreicht die gesamte
+Supervisor-API und die Einbindungen von /config, /share und /backup. Da die
+Oberfläche Bibliotheken über ein Auslieferungsnetz einbindet, würde bereits
+eine Cross-Site-Scripting-Lücke genügen: das Sitzungscookie geht bei jedem
+`fetch` aus dem Dokument automatisch mit. Für echten Shell-Zugriff ist das
+Add-on „Advanced SSH & Web Terminal" vorgesehen.
+
+Dieses Modul deckt den tatsächlichen Bedarf ab – nachsehen, was das System
+gerade tut – ohne die Angriffsfläche zu verändern:
+
+* **Diagnose**  Zustand von Datenbank, Migrationen, Sicherung, Broker und
+  ausgehenden Verbindungen.
+* **Protokoll**  die letzten Meldungen der Anwendung aus einem Ringpuffer.
+  Der Puffer ersetzt das Anzapfen der Standardausgabe, die im Container dem
+  Supervisor gehört.
+* **Abfrage**  lesende SQL-Abfragen auf einer schreibgeschützt geöffneten
+  Verbindung.
+
+Alle drei sind auf die Rolle Administrator beschränkt; die Prüfung erfolgt
+zentral in der Middleware.
+"""
+import logging
+import re
+import sqlite3
+import time
+from collections import deque
+from datetime import datetime
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session
+
+from .. import backup as backup_mod, mqtt_client, outbound
+from ..config import settings as runtime_settings
+from ..database import engine, get_session
+from ..migrations import schema_version
+from ..models import User
+from ..auth import current_user
+from ..schemas import SqlQueryRequest
+from ..version import APP_VERSION
+
+log = logging.getLogger("zaehlwerk.admin")
+router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+# --------------------------------------------------------------------------
+# Protokoll-Ringpuffer
+# --------------------------------------------------------------------------
+LOG_BUFFER: deque = deque(maxlen=500)
+
+
+class BufferHandler(logging.Handler):
+    """Hängt sich in das Protokoll der Anwendung.
+
+    Die Standardausgabe des Containers liest der Supervisor; von innen ist sie
+    nicht zugänglich. Ein Ringpuffer im Prozess liefert dieselbe Information,
+    ohne dafür eine Datei mitschreiben zu müssen.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            LOG_BUFFER.appendleft({
+                "ts": datetime.fromtimestamp(record.created).isoformat(timespec="seconds"),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": self.format(record),
+            })
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def install_log_buffer() -> None:
+    """Einmal beim Start aufrufen."""
+    root = logging.getLogger("zaehlwerk")
+    if any(isinstance(h, BufferHandler) for h in root.handlers):
+        return
+    handler = BufferHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
+
+# --------------------------------------------------------------------------
+# Lesende Abfrage
+# --------------------------------------------------------------------------
+# Nur diese Anfänge sind zugelassen. Alles andere wird abgewiesen, bevor die
+# Datenbank es überhaupt sieht.
+ALLOWED_PREFIX = re.compile(r"^\s*(select|with)\s", re.IGNORECASE)
+
+# Zusätzlicher Riegel gegen Anweisungen, die SQLite auch lesend anbietet
+# (ATTACH bindet fremde Dateien ein, PRAGMA kann Einstellungen verändern).
+FORBIDDEN = re.compile(
+    r"\b(attach|detach|pragma|vacuum|insert|update|delete|drop|alter|create|"
+    r"replace|reindex|analyze|begin|commit|rollback|savepoint)\b", re.IGNORECASE)
+
+MAX_ROWS = 500
+QUERY_TIMEOUT_S = 5
+
+# Schlüssel in app_settings, deren Werte auch Administratoren nicht im Klartext
+# sehen sollen. Der Signaturschlüssel erlaubt das Fälschen von Sitzungen für
+# BELIEBIGE Konten – das geht über die Befugnis eines Administrators hinaus, der
+# Rollen ohnehin regulär vergeben kann. Das Broker-Passwort ist ein fremdes
+# Zugangsdatum, das hier nur zufällig liegt.
+SECRET_SETTING_KEYS = {"auth_jwt_secret", "mqtt_password"}
+MASK = "●●●●●●●● (verborgen)"
+
+
+def _secret_values() -> set:
+    """Aktuelle Geheimniswerte einsammeln, um sie in Ergebnissen zu ersetzen.
+
+    Bewusst wertbasiert statt spaltenbasiert: der Wert wird auch dann
+    unkenntlich, wenn er über einen Alias, eine Unterabfrage oder eine
+    Verkettung nach außen getragen wird.
+    """
+    path = Path(runtime_settings.sqlite_path)
+    if not path.exists():
+        return set()
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
+        try:
+            rows = conn.execute(
+                "SELECT key, value FROM app_settings WHERE key IN ({})".format(
+                    ",".join("?" * len(SECRET_SETTING_KEYS))),
+                tuple(SECRET_SETTING_KEYS)).fetchall()
+        finally:
+            conn.close()
+        return {v for _, v in rows if v}
+    except sqlite3.Error:
+        return set()
+
+
+def _mask(value, secrets: set):
+    if not secrets or value is None:
+        return value
+    if isinstance(value, str):
+        if value in secrets:
+            return MASK
+        for s in secrets:
+            if s and s in value:
+                return value.replace(s, MASK)
+    return value
+
+
+def _run_query(sql: str) -> dict:
+    """Abfrage auf einer schreibgeschützten Verbindung ausführen.
+
+    Drei voneinander unabhängige Riegel: Prüfung des Anweisungsanfangs,
+    Sperrliste für verändernde Schlüsselwörter, und – entscheidend – die
+    Verbindung selbst wird im Modus `ro` geöffnet und zusätzlich auf
+    `query_only` gestellt. Selbst wenn die beiden Textprüfungen umgangen
+    würden, weist SQLite jeden Schreibversuch ab.
+    """
+    text = (sql or "").strip().rstrip(";")
+    if not text:
+        raise HTTPException(422, "Leere Abfrage")
+    if ";" in text:
+        raise HTTPException(422, "Nur eine einzelne Anweisung je Aufruf")
+    if not ALLOWED_PREFIX.match(text):
+        raise HTTPException(422, "Nur SELECT- und WITH-Abfragen sind zulässig")
+    hit = FORBIDDEN.search(text)
+    if hit:
+        raise HTTPException(422, f"Nicht zulässiges Schlüsselwort: {hit.group(0).upper()}")
+
+    path = Path(runtime_settings.sqlite_path)
+    if not path.exists():
+        raise HTTPException(404, "Datenbank nicht gefunden")
+
+    started = time.time()
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=QUERY_TIMEOUT_S)
+    try:
+        conn.execute("PRAGMA query_only = ON")
+        # Abbruchbedingung gegen Abfragen, die sich festlaufen: der Rückruf
+        # wird alle 10.000 Anweisungen aufgerufen und bricht nach Zeitablauf ab.
+        deadline = started + QUERY_TIMEOUT_S
+        conn.set_progress_handler(lambda: 1 if time.time() > deadline else 0, 10_000)
+
+        cur = conn.execute(f"SELECT * FROM ({text}) LIMIT {MAX_ROWS + 1}")
+        columns = [d[0] for d in (cur.description or [])]
+        rows = cur.fetchall()
+    except sqlite3.OperationalError as exc:
+        raise HTTPException(422, f"SQL-Fehler: {exc}")
+    except sqlite3.DatabaseError as exc:
+        raise HTTPException(422, f"Datenbankfehler: {exc}")
+    finally:
+        conn.close()
+
+    truncated = len(rows) > MAX_ROWS
+    secrets = _secret_values()
+    return {
+        "columns": columns,
+        "rows": [[_mask(v, secrets) for v in r] for r in rows[:MAX_ROWS]],
+        "row_count": min(len(rows), MAX_ROWS),
+        "truncated": truncated,
+        "duration_ms": int((time.time() - started) * 1000),
+    }
+
+
+@router.post("/query")
+def query(payload: SqlQueryRequest, user: User = Depends(current_user)):
+    # Jede Abfrage wird mit Konto protokolliert – bei einem Werkzeug mit
+    # Einblick in sämtliche Daten gehört das zur Nachvollziehbarkeit.
+    log.info("SQL-Abfrage von %s: %s", user.username, (payload.sql or "")[:300])
+    return _run_query(payload.sql)
+
+
+@router.get("/schema")
+def schema():
+    """Tabellen und Spalten – Nachschlagehilfe für die Abfrage."""
+    path = Path(runtime_settings.sqlite_path)
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    try:
+        tables = [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+        out = []
+        for table in tables:
+            cols = [{"name": r[1], "type": r[2]} for r in
+                    conn.execute(f"PRAGMA table_info({table})")]
+            count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            out.append({"table": table, "rows": count, "columns": cols})
+        return {"tables": out}
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------
+# Diagnose und Protokoll
+# --------------------------------------------------------------------------
+@router.get("/diagnostics")
+def diagnostics(session: Session = Depends(get_session)):
+    path = Path(runtime_settings.sqlite_path)
+    sizes = {}
+    for suffix, label in (("", "db"), ("-wal", "wal"), ("-shm", "shm")):
+        p = Path(str(path) + suffix)
+        sizes[label] = p.stat().st_size if p.exists() else 0
+
+    with engine.connect() as conn:
+        from sqlalchemy import text as sa_text
+        integrity = conn.execute(sa_text("PRAGMA integrity_check")).scalar()
+        fk_errors = conn.execute(sa_text("PRAGMA foreign_key_check")).fetchall()
+        journal = conn.execute(sa_text("PRAGMA journal_mode")).scalar()
+        page_count = conn.execute(sa_text("PRAGMA page_count")).scalar()
+        page_size = conn.execute(sa_text("PRAGMA page_size")).scalar()
+        freelist = conn.execute(sa_text("PRAGMA freelist_count")).scalar()
+
+    return {
+        "app_version": APP_VERSION,
+        "schema_version": schema_version(engine),
+        "database": {
+            "path": str(path),
+            "sizes_bytes": sizes,
+            "journal_mode": journal,
+            "integrity_check": integrity,
+            "foreign_key_errors": len(fk_errors),
+            "page_count": page_count,
+            "page_size": page_size,
+            "freelist_pages": freelist,
+            # Anteil ungenutzter Seiten – ab etwa einem Viertel lohnt ein VACUUM
+            "fragmentation_pct": round(100 * (freelist or 0) / (page_count or 1), 1),
+        },
+        "outbound": {
+            "offline_mode": outbound.is_offline(),
+            "socket_guard": outbound._guard_installed,
+            "cache": outbound.cache_state(),
+        },
+        "mqtt": {
+            "connected": mqtt_client._state.get("connected"),
+            "broker": mqtt_client._state.get("broker"),
+            "messages": mqtt_client._state.get("messages"),
+            "written": mqtt_client._state.get("written"),
+            "last_error": mqtt_client._state.get("last_error"),
+            "subscriptions": mqtt_client._state.get("subscriptions"),
+        },
+        "backup": {
+            "directory": str(backup_mod.backup_dir()),
+            "supervisor_dir": backup_mod.backup_dir() == backup_mod.PRIMARY_DIR,
+            "entries": len(backup_mod.list_backups()),
+        },
+    }
+
+
+@router.get("/logs")
+def logs(lines: int = 200, level: str = "INFO"):
+    ranking = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40, "CRITICAL": 50}
+    threshold = ranking.get(level.upper(), 20)
+    out = [e for e in LOG_BUFFER if ranking.get(e["level"], 20) >= threshold]
+    return {"entries": out[:max(1, min(lines, 500))], "buffered": len(LOG_BUFFER)}

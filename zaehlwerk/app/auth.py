@@ -75,6 +75,9 @@ WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # Grundregel darunter: lesend ab "guest" bzw. "viewer", schreibend ab "writer".
 # Diese Tabelle hebt nur an, wo mehr nötig ist.
 ROUTE_RULES: list[tuple[str, Optional[set], str]] = [
+    # Admin-Werkzeuge: Einblick in sämtliche Daten und den Systemzustand.
+    # Steht bewusst an erster Stelle, damit keine spätere Regel sie aufweicht.
+    ("/api/admin",        None,          "admin"),
     # Konten und Rollen ändern: ausschließlich Administratoren
     ("/api/auth/users",   None,          "admin"),
     # Betriebsparameter, Sicherungen, Broker, externe Dienste

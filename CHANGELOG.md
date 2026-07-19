@@ -14,6 +14,27 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.3.0] - 2026-07-19
+
+### Added
+
+- [Admin-Tools] Ergänzt einen eigenen Menüpunkt in der Seitenleiste, der ausschließlich Administratoren angezeigt und serverseitig auf diese Rolle beschränkt wird. Die Regel steht an erster Stelle der Zugriffstabelle, damit keine spätere Ergänzung sie aufweichen kann.
+- [Admin-Tools] Ergänzt eine Diagnoseansicht mit Integritätsprüfung der Datenbank, Fremdschlüsselprüfung, Journal-Modus, Dateigröße einschließlich Write-Ahead-Protokoll, Fragmentierungsgrad sowie dem Zustand von Broker, Sicherung und ausgehenden Verbindungen.
+- [Admin-Tools] Ergänzt eine lesende Datenbankabfrage mit Ergebnistabelle, Beispielabfragen und einer Übersicht aller Tabellen samt Spalten und Zeilenzahl.
+- [Admin-Tools] Ergänzt eine Protokollansicht der letzten fünfhundert Meldungen der Anwendung, filterbar nach Stufe. Ein Ringpuffer im Prozess ersetzt das Anzapfen der Standardausgabe, die im Container dem Supervisor gehört.
+- [Backend/routers/admin.py] Ergänzt `GET /api/admin/diagnostics`, `GET /api/admin/schema`, `GET /api/admin/logs` und `POST /api/admin/query`.
+
+### Security
+
+- [Admin-Tools] Verzichtet bewusst auf einen Endpunkt zur Ausführung beliebiger Befehle. Der Container führt `SUPERVISOR_TOKEN` in der Umgebung; ein solcher Endpunkt entspräche der Ausführung fremden Codes auf dem Host einschließlich Zugriff auf Supervisor-Schnittstelle, Sicherungen und die eingebundenen Verzeichnisse. Da die Oberfläche Bibliotheken über ein Auslieferungsnetz bezieht, genügte dafür eine einzelne Cross-Site-Scripting-Lücke, weil das Sitzungscookie bei jedem Aufruf aus dem Dokument mitgesendet wird. Für Shell-Zugriff ist das Add-on „Advanced SSH & Web Terminal" vorgesehen.
+- [Backend/routers/admin.py] Öffnet die Datenbank für Abfragen schreibgeschützt und setzt zusätzlich `query_only`. Selbst bei Umgehung der Textprüfungen weist SQLite jeden Schreibversuch ab.
+- [Backend/routers/admin.py] Lässt ausschließlich einzelne Anweisungen zu, die mit `SELECT` oder `WITH` beginnen, und weist verändernde Schlüsselwörter sowie `ATTACH`, `DETACH` und `PRAGMA` ab.
+- [Backend/routers/admin.py] Begrenzt Ergebnisse auf fünfhundert Zeilen und bricht Abfragen nach fünf Sekunden über einen Fortschrittsrückruf ab.
+- [Backend/routers/admin.py] Ersetzt den Signaturschlüssel der Sitzungen und das Broker-Passwort in Abfrageergebnissen durch eine Platzhalterfolge. Die Ersetzung erfolgt wertbasiert und greift daher auch bei Aliasen, Unterabfragen und Verkettungen. Der Signaturschlüssel erlaubte das Fälschen von Sitzungen für beliebige Konten und geht damit über die Befugnis eines Administrators hinaus.
+- [Backend/routers/admin.py] Protokolliert jede Abfrage mit dem ausführenden Konto.
+
+---
+
 ## [3.2.2] - 2026-07-19
 
 ### Changed
@@ -628,7 +649,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.2...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.2...v3.3.0
 [3.2.2]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.1...v3.2.2
 [3.2.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.1.0...v3.2.0

@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.2.2";
+const APP_VERSION = "3.3.0";
 const APP_CHANGELOG = [
+  { v: "3.3.0", d: "19.07.2026", items: [
+    "Admin-Tools: Diagnose, lesende Datenbankabfrage, Anwendungsprotokoll",
+    "Nur für Administratoren, serverseitig durchgesetzt",
+    "Kein Shell-Zugang – dafür ist das Add-on „Advanced SSH & Web Terminal\" vorgesehen",
+  ]},
   { v: "3.2.2", d: "19.07.2026", items: [
     "Erneute Auslieferung des 3.2.1-Standes unter neuer Nummer",
   ]},
@@ -349,7 +354,7 @@ const NAV_ITEMS = [
   { key: "zaehlwerk",    label: "Zählwerk",     icon: SVG.home,   action: "back",                primary: true, expandable: true },
   { key: "bericht",      label: "Bericht",      icon: SVG.report, action: "openCombinedReport",  primary: true, needsSystems: true },
   { key: "einstellungen",label: "Einstellungen",icon: SVG.cog,    action: "openSettings",        primary: true },
-  { key: "admin",        label: "Admin-Tools",  icon: SVG.admin,  action: null, disabled: true, badge: "bald" },
+  { key: "admin",        label: "Admin-Tools",  icon: SVG.admin,  action: "openAdmin", adminOnly: true },
 ];
 const NAV_BREAKPOINT = 840;   // identisch zum CSS-Breakpoint Rail <-> Bottom-Bar
 
@@ -1892,6 +1897,15 @@ createApp({
     authError: null,
     authBusy: false,
     users: [],
+    adminDiag: null,
+    adminSchema: [],
+    adminLogs: [],
+    adminTab: "diag",
+    logLevel: "INFO",
+    sqlText: "SELECT name, typ, einheit FROM systems ORDER BY name",
+    sqlResult: null,
+    sqlError: null,
+    sqlBusy: false,
   }),
   computed: {
     visibleSystems() { return this.systems.filter((s) => this.showArchived || s.aktiv); },
@@ -1901,7 +1915,11 @@ createApp({
     themePalette() { return themeStore.palette; },
     themeContrast() { return themeStore.contrast; },
     /* aktiver Navigationspunkt (Einstellungen als Modal hat Vorrang vor der Ansicht) */
-    activeNav() { return this.view === "settings" ? "einstellungen" : "zaehlwerk"; },
+    activeNav() {
+      if (this.view === "settings") return "einstellungen";
+      if (this.view === "admin") return "admin";
+      return "zaehlwerk";
+    },
     navMenuIcon() { return SVG.menu; },
     chevronIcon() { return SVG.chevron; },
     navHomeIcon() { return SVG.home; },
@@ -1938,6 +1956,7 @@ createApp({
       return this.navItems.filter((i) => {
         if (i.needsSystems && !this.systems.length) return false;
         if (i.key === "einstellungen" && !this.isAdmin) return false;
+        if (i.adminOnly && !this.isAdmin) return false;
         if (i.key === "bericht" && !this.canExport) return false;
         return true;
       });
@@ -2066,6 +2085,39 @@ createApp({
       if (this.isCompact() && this.navDrawer) this.navDrawer = false;
       if (!this.isCompact() && this.showSysSheet) this.showSysSheet = false;
     },
+    openAdmin() {
+      this.view = "admin";
+      window.scrollTo(0, 0);
+      this.loadAdmin();
+    },
+    async loadAdmin() {
+      try {
+        const [d, s] = await Promise.all([
+          api("/api/admin/diagnostics"), api("/api/admin/schema"),
+        ]);
+        this.adminDiag = d;
+        this.adminSchema = s.tables;
+      } catch (e) { this.notify(e.message, "err"); }
+      this.loadAdminLogs();
+    },
+    async loadAdminLogs() {
+      try {
+        const r = await api(`/api/admin/logs?lines=200&level=${this.logLevel}`);
+        this.adminLogs = r.entries;
+      } catch (_) { this.adminLogs = []; }
+    },
+    async runQuery() {
+      if (!this.sqlText.trim()) return;
+      this.sqlBusy = true; this.sqlError = null;
+      try {
+        this.sqlResult = await api("/api/admin/query", {
+          method: "POST", body: JSON.stringify({ sql: this.sqlText }),
+        });
+      } catch (e) { this.sqlError = e.message; this.sqlResult = null; }
+      finally { this.sqlBusy = false; }
+    },
+    useSample(sql) { this.sqlText = sql; this.runQuery(); },
+
     openSettings() {
       this.view = "settings";
       window.scrollTo(0, 0);
@@ -2239,7 +2291,7 @@ createApp({
       return r !== null && r < 3 ? `Kontrast ${r.toFixed(1)}:1 – auf dieser Fläche schwer erkennbar` : null;
     },
     fabAction() {
-      if (!this.canWrite || this.view === "settings") return;
+      if (!this.canWrite || this.view === "settings" || this.view === "admin") return;
       const d = this.$refs.detail;
       if (this.view === "detail" && d) {
         // Kontextbezogen: im Zähler-Tab legt der FAB einen Zähler an
@@ -2479,7 +2531,7 @@ createApp({
               v-html="navMenuIcon"></button>
       <div class="brand">
         <span class="logo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19a9 9 0 1 1 14 0"/><path d="M12 5v2"/><path d="M5.6 8.5l1.5 1.2"/><path d="M18.4 8.5l-1.5 1.2"/><path d="M12 15l3.5-4.5"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg></span>
-        <h1>{{ view==='settings' ? 'Einstellungen' : (view==='detail' && selectedSystem ? selectedSystem.name : 'Zählwerk') }}</h1>
+        <h1>{{ view==='admin' ? 'Admin-Tools' : view==='settings' ? 'Einstellungen' : (view==='detail' && selectedSystem ? selectedSystem.name : 'Zählwerk') }}</h1>
       </div>
       <div class="spacer"></div>
     </div>
@@ -2606,6 +2658,124 @@ createApp({
           <div v-if="dueInfo(s.id)" class="due-badge" :class="dueInfo(s.id).level">⚠ {{ dueInfo(s.id).text }}</div>
         </div>
       </div>
+    </template>
+
+    <!-- ADMIN-TOOLS -->
+    <template v-else-if="view==='admin'">
+      <div class="eyebrow">Admin-Tools</div>
+      <div class="seg settings-seg">
+        <button :class="{active: adminTab==='diag'}"  @click="adminTab='diag'">Diagnose</button>
+        <button :class="{active: adminTab==='sql'}"   @click="adminTab='sql'">Abfrage</button>
+        <button :class="{active: adminTab==='logs'}"  @click="adminTab='logs'; loadAdminLogs()">Protokoll</button>
+      </div>
+
+      <!-- Diagnose -->
+      <template v-if="adminTab==='diag'">
+        <div class="card set-card" v-if="adminDiag">
+          <h3>Datenbank</h3>
+          <table class="info-table">
+            <tr><td>Pfad</td><td class="num">{{ adminDiag.database.path }}</td></tr>
+            <tr><td>Version / Schema</td><td class="num">{{ adminDiag.app_version }} · Schema {{ adminDiag.schema_version }}</td></tr>
+            <tr><td>Integritätsprüfung</td>
+                <td :class="adminDiag.database.integrity_check === 'ok' ? '' : 'sb-err'">
+                  {{ adminDiag.database.integrity_check }}</td></tr>
+            <tr><td>Fremdschlüsselfehler</td>
+                <td :class="adminDiag.database.foreign_key_errors ? 'sb-err' : ''">
+                  {{ adminDiag.database.foreign_key_errors }}</td></tr>
+            <tr><td>Journal</td><td class="num">{{ adminDiag.database.journal_mode }}</td></tr>
+            <tr><td>Größe</td><td class="num">
+              {{ fmtBytes(adminDiag.database.sizes_bytes.db) }}
+              <small class="bk-age"> + WAL {{ fmtBytes(adminDiag.database.sizes_bytes.wal) }}</small></td></tr>
+            <tr><td>Fragmentierung</td><td class="num">{{ adminDiag.database.fragmentation_pct }} %
+              <small class="bk-age" v-if="adminDiag.database.fragmentation_pct > 25"> · VACUUM sinnvoll</small></td></tr>
+          </table>
+        </div>
+        <div class="card set-card" v-if="adminDiag">
+          <h3>Dienste</h3>
+          <table class="info-table">
+            <tr><td>Offline-Modus</td><td>{{ adminDiag.outbound.offline_mode ? 'aktiv' : 'aus' }}</td></tr>
+            <tr><td>Socket-Sperre</td><td>{{ adminDiag.outbound.socket_guard ? 'installiert' : 'nicht aktiv' }}</td></tr>
+            <tr><td>MQTT</td><td class="num">
+              {{ adminDiag.mqtt.connected ? 'verbunden' : 'getrennt' }}
+              <span v-if="adminDiag.mqtt.broker"> · {{ adminDiag.mqtt.broker }}</span></td></tr>
+            <tr v-if="adminDiag.mqtt.last_error"><td>MQTT-Fehler</td><td class="sb-err">{{ adminDiag.mqtt.last_error }}</td></tr>
+            <tr><td>Nachrichten</td><td class="num">{{ adminDiag.mqtt.messages }} empfangen · {{ adminDiag.mqtt.written }} geschrieben</td></tr>
+            <tr><td>Sicherungen</td><td class="num">{{ adminDiag.backup.entries }} in {{ adminDiag.backup.directory }}</td></tr>
+          </table>
+          <div class="settings-actions"><button class="btn btn-sm" @click="loadAdmin">↻ Aktualisieren</button></div>
+        </div>
+      </template>
+
+      <!-- Abfrage -->
+      <template v-else-if="adminTab==='sql'">
+        <div class="card set-card">
+          <h3>Datenbankabfrage</h3>
+          <p class="hint">Nur lesend. Die Verbindung wird schreibgeschützt geöffnet,
+            zugelassen sind ausschließlich <code>SELECT</code> und <code>WITH</code>,
+            höchstens 500 Zeilen je Abfrage. Jede Abfrage wird mit Konto protokolliert.</p>
+          <textarea class="input sql-input" rows="4" v-model="sqlText"
+                    spellcheck="false" @keydown.ctrl.enter="runQuery"></textarea>
+          <div class="settings-actions">
+            <button class="btn btn-primary" :disabled="sqlBusy" @click="runQuery">
+              {{ sqlBusy ? 'Läuft …' : 'Ausführen' }}</button>
+            <span class="hint sql-hint">Strg + Eingabe</span>
+          </div>
+          <div class="err-inline" v-if="sqlError">{{ sqlError }}</div>
+
+          <div class="sql-samples">
+            <button class="crumb" @click="useSample('SELECT name, typ, einheit FROM systems ORDER BY name')">Systeme</button>
+            <button class="crumb" @click="useSample('SELECT s.name, COUNT(r.id) AS werte, MAX(r.datum) AS letzte FROM systems s LEFT JOIN readings r ON r.system_id = s.id GROUP BY s.name')">Werte je System</button>
+            <button class="crumb" @click="useSample('SELECT datum, value, note FROM readings ORDER BY datum DESC LIMIT 20')">Letzte Ablesungen</button>
+            <button class="crumb" @click="useSample('SELECT username, role, aktiv, letzter_login FROM users')">Konten</button>
+          </div>
+        </div>
+
+        <div class="card set-card" v-if="sqlResult">
+          <h3>{{ sqlResult.row_count }} Zeile{{ sqlResult.row_count===1 ? '' : 'n' }}
+            <small class="bk-age">· {{ sqlResult.duration_ms }} ms{{ sqlResult.truncated ? ' · gekürzt auf 500' : '' }}</small></h3>
+          <div class="sql-scroll">
+            <table class="sql-table">
+              <thead><tr><th v-for="c in sqlResult.columns" :key="c">{{ c }}</th></tr></thead>
+              <tbody>
+                <tr v-for="(row,i) in sqlResult.rows" :key="i">
+                  <td v-for="(v,j) in row" :key="j">{{ v === null ? '—' : v }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card set-card" v-if="adminSchema.length">
+          <h3>Tabellen</h3>
+          <div v-for="t in adminSchema" :key="t.table" class="sql-schema">
+            <button class="crumb" @click="useSample('SELECT * FROM ' + t.table + ' LIMIT 20')">{{ t.table }}</button>
+            <small>{{ t.rows }} Zeilen · {{ t.columns.map(c => c.name).join(', ') }}</small>
+          </div>
+        </div>
+      </template>
+
+      <!-- Protokoll -->
+      <template v-else>
+        <div class="card set-card">
+          <h3>Anwendungsprotokoll</h3>
+          <div class="settings-actions">
+            <div class="seg">
+              <button v-for="l in ['INFO','WARNING','ERROR']" :key="l"
+                      :class="{active: logLevel===l}" @click="logLevel=l; loadAdminLogs()">{{ l }}</button>
+            </div>
+            <button class="btn btn-sm" @click="loadAdminLogs">↻ Aktualisieren</button>
+          </div>
+          <div class="mqtt-log" v-if="adminLogs.length">
+            <div v-for="(e,i) in adminLogs" :key="i" class="mq-row"
+                 :class="{ warn: e.level === 'WARNING' || e.level === 'ERROR' }">
+              <span class="mq-ts">{{ e.ts.slice(11,19) }}</span>
+              <span class="log-src">{{ e.logger.replace('zaehlwerk.','') }}</span>
+              <span>{{ e.message }}</span>
+            </div>
+          </div>
+          <div class="hint" v-else>Keine Meldungen auf dieser Stufe.</div>
+        </div>
+      </template>
     </template>
 
     <!-- EINSTELLUNGEN -->

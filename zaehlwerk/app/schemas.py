@@ -419,3 +419,9 @@ class SetupRequest(BaseModel):
     # Zwölf Zeichen Untergrenze statt der oft zitierten acht: Länge trägt bei
     # Passwörtern mehr zur Widerstandsfähigkeit bei als erzwungene Sonderzeichen.
     password: str = Field(..., min_length=12, max_length=256)
+
+
+class SqlQueryRequest(BaseModel):
+    """Lesende Datenbankabfrage. Die Prüfung erfolgt serverseitig; die
+    Längengrenze fängt nur offensichtlichen Unfug früh ab."""
+    sql: str = Field(..., min_length=1, max_length=4000)

@@ -12,9 +12,9 @@ from sqlmodel import Session
 from .database import engine, init_db
 from .version import APP_VERSION
 from . import auth as auth_mod, backup as backup_mod, mqtt_client, notifier, outbound
-from .routers import (auth as auth_router, backups, external, ha, imports,
-                      meters, mqtt, readings, settings as settings_router,
-                      systems, tariffs)
+from .routers import (admin, auth as auth_router, backups, external, ha,
+                      imports, meters, mqtt, readings,
+                      settings as settings_router, systems, tariffs)
 
 app = FastAPI(title="Zählwerk API", version=APP_VERSION)
 
@@ -25,6 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(admin.router)
 app.include_router(auth_router.router)
 app.include_router(systems.router)
 app.include_router(readings.router)
@@ -89,6 +90,9 @@ async def _startup():
     # Reihenfolge zwingend: Guard VOR allem anderen installieren, damit keine
     # Verbindung in der Startphase durchrutscht. Der Guard laesst im Zweifel
     # nichts nach draussen - die Flagge startet auf True.
+    # Protokollpuffer vor allem anderen: sonst fehlen die Meldungen der
+    # Startphase genau dann, wenn man sie braucht.
+    admin.install_log_buffer()
     outbound.install_socket_guard()
     init_db()
     if not auth_mod.ingress_mode() and not auth_mod.crypto_available():
