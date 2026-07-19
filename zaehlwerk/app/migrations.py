@@ -161,6 +161,23 @@ def _m006_dashboard(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE users ADD COLUMN dashboard_layout TEXT"))
 
 
+# --------------------------------------------------------------------------
+# Migration 7: Herkunft der Ablesungen
+# --------------------------------------------------------------------------
+def _m007_reading_source(conn: Connection) -> None:
+    if "source" not in _columns(conn, "readings"):
+        conn.execute(text(
+            "ALTER TABLE readings ADD COLUMN source VARCHAR(50) NOT NULL DEFAULT 'manual'"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_readings_source ON readings (source)"))
+
+    # Bestandsdaten einordnen. Bis 3.6.0 kennzeichnete die MQTT-Uebernahme ihre
+    # Datensaetze ueber die Notiz "MQTT" - ein Behelf, der das Notizfeld des
+    # Nutzers belegte. Diese Eintraege bekommen die Herkunft und geben die
+    # Notiz wieder frei; alles uebrige bleibt bei 'manual'.
+    conn.execute(text("UPDATE readings SET source = 'mqtt' WHERE note = 'MQTT'"))
+    conn.execute(text("UPDATE readings SET note = NULL WHERE note = 'MQTT'"))
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
     (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
@@ -168,6 +185,7 @@ MIGRATIONS: list[tuple[int, str, callable]] = [
     (4, "users-Tabelle fuer Benutzerkonten anlegen", _m004_users),
     (5, "Rollenspalte an users ergaenzen", _m005_roles),
     (6, "dashboard_layout an users ergaenzen", _m006_dashboard),
+    (7, "source-Spalte an readings ergaenzen", _m007_reading_source),
 ]
 
 

@@ -547,7 +547,7 @@ def ingest(topic: str, payload: str) -> Optional[dict]:
         existing = session.exec(
             select(Reading)
             .where(Reading.system_id == system.id, Reading.datum >= start,
-                   Reading.note == "MQTT")
+                   Reading.source == "mqtt")
             .order_by(Reading.datum.desc())
         ).first()
 
@@ -584,8 +584,10 @@ def ingest(topic: str, payload: str) -> Optional[dict]:
             session.add(existing)
             action = "aktualisiert"
         else:
+            # Notizfeld bleibt frei – es gehört dem Nutzer. Die Herkunft steht
+            # seit 3.7.0 in einer eigenen Spalte.
             session.add(Reading(system_id=system.id, datum=today, value=value,
-                                meter_replaced=False, note="MQTT"))
+                                meter_replaced=False, source="mqtt"))
             action = "angelegt"
 
         session.commit()

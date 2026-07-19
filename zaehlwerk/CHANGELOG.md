@@ -14,6 +14,26 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.7.0] - 2026-07-19
+
+### Added
+
+- [Backend/DB] Ergänzt die Spalte `source` an der Tabelle `readings` mit dem Vorgabewert `manual` sowie einen Index darauf; Migration 7 hebt `PRAGMA user_version` auf 7.
+- [Frontend/UI] Kennzeichnet Ablesungen mit abweichender Herkunft über einen Chip in der Werte-Tabelle und ergänzt eine Filterleiste. Sie erscheint erst, wenn tatsächlich mehr als eine Quelle vorliegt.
+
+### Changed
+
+- [Backend/Ingestion] Schreibt die Herkunft in die eigene Spalte statt sie über das Notizfeld zu kennzeichnen. Die MQTT-Übernahme belegte bislang die Notiz mit dem Wort MQTT; dieses Feld gehört dem Nutzer und bleibt nun frei. Migration 7 überträgt bestehende Einträge und gibt die Notiz wieder frei.
+- [Backend/routers/readings.py] Übernimmt die Herkunft aus der Anfrage, beschränkt auf `manual` und `ha_api`. Die Kennung `mqtt` setzt ausschließlich der Listener und lässt sich nicht über die Schnittstelle behaupten.
+- [Backend/routers/imports.py] Kennzeichnet über CSV eingelesene Ablesungen mit `import`.
+- [Frontend/app.js] Setzt `ha_api`, sobald ein Wert aus einer Home-Assistant-Entity übernommen wurde, und fällt auf `manual` zurück, sobald der Wert von Hand geändert wird.
+
+### Fixed
+
+- [Frontend/UI] Zeigt die Kamera-Schaltfläche im Ablesedialog wieder an. Sie wurde in 3.6.0 ausgeblendet, sobald die Statusabfrage der Texterkennung fehlschlug oder Tesseract im Abbild fehlte. Eine verschwundene Schaltfläche sieht wie ein Fehler aus und lässt sich nicht nachvollziehen; stattdessen nennt ein Hinweis beim Antippen den Grund.
+
+---
+
 ## [3.6.0] - 2026-07-19
 
 ### Added
@@ -760,7 +780,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.6.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.7.0...HEAD
+[3.7.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.5.1...v3.6.0
 [3.5.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.4.1...v3.5.0

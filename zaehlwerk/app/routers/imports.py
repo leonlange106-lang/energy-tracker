@@ -72,6 +72,8 @@ async def import_readings(
             if value is None:
                 raise ValueError("Wert fehlt")
             session.add(Reading(
+                # Herkunft: aus einer CSV eingelesen, nicht von Hand erfasst.
+                source="import",
                 system_id=system_id,
                 datum=datetime(d.year, d.month, d.day),
                 value=value,

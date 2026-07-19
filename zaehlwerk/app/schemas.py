@@ -38,12 +38,20 @@ class SystemRead(BaseModel):
 
 
 # ---------- Ablesungen ----------
+# Herkunftskennungen. 'mqtt' fehlt bewusst: sie wird ausschließlich vom
+# Listener gesetzt und darf nicht über die Schnittstelle behauptet werden –
+# sonst ließen sich Datensätze als automatisch erfasst ausgeben.
+READING_SOURCES_CLIENT = ("manual", "ha_api")
+READING_SOURCES_ALL = ("manual", "ha_api", "mqtt", "import")
+
+
 class ReadingCreate(BaseModel):
     datum: date                       # Ablesedatum, NICHT Erfassungszeitpunkt
     value: float
     cost: Optional[float] = None
     meter_replaced: bool = False      # Zählertausch
     note: Optional[str] = None
+    source: str = Field("manual", pattern="^(manual|ha_api)$")
 
 
 class ReadingRead(BaseModel):
@@ -54,6 +62,7 @@ class ReadingRead(BaseModel):
     cost: Optional[float] = None
     meter_replaced: bool = False
     note: Optional[str] = None
+    source: str = "manual"
     # abgeleitete Felder
     consumption: Optional[float] = None
     consumption_per_day: Optional[float] = None

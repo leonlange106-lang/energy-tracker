@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.6.0";
+const APP_VERSION = "3.7.0";
 const APP_CHANGELOG = [
+  { v: "3.7.0", d: "19.07.2026", items: [
+    "Herkunft je Ablesung: Manuell, MQTT, HA oder Import",
+    "Chips in der Werte-Tabelle und Filter nach Quelle",
+    "Notizfeld bleibt frei – MQTT belegt es nicht mehr",
+    "Kamera-Schaltfläche wieder sichtbar, mit Grund bei fehlender Erkennung",
+  ]},
   { v: "3.6.0", d: "19.07.2026", items: [
     "Zählerstand-Erkennung läuft serverseitig mit Tesseract und Bildvorverarbeitung",
     "Letzter Stand entscheidet zwischen Zählwerk, Seriennummer und Eichjahr",
@@ -578,6 +584,13 @@ function hwSuggest(meter, system) {
    und dem Kill-Switch aus 2.12.0 zuwider. Die native Drag-Schnittstelle des
    Browsers reicht für ein Raster mit vier Spalten vollständig aus.
    ========================================================================= */
+/* Herkunft eines Datensatzes. Die Kennungen stehen so in der Datenbank; die
+   Beschriftung bleibt hier, damit sie sich ändern lässt, ohne Daten anzufassen. */
+const SOURCE_LABELS = {
+  manual: "Manuell", mqtt: "MQTT", ha_api: "HA", import: "Import",
+};
+const sourceLabel = (s) => SOURCE_LABELS[s] || s;
+
 const WIDGET_TYPES = [
   { key: "latest_reading", label: "Letzter Stand",  needsSystem: true,  w: 1, h: 1 },
   { key: "line_chart",     label: "Verlauf",        needsSystem: true,  w: 2, h: 2 },
@@ -906,6 +919,7 @@ const SystemDetail = {
     /* Sammelauswahl. Die Kennungen liegen in einem Set, nicht als Marke am
        Datensatz: so überlebt die Auswahl Seitenwechsel, Sortierung und
        Neuladen der Zeilen. */
+    sourceFilter: "all",
     selectMode: false,
     selected: new Set(),
     bulkBusy: false,
@@ -991,7 +1005,11 @@ const SystemDetail = {
       return this.allSystems.filter((s) => s.id !== this.system.id && s.aktiv);
     },
     outlierColor() { return chartColor("outlier", "#9A6A00"); },
+
     canWrite() { return canWriteNow(); },
+    availableSources() {
+      return [...new Set(this.readings.map((r) => r.source || "manual"))].sort();
+    },
 
     /* Grundlage aller Auswahllogik ist die GEFILTERTE Menge, nicht die
        Rohdaten: "alle auswählen" bei gesetztem Filter darf nur das treffen,
@@ -1076,6 +1094,9 @@ const SystemDetail = {
     filtered() {
       let rows = this.readings.slice();
       if (this.onlyOutliers) rows = rows.filter((r) => r.is_outlier);
+      if (this.sourceFilter !== "all") {
+        rows = rows.filter((r) => (r.source || "manual") === this.sourceFilter);
+      }
       if (this.filter.trim()) {
         const q = this.filter.toLowerCase();
         rows = rows.filter((r) => (r.note || "").toLowerCase().includes(q) || fmtDate(r.datum).includes(q));
@@ -1108,6 +1129,7 @@ const SystemDetail = {
        niemand sieht. Deshalb Auswahl verwerfen. */
     filter() { if (this.selected.size) this.clearSelection(); },
     onlyOutliers() { if (this.selected.size) this.clearSelection(); },
+    sourceFilter() { if (this.selected.size) this.clearSelection(); },
     tab(v) {
       // Auswahlmodus gehört zur Werte-Tabelle; beim Verlassen aufräumen.
       if (v !== "list" && this.selectMode) { this.selectMode = false; this.clearSelection(); }
@@ -1342,7 +1364,8 @@ const SystemDetail = {
       }
     },
     openReading() {
-      this.reading = { id: null, datum: today(), value: null, cost: null, meter_replaced: false, note: "" };
+      this.reading = { id: null, datum: today(), value: null, cost: null,
+                       meter_replaced: false, note: "", source: "manual" };
       this.ocrHint = null;
       this.showReading = true;
       this.focusValue();
@@ -1369,6 +1392,7 @@ const SystemDetail = {
         if (res === null) throw new Error(`Einheit '${srcUnit}' ist nicht nach '${this.system.einheit}' umrechenbar`);
         const v = Math.round(res.value * 1000) / 1000;
         this.reading.value = v;
+        this.reading.source = "ha_api";
         this.notify(res.converted
           ? `Übernommen: ${fmt(raw)} ${srcUnit} → ${fmt(v)} ${this.system.einheit} (${r.name || this.haEntity})`
           : `Übernommen: ${fmt(v)} ${this.system.einheit} (${r.name || this.haEntity})`, "ok");
@@ -1377,6 +1401,14 @@ const SystemDetail = {
 
     /* ---------- Foto-Erfassung (Stream ODER natives Foto), Erkennung serverseitig ---------- */
     async openScanner() {
+      // Fehlt die Erkennung im Abbild, wird der Grund genannt statt die
+      // Schaltfläche auszublenden. Ein verschwundener Knopf sieht wie ein
+      // Fehler aus und lässt sich nicht nachvollziehen.
+      if (this.ocrAvailable === false) {
+        this.notify("Texterkennung nicht verfügbar – Add-on neu bauen lassen "
+                  + "(Tesseract fehlt im Abbild).", "err");
+        return;
+      }
       // HA-App-WebViews (v.a. iOS) stellen keinen Kamera-Stream bereit -> natives Foto als Fallback
       const hasStream = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
       this.scanFileMode = !hasStream;
@@ -1548,6 +1580,10 @@ const SystemDetail = {
           cost: this.reading.cost === "" || this.reading.cost === null ? null : Number(this.reading.cost),
           meter_replaced: this.reading.meter_replaced,
           note: this.reading.note || null,
+          // Herkunft: 'ha_api', wenn der Wert aus einer Home-Assistant-Entity
+          // übernommen wurde, sonst Tastatureingabe. Wird der Wert danach von
+          // Hand geändert, fällt die Kennzeichnung zurück auf 'manual'.
+          source: this.reading.source || "manual",
         });
         if (this.reading.id) {
           await api(`/api/readings/${this.reading.id}`, { method: "PUT", body });
@@ -1690,6 +1726,15 @@ const SystemDetail = {
       <div class="table-tools">
         <input class="input" v-model="filter" placeholder="Filtern (Notiz / Datum)…" />
         <label class="check"><input type="checkbox" v-model="onlyOutliers" /> nur Ausreißer</label>
+        <!-- Herkunftsfilter erscheint erst, wenn es überhaupt mehr als eine
+             Quelle gibt – bei rein manueller Erfassung wäre er nur Ballast. -->
+        <div class="seg src-seg" v-if="availableSources.length > 1">
+          <button :class="{active: sourceFilter === 'all'}" @click="sourceFilter = 'all'">Alle</button>
+          <button v-for="s in availableSources" :key="s"
+                  :class="{active: sourceFilter === s}" @click="sourceFilter = s">
+            {{ sourceLabel(s) }}
+          </button>
+        </div>
         <div class="spacer" style="flex:1"></div>
         <button v-if="canWrite && readings.length" class="btn btn-sm"
                 :class="{'btn-tonal': selectMode}" @click="toggleSelectMode">
@@ -1746,7 +1791,11 @@ const SystemDetail = {
                 <span class="chevron" aria-hidden="true">{{ expandedId===r.id ? '▾' : '▸' }}</span>
               </td>
               <td class="r num col-cost">{{ r.cost_effective === null || r.cost_effective === undefined ? '–' : (r.cost_estimated ? '≈ ' : '') + fmt(r.cost_effective) }}</td>
-              <td class="col-note">{{ r.note || '' }}</td>
+              <td class="col-note">
+                <span v-if="r.source && r.source !== 'manual'"
+                      class="chip" :class="'chip-' + r.source">{{ sourceLabel(r.source) }}</span>
+                {{ r.note || '' }}
+              </td>
               <td class="r col-del" style="white-space:nowrap" v-if="!selectMode">
                 <button class="iconbtn" style="width:32px;height:32px" @click.stop="openEditReading(r)" title="Bearbeiten">✎</button>
                 <hold-button :small="true" :round="true" @held="deleteReading(r)">✕</hold-button>
@@ -1993,8 +2042,8 @@ const SystemDetail = {
               <label class="tf"><input class="tf-input" type="number" step="any"
                      inputmode="decimal" enterkeyhint="done" autocomplete="off"
                      v-model="reading.value" placeholder=" " ref="valueInput"
-                     @input="ocrHint = null" /><span class="tf-label">Zählerstand ({{ system.einheit }})</span></label>
-              <button v-if="ocrAvailable !== false" class="btn scan-trigger" @click="openScanner"
+                     @input="ocrHint = null; reading.source = 'manual'" /><span class="tf-label">Zählerstand ({{ system.einheit }})</span></label>
+              <button class="btn scan-trigger" @click="openScanner"
                       aria-label="Zählerstand per Kamera scannen" title="Zählerstand per Kamera scannen (Beta)">📷</button>
             </div>
           </div>
@@ -2231,7 +2280,7 @@ createApp({
     window.removeEventListener("resize", this.onNavResize);
   },
   methods: {
-    fmt, typeIcon, fmtDate,
+    fmt, typeIcon, fmtDate, sourceLabel,
 
     /* ---------- Sidebar ---------- */
     isCompact() { return window.innerWidth <= NAV_BREAKPOINT; },

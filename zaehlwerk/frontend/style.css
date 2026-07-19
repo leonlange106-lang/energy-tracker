@@ -1460,3 +1460,21 @@ input[type="number"] { height: var(--tap-min); min-height: 0; padding: 0 14px; }
 .oh-sub { font-size: 12px; opacity: .85; margin-top: 2px; }
 .oh-alt { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   margin-top: 8px; font-size: 12px; }
+
+/* ---------- Herkunfts-Chips (M3 Assist Chip) ---------- */
+.chip {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 9px;
+  margin-right: 6px; border-radius: 8px;
+  font-size: 11px; font-weight: 500; letter-spacing: .3px;
+  background: var(--md-surface-c-high); color: var(--md-on-surface-variant);
+  border: 1px solid var(--md-outline-variant); white-space: nowrap;
+}
+/* Je Quelle eine eigene Kante statt nur einer Farbfläche – im
+   Hochkontrast-Theme werden die Flächen sonst auf denselben Ton gezogen. */
+.chip-mqtt   { border-color: var(--md-primary); color: var(--md-primary); }
+.chip-ha_api { border-color: var(--md-warn); color: var(--md-warn); }
+.chip-import { border-color: var(--md-outline); }
+
+.src-seg { flex: 0 0 auto; }
+.src-seg button { font-size: 12px; padding: 0 10px; }
+@media (max-width: 640px) { .src-seg { order: 3; flex-basis: 100%; } }

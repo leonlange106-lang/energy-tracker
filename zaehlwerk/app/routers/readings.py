@@ -35,6 +35,7 @@ def _reading_dict(r: Reading) -> dict:
         "id": r.id, "system_id": r.system_id, "datum": r.datum,
         "value": r.value, "cost": r.cost,
         "meter_replaced": r.meter_replaced, "note": r.note,
+        "source": getattr(r, "source", None) or "manual",
     }
 
 
@@ -126,6 +127,10 @@ def create_reading(system_id: str, payload: ReadingCreate, session: Session = De
         system_id=system_id,
         datum=datetime(payload.datum.year, payload.datum.month, payload.datum.day),
         value=payload.value,
+        # Herkunft aus der Anfrage, aber nur aus dem zugelassenen Bereich:
+        # 'manual' für Tastatureingabe, 'ha_api' für Übernahme aus einer
+        # Home-Assistant-Entity. 'mqtt' setzt allein der Listener.
+        source=payload.source,
         cost=payload.cost,
         meter_replaced=payload.meter_replaced,
         note=payload.note,
