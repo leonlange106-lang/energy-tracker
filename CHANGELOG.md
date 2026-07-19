@@ -14,6 +14,27 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.5.0] - 2026-07-19
+
+### Added
+
+- [Frontend/Dashboard] Ergänzt eine persönliche Startseite mit frei anordenbaren Kacheln auf einem vierspaltigen Raster. Ein Bearbeitungsmodus erlaubt Hinzufügen, Verschieben, Skalieren und Entfernen; außerhalb dieses Modus ist die Anordnung festgelegt.
+- [Frontend/Dashboard] Ergänzt vier Kacheltypen: Letzter Stand je System, Verlauf des Tagesverbrauchs, Verteilung der Kosten über alle Systeme und Kostensumme des Zeitraums.
+- [Frontend/Dashboard] Setzt Ziehen und Ablegen über die native Schnittstelle des Browsers um, ohne zusätzliche Bibliothek. Eine Rasterbibliothek käme über ein Auslieferungsnetz herein und liefe damit dem Offline-Ziel und der Sperre aus 2.12.0 zuwider.
+- [Backend/DB] Ergänzt die Spalte `dashboard_layout` an der Tabelle `users` als JSON-Zeichenkette sowie Migration 6; `PRAGMA user_version` steht danach auf 6.
+- [Backend/routers/dashboard.py] Ergänzt `GET`, `PUT` und `DELETE` auf `/api/user/dashboard` sowie `GET /api/dashboard/data`. Letzterer liefert Kennzahlen und Verläufe aller aktiven Systeme in einem Aufruf, statt je Kachel eine eigene Anfrage zu stellen.
+- [Backend/schemas.py] Prüft jede Kachel gegen zulässige Typen, Rastergrenzen und die Spaltenzahl; eine Kachel, die über den rechten Rand hinausragt, wird abgewiesen.
+- [Backend/auth.py] Ergänzt eine Zugriffsregel, die jedem angemeldeten Konto das Lesen und Schreiben des eigenen Layouts erlaubt. Ohne sie verlangte die Grundregel für schreibende Verfahren die Rolle Schreiber, und ein Leser hätte seine eigene Startseite nicht einrichten können.
+
+### Changed
+
+- [Frontend/Dashboard] Berechnet die Rasterkoordinaten nach jedem Verschieben aus der Reihenfolge neu. Dadurch entstehen weder Lücken noch Überlappungen, und gespeicherte Layouts bleiben innerhalb der Spaltenzahl gültig.
+- [Frontend/Dashboard] Bricht das Raster unterhalb von 768 Pixeln auf eine Spalte und zwischen 768 und 1024 Pixeln auf zwei Spalten um; die gespeicherten Spannweiten werden dabei überschrieben, da eine zweispaltige Kachel sonst aus dem Raster ragte.
+- [Backend/routers/dashboard.py] Liefert bei fehlendem oder unlesbarem Layout eine Vorbelegung statt eines Fehlers. Andernfalls käme ein Konto mit beschädigtem Eintrag nicht mehr auf seine Startseite und hätte keine Möglichkeit, das Layout zurückzusetzen.
+- [Backend/routers/dashboard.py] Entfernt bei Kacheln den Verweis auf zwischenzeitlich gelöschte Systeme, statt die Kachel zu verwerfen; sie bleibt erhalten und kann neu belegt werden.
+
+---
+
 ## [3.4.1] - 2026-07-19
 
 ### Fixed
@@ -698,7 +719,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.4.1...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.4.1...v3.5.0
 [3.4.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.4.0...v3.4.1
 [3.4.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.3.0...v3.3.1

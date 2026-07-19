@@ -431,3 +431,38 @@ class BulkDeleteRequest(BaseModel):
     """Sammellöschung. Die Obergrenze verhindert, dass ein versehentlich
     erzeugter Aufruf den gesamten Bestand in einem Zug entfernt."""
     ids: list[str] = Field(..., min_length=1, max_length=1000)
+
+
+# ---------- Dashboard ----------
+# Die zulässigen Kacheltypen stehen im Schema, nicht nur in der Oberfläche:
+# ein unbekannter Typ würde beim Zeichnen ins Leere laufen.
+WIDGET_TYPES = ("latest_reading", "line_chart", "pie_chart", "cost_summary")
+
+# Rastergrenzen. Vier Spalten sind die Vorgabe der Oberfläche; die Höhe ist auf
+# vier Einheiten begrenzt, damit eine einzelne Kachel nicht die ganze Seite
+# einnimmt und die übrigen unerreichbar macht.
+GRID_COLS = 4
+MAX_TILES = 24
+
+
+class DashboardTile(BaseModel):
+    id: str = Field(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    type: str = Field(..., pattern="^(latest_reading|line_chart|pie_chart|cost_summary)$")
+    x: int = Field(0, ge=0, le=GRID_COLS - 1)
+    y: int = Field(0, ge=0, le=200)
+    w: int = Field(1, ge=1, le=GRID_COLS)
+    h: int = Field(1, ge=1, le=4)
+    system_id: Optional[str] = Field(None, max_length=64)
+    title: Optional[str] = Field(None, max_length=80)
+
+    @model_validator(mode="after")
+    def _fit_grid(self):
+        # Kachel darf nicht über den rechten Rand hinausragen – sonst wäre sie
+        # im Raster nicht darstellbar und rutschte in der Anzeige weg.
+        if self.x + self.w > GRID_COLS:
+            raise ValueError(f"Kachel {self.id} ragt über {GRID_COLS} Spalten hinaus")
+        return self
+
+
+class DashboardLayout(BaseModel):
+    tiles: list[DashboardTile] = Field(..., max_length=MAX_TILES)

@@ -153,12 +153,21 @@ def _m005_roles(conn: Connection) -> None:
         "UPDATE users SET role = 'writer' WHERE is_admin = 0 AND role = 'viewer'"))
 
 
+# --------------------------------------------------------------------------
+# Migration 6: persönliches Dashboard
+# --------------------------------------------------------------------------
+def _m006_dashboard(conn: Connection) -> None:
+    if "dashboard_layout" not in _columns(conn, "users"):
+        conn.execute(text("ALTER TABLE users ADD COLUMN dashboard_layout TEXT"))
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
     (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
     (3, "tariffs-Tabelle fuer Tarifperioden anlegen", _m003_tariffs),
     (4, "users-Tabelle fuer Benutzerkonten anlegen", _m004_users),
     (5, "Rollenspalte an users ergaenzen", _m005_roles),
+    (6, "dashboard_layout an users ergaenzen", _m006_dashboard),
 ]
 
 

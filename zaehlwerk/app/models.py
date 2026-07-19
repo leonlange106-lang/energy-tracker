@@ -102,6 +102,10 @@ class User(SQLModel, table=True):
     role: str = Field(default="viewer", index=True)
     is_admin: bool = False
     aktiv: bool = True
+    # Persönliches Dashboard als JSON-Zeichenkette. Bewusst am Nutzer und nicht
+    # in einer eigenen Tabelle: es gibt genau ein Layout je Konto, und ein
+    # Verbund über eine 1:1-Beziehung wäre nur zusätzlicher Aufwand.
+    dashboard_layout: Optional[str] = None
     letzter_login: Optional[datetime] = None
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
 

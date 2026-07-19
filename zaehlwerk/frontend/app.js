@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.4.1";
+const APP_VERSION = "3.5.0";
 const APP_CHANGELOG = [
+  { v: "3.5.0", d: "19.07.2026", items: [
+    "Dashboard mit frei anordenbaren Kacheln, je Konto gespeichert",
+    "Kacheln: Letzter Stand, Verlauf, Verteilung, Kosten",
+    "Bearbeitungsmodus zum Verschieben, Skalieren und Entfernen",
+    "Unter 768 px einspaltig, darüber zwei bzw. vier Spalten",
+  ]},
   { v: "3.4.1", d: "19.07.2026", items: [
     "Admin-Tools jetzt auch in der unteren Navigationsleiste – nur für Administratoren",
     "Einstellungen wieder für alle Konten erreichbar (Darstellung, Palette, Diagrammfarben)",
@@ -363,10 +369,12 @@ const SVG = {
   report: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3 3 3-3"/></svg>',
   cog:    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   admin:  '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-2.9 8.2-7 10-4.1-1.8-7-5.6-7-10V6z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg>',
+  grid: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
   menu:   '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>',
 };
 const NAV_ITEMS = [
+  { key: "dashboard",    label: "Dashboard",    short: "Start",     icon: SVG.grid,   action: "openDashboard",      primary: true },
   { key: "zaehlwerk",    label: "Zählwerk",     short: "Zählwerk",  icon: SVG.home,   action: "back",               primary: true, expandable: true },
   { key: "bericht",      label: "Bericht",      short: "Bericht",   icon: SVG.report, action: "openCombinedReport", primary: true, needsSystems: true },
   { key: "einstellungen",label: "Einstellungen",short: "Optionen",  icon: SVG.cog,    action: "openSettings",       primary: true },
@@ -551,6 +559,142 @@ function hwSuggest(meter, system) {
   return hits.map((r) => ({ ...r, conf: HW_CONFIDENCE[r.confidence] }))
              .sort((a, b) => b.conf.rank - a.conf.rank);
 }
+
+/* =========================================================================
+   Dashboard-Kacheln
+   -------------------------------------------------------------------------
+   Bewusst ohne zusätzliche Bibliothek. Eine Drag-and-Drop-Rasterbibliothek
+   käme über ein Auslieferungsnetz herein und liefe damit dem Offline-Ziel
+   und dem Kill-Switch aus 2.12.0 zuwider. Die native Drag-Schnittstelle des
+   Browsers reicht für ein Raster mit vier Spalten vollständig aus.
+   ========================================================================= */
+const WIDGET_TYPES = [
+  { key: "latest_reading", label: "Letzter Stand",  needsSystem: true,  w: 1, h: 1 },
+  { key: "line_chart",     label: "Verlauf",        needsSystem: true,  w: 2, h: 2 },
+  { key: "pie_chart",      label: "Verteilung",     needsSystem: false, w: 1, h: 2 },
+  { key: "cost_summary",   label: "Kosten",         needsSystem: false, w: 1, h: 1 },
+];
+const WIDGET_LABEL = Object.fromEntries(WIDGET_TYPES.map((w) => [w.key, w.label]));
+
+/* Kleines Verlaufsdiagramm. Eigene Komponente statt EnergyChart: die dort
+   verbaute Achsen- und Legendenlogik ist für eine Kachel zu schwer, und ein
+   zweiter Chart.js-Aufbau je Kachel kostet spürbar Zeit. */
+const WidgetLineChart = {
+  props: ["data"],
+  data: () => ({ chart: null }),
+  mounted() { this.draw(); },
+  unmounted() { if (this.chart) this.chart.destroy(); },
+  watch: { data: { handler() { this.draw(); }, deep: true } },
+  methods: {
+    draw() {
+      if (!this.$refs.cv || !this.data || !this.data.series || !this.data.series.length) return;
+      if (this.chart) this.chart.destroy();
+      const color = this.data.farbe || cssVar("--md-primary") || "#0e7c86";
+      this.chart = new Chart(this.$refs.cv, {
+        type: "line",
+        data: {
+          labels: this.data.series.map((p) => p.d),
+          datasets: [{
+            data: this.data.series.map((p) => p.v),
+            borderColor: color, borderWidth: 2, tension: 0.25,
+            pointRadius: 0, fill: false,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { intersect: false, mode: "index" } },
+          scales: {
+            x: { display: false },
+            y: { ticks: { maxTicksLimit: 4, color: chartColor("axis", "#5b6b7b"), font: { size: 9 } },
+                 grid: { color: chartColor("grid", "#e2e8ee") } },
+          },
+        },
+      });
+    },
+  },
+  template: `
+    <div class="wg-body wg-chart">
+      <canvas ref="cv"></canvas>
+      <div class="wg-empty" v-if="!data || !data.series || !data.series.length">Keine Werte im Zeitraum</div>
+    </div>`,
+};
+
+/* Verteilung über alle Systeme. Verglichen werden Kosten, nicht Verbräuche:
+   kWh und m³ lassen sich nicht sinnvoll in einem Kreis gegenüberstellen. */
+const WidgetPieChart = {
+  props: ["systems"],
+  data: () => ({ chart: null }),
+  mounted() { this.draw(); },
+  unmounted() { if (this.chart) this.chart.destroy(); },
+  watch: { systems: { handler() { this.draw(); }, deep: true } },
+  computed: {
+    withCost() {
+      return (this.systems || []).filter((s) => (s.total_cost_tariff || s.total_cost) > 0);
+    },
+  },
+  methods: {
+    draw() {
+      if (!this.$refs.cv || !this.withCost.length) return;
+      if (this.chart) this.chart.destroy();
+      this.chart = new Chart(this.$refs.cv, {
+        type: "doughnut",
+        data: {
+          labels: this.withCost.map((s) => s.name),
+          datasets: [{
+            data: this.withCost.map((s) => s.total_cost_tariff || s.total_cost),
+            backgroundColor: this.withCost.map((s) => s.farbe),
+            borderWidth: 0,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: "58%",
+          plugins: {
+            legend: { position: "bottom",
+                      labels: { boxWidth: 10, font: { size: 10 },
+                                color: cssVar("--md-on-surface-variant") } },
+          },
+        },
+      });
+    },
+  },
+  template: `
+    <div class="wg-body wg-chart">
+      <canvas ref="cv"></canvas>
+      <div class="wg-empty" v-if="!withCost.length">Keine Kosten hinterlegt</div>
+    </div>`,
+};
+
+const WidgetLatestReading = {
+  props: ["data"],
+  template: `
+    <div class="wg-body wg-metric" v-if="data">
+      <div class="wg-val num">{{ data.latest === null ? '–' : fmt(data.latest, 1) }}<span class="wg-unit">{{ data.einheit }}</span></div>
+      <div class="wg-sub">{{ data.latest_datum ? fmtDate(data.latest_datum) : 'noch keine Ablesung' }}</div>
+      <div class="wg-sub" v-if="data.avg_per_day">Ø {{ fmt(data.avg_per_day, 2) }} {{ data.einheit }}/Tag</div>
+    </div>
+    <div class="wg-body wg-empty" v-else>Kein System zugeordnet</div>`,
+  methods: { fmt, fmtDate },
+};
+
+const WidgetCostSummary = {
+  props: ["systems"],
+  computed: {
+    total() {
+      return (this.systems || []).reduce(
+        (sum, s) => sum + (s.total_cost_tariff || s.total_cost || 0), 0);
+    },
+    tariffBased() {
+      return (this.systems || []).some((s) => s.total_cost_tariff);
+    },
+  },
+  template: `
+    <div class="wg-body wg-metric">
+      <div class="wg-val num">{{ fmt(total) }}<span class="wg-unit">€</span></div>
+      <div class="wg-sub">{{ tariffBased ? 'nach hinterlegten Tarifen' : 'aus erfassten Kosten' }}</div>
+      <div class="wg-sub">{{ (systems || []).length }} Systeme im Zeitraum</div>
+    </div>`,
+  methods: { fmt },
+};
 
 /* ---------- Helfer ---------- */
 /* Zentrale Stelle für Sitzungsverlust. Statt an jedem Aufruf einzeln auf 401
@@ -1983,7 +2127,8 @@ const SystemDetail = {
    Root-App
    ========================================================================= */
 createApp({
-  components: { SystemDetail, HoldButton },
+  components: { SystemDetail, HoldButton, WidgetLineChart, WidgetPieChart,
+                WidgetLatestReading, WidgetCostSummary },
   provide() { return { notify: this.notify }; },
   data: () => ({
     systems: [],
@@ -2032,6 +2177,13 @@ createApp({
     authError: null,
     authBusy: false,
     users: [],
+    dashTiles: [],
+    dashData: [],
+    dashEdit: false,
+    dashDirty: false,
+    dashLoading: false,
+    dashDragId: null,
+    widgetTypes: WIDGET_TYPES,
     adminDiag: null,
     adminSchema: [],
     adminLogs: [],
@@ -2051,6 +2203,7 @@ createApp({
     themeContrast() { return themeStore.contrast; },
     /* aktiver Navigationspunkt (Einstellungen als Modal hat Vorrang vor der Ansicht) */
     activeNav() {
+      if (this.view === "dashboard") return "dashboard";
       if (this.view === "settings") return "einstellungen";
       if (this.view === "admin") return "admin";
       return "zaehlwerk";
@@ -2225,6 +2378,11 @@ createApp({
     onNavResize() {
       if (this.isCompact() && this.navDrawer) this.navDrawer = false;
       if (!this.isCompact() && this.showSysSheet) this.showSysSheet = false;
+    },
+    openDashboard() {
+      this.view = "dashboard";
+      window.scrollTo(0, 0);
+      if (!this.dashTiles.length) this.loadDashboard();
     },
     openAdmin() {
       this.view = "admin";
@@ -2432,7 +2590,7 @@ createApp({
       return r !== null && r < 3 ? `Kontrast ${r.toFixed(1)}:1 – auf dieser Fläche schwer erkennbar` : null;
     },
     fabAction() {
-      if (!this.canWrite || this.view === "settings" || this.view === "admin") return;
+      if (!this.canWrite || ["settings", "admin", "dashboard"].includes(this.view)) return;
       const d = this.$refs.detail;
       if (this.view === "detail" && d) {
         // Kontextbezogen: im Zähler-Tab legt der FAB einen Zähler an
@@ -2547,6 +2705,116 @@ createApp({
         this.notify("Nicht gespeichert: " + e.message, "err");
       } finally { this.settingsSaving = false; }
     },
+    /* ---------- Dashboard ---------- */
+    async loadDashboard() {
+      this.dashLoading = true;
+      try {
+        const [layout, data] = await Promise.all([
+          api("/api/user/dashboard"), api("/api/dashboard/data?months=24"),
+        ]);
+        this.dashTiles = layout.tiles;
+        this.dashData = data.systems;
+        this.dashDirty = false;
+        if (layout.recovered) this.notify("Layout war beschädigt – Vorgabe geladen", "err");
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.dashLoading = false; }
+    },
+    dashSystem(tile) {
+      return this.dashData.find((s) => s.id === tile.system_id) || null;
+    },
+    dashTitle(tile) {
+      if (tile.title) return tile.title;
+      const s = this.dashSystem(tile);
+      return s ? `${typeIcon(s.typ)} ${s.name}` : WIDGET_LABEL[tile.type] || tile.type;
+    },
+    toggleDashEdit() {
+      if (this.dashEdit && this.dashDirty) { this.saveDashboard(); return; }
+      this.dashEdit = !this.dashEdit;
+    },
+    addTile(type) {
+      const def = WIDGET_TYPES.find((w) => w.key === type);
+      // Neue Kachel unten anhängen: freie Lücken im Raster zu suchen wäre
+      // aufwendig und das Ergebnis für den Nutzer schwer vorhersehbar.
+      const maxY = this.dashTiles.reduce((m, t) => Math.max(m, t.y + t.h), 0);
+      this.dashTiles.push({
+        id: "w_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        type, x: 0, y: maxY, w: def.w, h: def.h,
+        system_id: def.needsSystem ? (this.dashData[0] || {}).id || null : null,
+        title: null,
+      });
+      this.dashDirty = true;
+    },
+    removeTile(tile) {
+      this.dashTiles = this.dashTiles.filter((t) => t.id !== tile.id);
+      this.dashDirty = true;
+    },
+    /* Größe in Rasterschritten. Die Breite wird auf den rechten Rand begrenzt,
+       damit keine Kachel entsteht, die der Server ohnehin abweisen würde. */
+    resizeTile(tile, dw, dh) {
+      const w = Math.min(4 - tile.x, Math.max(1, tile.w + dw));
+      const h = Math.min(4, Math.max(1, tile.h + dh));
+      tile.w = w; tile.h = h;
+      this.dashDirty = true;
+    },
+    setTileSystem(tile, systemId) { tile.system_id = systemId || null; this.dashDirty = true; },
+
+    onTileDragStart(tile, ev) {
+      if (!this.dashEdit) return;
+      this.dashDragId = tile.id;
+      ev.dataTransfer.effectAllowed = "move";
+      // Firefox startet den Vorgang nur, wenn Daten gesetzt sind.
+      ev.dataTransfer.setData("text/plain", tile.id);
+    },
+    onTileDrop(target) {
+      if (!this.dashDragId || this.dashDragId === target.id) return;
+      const from = this.dashTiles.findIndex((t) => t.id === this.dashDragId);
+      const to = this.dashTiles.findIndex((t) => t.id === target.id);
+      if (from < 0 || to < 0) return;
+      // Umsortieren statt Koordinaten tauschen: die Kacheln fließen im Raster,
+      // dadurch entstehen keine Löcher und keine Überlappungen.
+      const [moved] = this.dashTiles.splice(from, 1);
+      this.dashTiles.splice(to, 0, moved);
+      this.reflow();
+      this.dashDragId = null;
+      this.dashDirty = true;
+    },
+    /* Koordinaten aus der Reihenfolge neu berechnen. Der Server prüft x + w
+       gegen die Spaltenzahl; ohne diesen Schritt wären gespeicherte Layouts
+       nach dem Verschieben ungültig. */
+    reflow() {
+      let x = 0, y = 0, rowH = 1;
+      for (const t of this.dashTiles) {
+        if (x + t.w > 4) { x = 0; y += rowH; rowH = 1; }
+        t.x = x; t.y = y;
+        x += t.w;
+        rowH = Math.max(rowH, t.h);
+      }
+    },
+    async saveDashboard() {
+      this.reflow();
+      try {
+        const res = await api("/api/user/dashboard", {
+          method: "PUT",
+          body: JSON.stringify({ tiles: this.dashTiles.map((t) => ({
+            id: t.id, type: t.type, x: t.x, y: t.y, w: t.w, h: t.h,
+            system_id: t.system_id || null, title: t.title || null,
+          })) }),
+        });
+        this.dashTiles = res.tiles;
+        this.dashDirty = false;
+        this.dashEdit = false;
+        this.notify("Dashboard gespeichert", "ok");
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async resetDashboard() {
+      try {
+        await api("/api/user/dashboard", { method: "DELETE" });
+        this.dashEdit = false;
+        await this.loadDashboard();
+        this.notify("Auf Vorgabe zurückgesetzt", "ok");
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+
     async loadUsers() {
       try { this.users = await api("/api/auth/users"); }
       catch (_) { this.users = []; }
@@ -2672,7 +2940,7 @@ createApp({
               v-html="navMenuIcon"></button>
       <div class="brand">
         <span class="logo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19a9 9 0 1 1 14 0"/><path d="M12 5v2"/><path d="M5.6 8.5l1.5 1.2"/><path d="M18.4 8.5l-1.5 1.2"/><path d="M12 15l3.5-4.5"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg></span>
-        <h1>{{ view==='admin' ? 'Admin-Tools' : view==='settings' ? 'Einstellungen' : (view==='detail' && selectedSystem ? selectedSystem.name : 'Zählwerk') }}</h1>
+        <h1>{{ view==='dashboard' ? 'Dashboard' : view==='admin' ? 'Admin-Tools' : view==='settings' ? 'Einstellungen' : (view==='detail' && selectedSystem ? selectedSystem.name : 'Zählwerk') }}</h1>
       </div>
       <div class="spacer"></div>
     </div>
@@ -2799,6 +3067,73 @@ createApp({
           <div v-if="dueInfo(s.id)" class="due-badge" :class="dueInfo(s.id).level">⚠ {{ dueInfo(s.id).text }}</div>
         </div>
       </div>
+    </template>
+
+    <!-- DASHBOARD -->
+    <template v-else-if="view==='dashboard'">
+      <div class="dash-head">
+        <div class="eyebrow">Dashboard</div>
+        <div class="dash-actions">
+          <button class="btn btn-sm" v-if="dashEdit" @click="resetDashboard">↺ Vorgabe</button>
+          <button class="btn btn-sm" :class="{'btn-primary': dashEdit && dashDirty}"
+                  @click="toggleDashEdit">
+            {{ dashEdit ? (dashDirty ? '✓ Speichern' : '✕ Fertig') : '✎ Anpassen' }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="dashLoading" class="center-load"><span class="spin"></span></div>
+
+      <template v-else>
+        <div class="dash-palette" v-if="dashEdit">
+          <span class="hint">Kachel hinzufügen:</span>
+          <button v-for="w in widgetTypes" :key="w.key" class="crumb" @click="addTile(w.key)">
+            ＋ {{ w.label }}
+          </button>
+          <span class="hint dash-hint">Kacheln lassen sich per Ziehen umsortieren.</span>
+        </div>
+
+        <div class="dash-grid" :class="{ editing: dashEdit }">
+          <div v-for="t in dashTiles" :key="t.id"
+               class="card wg" :class="{ 'wg-edit': dashEdit }"
+               :style="{ gridColumn: 'span ' + t.w, gridRow: 'span ' + t.h }"
+               :draggable="dashEdit"
+               @dragstart="onTileDragStart(t, $event)"
+               @dragover.prevent
+               @drop.prevent="onTileDrop(t)">
+            <div class="wg-head">
+              <span class="wg-title">{{ dashTitle(t) }}</span>
+              <span class="wg-type" v-if="dashEdit">{{ widgetTypes.find(w => w.key === t.type).label }}</span>
+              <button v-if="dashEdit" class="iconbtn wg-del" @click="removeTile(t)" title="Entfernen">✕</button>
+            </div>
+
+            <widget-latest-reading v-if="t.type==='latest_reading'" :data="dashSystem(t)" />
+            <widget-line-chart     v-else-if="t.type==='line_chart'"  :data="dashSystem(t)" />
+            <widget-pie-chart      v-else-if="t.type==='pie_chart'"   :systems="dashData" />
+            <widget-cost-summary   v-else-if="t.type==='cost_summary'" :systems="dashData" />
+
+            <div class="wg-tools" v-if="dashEdit">
+              <select v-if="t.type==='latest_reading' || t.type==='line_chart'"
+                      class="select wg-sel" :value="t.system_id"
+                      @change="setTileSystem(t, $event.target.value)">
+                <option :value="null">System wählen …</option>
+                <option v-for="s in dashData" :key="s.id" :value="s.id">{{ s.name }}</option>
+              </select>
+              <div class="wg-size">
+                <button class="crumb" @click="resizeTile(t,-1,0)" :disabled="t.w<=1">−B</button>
+                <button class="crumb" @click="resizeTile(t,1,0)" :disabled="t.x + t.w >= 4">+B</button>
+                <button class="crumb" @click="resizeTile(t,0,-1)" :disabled="t.h<=1">−H</button>
+                <button class="crumb" @click="resizeTile(t,0,1)" :disabled="t.h>=4">+H</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="empty" v-if="!dashTiles.length">
+          <h3>Dashboard ist leer</h3>
+          <p>Schalte auf „Anpassen" und füge Kacheln hinzu.</p>
+        </div>
+      </template>
     </template>
 
     <!-- ADMIN-TOOLS -->
