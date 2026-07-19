@@ -381,7 +381,19 @@ body.nav-expanded { --rail-w: 264px; }
 }
 .fab:hover { box-shadow: var(--md-shadow-3); }
 .fab:active { transform: scale(.96); }
-.fab-screen { position: fixed; right: 20px; bottom: 24px; z-index: 31; display: none; }
+/* Schichtung der überlagernden Ebenen, aufsteigend:
+     20  Top-App-Bar (haftend)
+     25  haftende Aktionsleisten (Speichern, Sammelauswahl)
+     28  schwebende Schaltfläche  -> über dem Inhalt, UNTER der Navigation
+     29  Verdunklung des Schubfachs
+     30  Navigationsleisten (Rail und Bottom-Bar)
+     40  Dialoge und deren Verdunklung
+     41  Modal Bottom Sheet
+     60  Kurzmeldungen
+     90  Anmeldung
+   Der Wert 28 ist die eigentliche Korrektur: mit 31 lag die Schaltfläche über
+   der Navigationsleiste und hätte sie bei geänderten Abständen überdeckt. */
+.fab-screen { position: fixed; right: 20px; bottom: 24px; z-index: 28; display: none; }
 
 /* ---------- Buttons ---------- */
 .btn {
@@ -830,10 +842,21 @@ html { scrollbar-gutter: stable; }
   .nav-rail .nav-badge { display: inline-block; }
   .nav-rail .nav-foot { opacity: 1; padding-left: 12px; }
   .nav-bottom { display: flex; }
+  /* Bis zu vier Ziele: Beschriftungen kürzen und Abstände enger führen,
+     sonst brechen sie auf schmalen Geräten um. */
+  .nav-bottom .nav-item { width: auto; flex: 1 1 0; min-width: 0; padding: 0 2px; }
+  .nav-bottom .nav-item > span:not(.nav-pill):not(.nav-caret) {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .fab-screen { display: block; bottom: 96px; }
-  /* Freiraum unter der schwebenden Schaltfläche, siehe Token weiter unten:
-     Navigationsleiste + Abstand + Höhe + Luft. */
-  .wrap { padding-bottom: calc(var(--fab-gap) + var(--fab-size) + 32px); }
+  /* Freiraum unter der schwebenden Schaltfläche: Abstand + Höhe + Luft, dazu
+     die Safe-Area. Auf Geräten mit Home-Indikator schiebt das System den
+     sichtbaren Bereich nach oben; ohne env() fehlten dort rund 34 Pixel und
+     die letzte Tabellenzeile lag erneut unter der Schaltfläche. */
+  .wrap {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px)
+                         + var(--fab-gap) + var(--fab-size) + 32px);
+  }
   .topbar-inner, .wrap { margin-left: auto; }
 }
 @media (max-width: 640px) {
@@ -1290,7 +1313,9 @@ input[type="number"] { height: var(--tap-min); min-height: 0; padding: 0 14px; }
   /* Zusätzlich am Inhaltscontainer selbst: die letzte Tabellenzeile und die
      Blätterleiste sollen sich über die Schaltfläche hinausschieben lassen. */
   .card:last-of-type { margin-bottom: 24px; }
-  .table-scroll { padding-bottom: 8px; }
+  /* Zusätzlich am Tabellencontainer selbst, damit sich auch die Blätterleiste
+     über die Schaltfläche hinausschieben lässt. */
+  .table-scroll { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); }
 }
 
 /* ---------- Berichtsdialog: bündige Reihen ---------- */

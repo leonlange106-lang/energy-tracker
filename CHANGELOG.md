@@ -14,6 +14,18 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.4.1] - 2026-07-19
+
+### Fixed
+
+- [Frontend/UI] Bezieht die Safe-Area in den Freiraum unterhalb des Inhalts ein. Auf Geräten mit Home-Indikator schiebt das System den sichtbaren Bereich nach oben; ohne diese Angabe fehlten dort rund 34 Pixel und die letzte Tabellenzeile lag erneut unter der schwebenden Schaltfläche.
+- [Frontend/UI] Ordnet die überlagernden Ebenen neu. Die schwebende Schaltfläche lag mit Stufe 31 über der Navigationsleiste und hätte sie bei geänderten Abständen verdeckt; sie steht nun auf Stufe 28, also über dem Inhalt und unter der Navigation. Die vollständige Reihenfolge ist im Stylesheet dokumentiert.
+- [Frontend/UI] Ergänzt Admin-Tools in der unteren Navigationsleiste. Der Eintrag wird ausschließlich für Konten mit Administratorrolle in den Seitenbaum aufgenommen und ist andernfalls nicht Bestandteil des Dokuments, nicht lediglich verborgen. Die Rolle stammt aus den serverseitig aufgelösten Rechten.
+- [Frontend/UI] Macht die Einstellungen wieder für alle Konten erreichbar. Seit 3.2.0 war der Eintrag auf Administratoren beschränkt, wodurch auch Sektion B mit Darstellung, Farbpalette, Kontraststufe und Diagrammfarben unerreichbar war, obwohl diese Angaben gerätelokal sind und jedes Konto betreffen. Sektion A bleibt Administratoren vorbehalten.
+- [Frontend/style.css] Führt die Beschriftungen der unteren Navigationsleiste gekürzt und mit Auslassungszeichen, damit vier Ziele auch auf schmalen Geräten nebeneinander passen.
+
+---
+
 ## [3.4.0] - 2026-07-19
 
 ### Added
@@ -686,7 +698,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.4.1...HEAD
+[3.4.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.4.0...v3.4.1
 [3.4.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.2...v3.3.0

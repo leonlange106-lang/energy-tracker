@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.4.0";
+const APP_VERSION = "3.4.1";
 const APP_CHANGELOG = [
+  { v: "3.4.1", d: "19.07.2026", items: [
+    "Admin-Tools jetzt auch in der unteren Navigationsleiste – nur für Administratoren",
+    "Einstellungen wieder für alle Konten erreichbar (Darstellung, Palette, Diagrammfarben)",
+    "Schwebende Schaltfläche liegt nicht mehr über der Navigationsleiste",
+    "Freiraum berücksichtigt den Home-Indikator",
+  ]},
   { v: "3.4.0", d: "19.07.2026", items: [
     "Sammelauswahl in der Werte-Tabelle mit Aktionsleiste",
     "Seite oder alle Treffer auswählen, Auswahl überlebt Seitenwechsel",
@@ -361,10 +367,10 @@ const SVG = {
   menu:   '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>',
 };
 const NAV_ITEMS = [
-  { key: "zaehlwerk",    label: "Zählwerk",     icon: SVG.home,   action: "back",                primary: true, expandable: true },
-  { key: "bericht",      label: "Bericht",      icon: SVG.report, action: "openCombinedReport",  primary: true, needsSystems: true },
-  { key: "einstellungen",label: "Einstellungen",icon: SVG.cog,    action: "openSettings",        primary: true },
-  { key: "admin",        label: "Admin-Tools",  icon: SVG.admin,  action: "openAdmin", adminOnly: true },
+  { key: "zaehlwerk",    label: "Zählwerk",     short: "Zählwerk",  icon: SVG.home,   action: "back",               primary: true, expandable: true },
+  { key: "bericht",      label: "Bericht",      short: "Bericht",   icon: SVG.report, action: "openCombinedReport", primary: true, needsSystems: true },
+  { key: "einstellungen",label: "Einstellungen",short: "Optionen",  icon: SVG.cog,    action: "openSettings",       primary: true },
+  { key: "admin",        label: "Admin-Tools",  short: "Admin",     icon: SVG.admin,  action: "openAdmin",          primary: true, adminOnly: true },
 ];
 const NAV_BREAKPOINT = 840;   // identisch zum CSS-Breakpoint Rail <-> Bottom-Bar
 
@@ -2076,6 +2082,10 @@ createApp({
        Archivierte bleiben draußen: die Sidebar ist ein Sprungziel für den
        Alltag, nicht der Ort, an dem Altbestand verwaltet wird. */
     navSubItems() { return this.systems.filter((s) => s.aktiv); },
+    /* Die Bottom-Bar zeigt dieselben Ziele wie die Seitenleiste, gefiltert auf
+       die primären. Der Rollenfilter steckt bereits in visibleNavItems – das
+       Admin-Ziel wird also gar nicht erst gerendert, nicht bloß versteckt. */
+    bottomNavItems() { return this.visibleNavItems.filter((i) => i.primary); },
     fabLabel() {
       if (this.view === "menu") return "System";
       const d = this.$refs.detail;
@@ -2084,7 +2094,9 @@ createApp({
     visibleNavItems() {
       return this.navItems.filter((i) => {
         if (i.needsSystems && !this.systems.length) return false;
-        if (i.key === "einstellungen" && !this.isAdmin) return false;
+        // Einstellungen bleiben für ALLE erreichbar: Sektion B (Darstellung,
+        // Palette, Diagrammfarben) ist gerätelokal und betrifft jedes Konto.
+        // Nur Sektion A ist administratorenpflichtig und wird dort ausgeblendet.
         if (i.adminOnly && !this.isAdmin) return false;
         if (i.key === "bericht" && !this.canExport) return false;
         return true;
@@ -2709,13 +2721,13 @@ createApp({
 
   <!-- Bottom Navigation (Mobile) -->
   <nav class="nav-bottom" aria-label="Schnellzugriff">
-    <button v-for="it in visibleNavItems.filter(i => i.primary)" :key="it.key"
+    <button v-for="it in bottomNavItems" :key="it.key"
             class="nav-item" :class="{ active: activeNav===it.key, 'has-sub': it.expandable && navSubItems.length }"
             :aria-haspopup="it.expandable && navSubItems.length ? 'dialog' : null"
             :aria-expanded="it.expandable ? String(showSysSheet) : null"
             @click="goNavMobile(it)">
       <span class="nav-pill" v-html="it.icon"></span>
-      {{ it.label }}
+      <span>{{ it.short || it.label }}</span>
       <!-- Hinweis, dass hinter dem aktiven Eintrag mehr steckt -->
       <span v-if="it.expandable && navSubItems.length && activeNav===it.key"
             class="nav-caret" v-html="chevronIcon" aria-hidden="true"></span>
