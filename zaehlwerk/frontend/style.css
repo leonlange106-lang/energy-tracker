@@ -40,6 +40,10 @@
      fokussierte Formularfeld unter 16px automatisch heran und verschiebt
      damit das gesamte Layout. */
   --tap-min:      44px;
+  --seg-h:        40px;
+  /* Maße der schwebenden Schaltfläche – Grundlage für den Freiraum darunter. */
+  --fab-size:     56px;
+  --fab-gap:      96px;
   --tap-min-touch:48px;
   --field-fs:     14px;
   --sheet-radius: 28px;
@@ -485,17 +489,34 @@ body.nav-expanded { --rail-w: 264px; }
 .legend-hint .dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; }
 
 /* Segmented Buttons (M3) */
-.seg { display: inline-flex; border: 1px solid var(--md-outline); border-radius: 20px; overflow: hidden; }
+/* Grid statt Flex: gleich breite Spalten, gleiche Höhe, und die Trennlinien
+   entstehen über die Lücke im Hintergrund. Damit stimmen sie auch dann, wenn
+   die Steuerung auf mehrere Zeilen umbricht - mit border-right hatte die
+   zweite Zeile Linien an der falschen Stelle. */
+.seg {
+  /* inline-grid erhält das bisherige Verhalten "so breit wie nötig". Nur wo
+     die Steuerung die Zeile füllen soll, wird unten auf grid gestellt. */
+  display: inline-grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
+  align-items: stretch; gap: 1px;
+  background: var(--md-outline);
+  border: 1px solid var(--md-outline); border-radius: 20px; overflow: hidden;
+}
 .seg button {
-  background: transparent; border: none; border-right: 1px solid var(--md-outline);
-  padding: 8px 14px; height: 38px; font-size: 13px; font-weight: 500; letter-spacing: .1px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  background: var(--md-surface); border: none;
+  /* height statt min-height, und min-height ausdrücklich zurückgesetzt:
+     die Touch-Regel aus 2.9.1 setzt sonst 48px und überstimmt die Höhe. */
+  height: var(--seg-h); min-height: 0; padding: 0 14px;
+  font-size: 13px; font-weight: 500; letter-spacing: .1px; white-space: nowrap;
   cursor: pointer; color: var(--md-on-surface); font-family: var(--sans);
   position: relative; overflow: hidden; transition: background var(--dur-short) var(--ease-standard);
 }
-.seg button:last-child { border-right: none; }
 .seg button:hover { background: var(--md-surface-c-high); }
 .seg button.active { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
-.seg button.active::before { content: "✓"; margin-right: 6px; font-size: 11px; }
+/* Haken ohne Sprung: der Platz ist immer reserviert, sonst rückt die Beschriftung
+   beim Aktivieren zur Seite und die Spaltenbreiten wirken unruhig. */
+.seg button::before { content: ""; width: 11px; flex: 0 0 auto; font-size: 11px; }
+.seg button.active::before { content: "✓"; }
 
 /* ---------- Tabelle ---------- */
 .table-tools { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
@@ -700,7 +721,7 @@ td.r { text-align: right; }
    ausschliesslich Anordnung, nicht Groesse.
    ========================================================================= */
 @media (pointer: coarse) {
-  :root { --field-fs: 16px; --tap-min: var(--tap-min-touch); }
+  :root { --field-fs: 16px; --tap-min: var(--tap-min-touch); --seg-h: 48px; }
 
   /* Kein Auto-Zoom mehr: alle Formularelemente >= 16px */
   .input, .select, .tf-input, input, select, textarea { font-size: var(--field-fs); }
@@ -810,7 +831,9 @@ html { scrollbar-gutter: stable; }
   .nav-rail .nav-foot { opacity: 1; padding-left: 12px; }
   .nav-bottom { display: flex; }
   .fab-screen { display: block; bottom: 96px; }
-  .wrap { padding-bottom: 170px; }
+  /* Freiraum unter der schwebenden Schaltfläche, siehe Token weiter unten:
+     Navigationsleiste + Abstand + Höhe + Luft. */
+  .wrap { padding-bottom: calc(var(--fab-gap) + var(--fab-size) + 32px); }
   .topbar-inner, .wrap { margin-left: auto; }
 }
 @media (max-width: 640px) {
@@ -927,7 +950,15 @@ html { scrollbar-gutter: stable; }
 
 /* ---------- Pre-Export-Dialog ---------- */
 .modal-wide { max-width: 620px; }
-.exp-seg { flex-wrap: wrap; }
+/* Vier Optionen mit langen Beschriftungen passen nebeneinander nur auf breiten
+   Anzeigen. Statt sie umbrechen zu lassen, wird ab schmalen Viewports ein
+   festes 2x2-Raster genutzt - gleiche Breiten, gleiche Höhen. */
+.exp-seg, .settings-seg { display: grid; }
+.exp-seg { grid-auto-flow: row; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 720px) {
+  .exp-seg { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .exp-seg button { white-space: normal; line-height: 15px; padding: 0 10px; }
+}
 .exp-dates { margin-top: 12px; }
 .exp-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .exp-inactive { margin-left: auto; }
@@ -1225,3 +1256,48 @@ html { scrollbar-gutter: stable; }
   font-family: var(--mono); }
 .log-src { font-size: 11px; font-family: var(--mono); color: var(--md-on-surface-variant);
   flex: 0 0 auto; min-width: 62px; }
+
+/* =========================================================================
+   Hotfixes 3.3.1
+   ========================================================================= */
+
+/* ---------- Datums- und Zeitfelder ----------
+   Ohne -webkit-appearance behalten diese Felder in WebKit ihre native Höhe und
+   addieren Innenabstand sowie min-height obendrauf. Auf dem iPhone wurden sie
+   dadurch etwa doppelt so hoch wie ein Textfeld daneben. */
+input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"] {
+  -webkit-appearance: none; appearance: none;
+  height: var(--tap-min); min-height: 0;
+  padding: 0 14px; line-height: normal;
+  display: block; width: 100%; box-sizing: border-box;
+}
+/* WebKit zentriert den Wert eigenmächtig und ergänzt eigene Abstände. */
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value {
+  text-align: left; margin: 0; line-height: calc(var(--tap-min) - 2px);
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  margin: 0; padding: 0 2px; opacity: .55; cursor: pointer;
+}
+input[type="date"]::-webkit-inner-spin-button { display: none; }
+
+/* Zahlenfelder auf dieselbe Höhe ziehen, damit Reihen bündig bleiben. */
+input[type="number"] { height: var(--tap-min); min-height: 0; padding: 0 14px; }
+
+/* ---------- Freiraum unter der schwebenden Schaltfläche ----------
+   Die Maße stehen als Token oben bei den übrigen Layoutgrößen. */
+@media (max-width: 840px) {
+  /* Zusätzlich am Inhaltscontainer selbst: die letzte Tabellenzeile und die
+     Blätterleiste sollen sich über die Schaltfläche hinausschieben lassen. */
+  .card:last-of-type { margin-bottom: 24px; }
+  .table-scroll { padding-bottom: 8px; }
+}
+
+/* ---------- Berichtsdialog: bündige Reihen ---------- */
+.exp-dates { align-items: end; }
+.exp-dates .field { margin: 0; }
+.exp-dates .field label { display: block; margin-bottom: 6px; }
+/* Auf schmalen Anzeigen untereinander statt gequetscht nebeneinander. */
+@media (max-width: 520px) {
+  .exp-dates { display: grid; grid-template-columns: 1fr; gap: 12px; }
+}

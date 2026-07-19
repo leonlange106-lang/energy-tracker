@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.3.0";
+const APP_VERSION = "3.3.1";
 const APP_CHANGELOG = [
+  { v: "3.3.1", d: "19.07.2026", items: [
+    "Schwebende Schaltfläche verdeckt die letzte Tabellenzeile nicht mehr",
+    "Datumsfelder haben dieselbe Höhe wie Textfelder",
+    "Auswahlsegmente einheitlich hoch, auf schmalen Anzeigen als 2×2-Raster",
+  ]},
   { v: "3.3.0", d: "19.07.2026", items: [
     "Admin-Tools: Diagnose, lesende Datenbankabfrage, Anwendungsprotokoll",
     "Nur für Administratoren, serverseitig durchgesetzt",

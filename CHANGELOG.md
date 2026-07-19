@@ -14,6 +14,20 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.3.1] - 2026-07-19
+
+### Fixed
+
+- [Frontend/UI] Vergrößert den Freiraum unterhalb des Inhalts auf schmalen Anzeigen, sodass die schwebende Plus-Schaltfläche die letzte Tabellenzeile und die Blätterleiste nicht mehr verdeckt. Der Wert wird aus Abstand und Höhe der Schaltfläche berechnet statt geschätzt; die bisherigen 170 Pixel lagen unter den benötigten 152 Pixeln zuzüglich Luft.
+- [Frontend/UI] Setzt Datums-, Zeit- und Zahlenfelder auf dieselbe Höhe wie Textfelder. Ohne zurückgesetzte Standarddarstellung behalten diese Felder in WebKit ihre eigene Höhe und addieren Innenabstand und Mindesthöhe darauf, wodurch sie auf dem iPhone etwa doppelt so hoch erschienen wie ein danebenliegendes Textfeld.
+- [Frontend/UI] Vereinheitlicht die Höhe der Auswahlsegmente. Die Angabe `height: 38px` wurde von der Mindesthöhe aus dem Touch-Layout überstimmt, und umbrechende Beschriftungen ergaben je Schaltfläche eine andere Höhe.
+- [Frontend/UI] Stellt die Auswahlsegmente auf ein Raster um. Die Spalten sind gleich breit, die Trennlinien entstehen über den Hintergrund und liegen dadurch auch bei mehrzeiliger Darstellung richtig; zuvor zeichnete der rechte Rand in der zweiten Zeile an der falschen Stelle.
+- [Frontend/UI] Stellt die vierteilige Auswahl im Berichtsdialog unterhalb von 720 Pixeln als 2×2-Raster dar, statt sie mit ungleichen Höhen umbrechen zu lassen.
+- [Frontend/UI] Reserviert den Platz des Hakens in den Auswahlsegmenten dauerhaft, sodass die Beschriftung beim Aktivieren nicht mehr zur Seite rückt.
+- [Frontend/UI] Ordnet die Felder für Von und Bis im Berichtsdialog an der Grundlinie aus und stellt sie unterhalb von 520 Pixeln untereinander.
+
+---
+
 ## [3.3.0] - 2026-07-19
 
 ### Added
@@ -649,7 +663,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.3.1...HEAD
+[3.3.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.2...v3.3.0
 [3.2.2]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.1...v3.2.2
 [3.2.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.0...v3.2.1
