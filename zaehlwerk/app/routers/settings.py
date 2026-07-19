@@ -27,6 +27,7 @@ from ..database import engine, get_session
 from ..migrations import schema_version
 from ..models import AppSetting, Meter, Reading, System
 from ..schemas import AppSettingsRead, AppSettingsUpdate, SystemInfo
+from ..version import APP_VERSION
 
 router = APIRouter(tags=["settings"])
 
@@ -161,7 +162,7 @@ def system_info(session: Session = Depends(get_session)):
 
     supervised = bool(os.environ.get("SUPERVISOR_TOKEN"))
     return SystemInfo(
-        app_version=os.environ.get("ZW_VERSION", "2.10.0"),
+        app_version=os.environ.get("ZW_VERSION", APP_VERSION),
         schema_version=schema_version(engine),
         python_version=sys.version.split()[0],
         platform=platform.machine(),

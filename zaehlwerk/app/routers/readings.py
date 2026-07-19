@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlmodel import Session, select
 
-from .. import logic, report
+from .. import exporter, logic, report
+from ..version import APP_VERSION
 from ..due import system_due_entries
 from ..database import get_session
 from ..models import Meter, Reading, System, Tariff
@@ -267,6 +268,103 @@ def _readings_csv(raw: list[dict]) -> str:
             r.get("note") or "",
         ])
     return buf.getvalue()
+
+
+def _export_sections(session: Session, systems_param: Optional[str],
+                     include_inactive: bool, from_: Optional[date],
+                     to: Optional[date], with_meta: bool) -> list[dict]:
+    """Systemauswahl auflösen und je System die angereicherten Daten bauen.
+    Gemeinsame Grundlage von JSON- und CSV-Export – so können die beiden
+    Formate nicht auseinanderlaufen."""
+    stmt = select(System)
+    if not include_inactive:
+        stmt = stmt.where(System.aktiv == True)  # noqa: E712
+    if systems_param:
+        wanted = {s.strip() for s in systems_param.split(",") if s.strip()}
+        if wanted:
+            stmt = stmt.where(System.id.in_(wanted))
+
+    sections = []
+    for system in session.exec(stmt.order_by(System.name)).all():
+        enriched = _enriched(session, system, from_, to)
+        stats = logic.compute_stats(enriched, _sigma(session))
+        stats.update(logic.tariff_summary(enriched))
+        section = {
+            "system": {"id": system.id, "name": system.name, "typ": system.typ,
+                       "einheit": system.einheit, "farbe": system.farbe,
+                       "aktiv": system.aktiv, "zusatzfelder": system.zusatzfelder or {}},
+            "enriched": enriched,
+            "stats": stats,
+        }
+        if with_meta:
+            section["meters"] = [{
+                "hersteller": m.hersteller, "modell": m.modell,
+                "zaehlernummer": m.zaehlernummer, "bauart": m.bauart,
+                "baujahr": m.baujahr,
+                "eichung_bis": m.eichung_bis.isoformat() if m.eichung_bis else None,
+                "eingebaut_am": m.eingebaut_am.isoformat() if m.eingebaut_am else None,
+                "ausgebaut_am": m.ausgebaut_am.isoformat() if m.ausgebaut_am else None,
+            } for m in session.exec(
+                select(Meter).where(Meter.system_id == system.id)).all()]
+            section["tariffs"] = [{
+                "name": t.name, "anbieter": t.anbieter,
+                "gueltig_ab": t.gueltig_ab.isoformat(),
+                "gueltig_bis": t.gueltig_bis.isoformat() if t.gueltig_bis else None,
+                "arbeitspreis": t.arbeitspreis, "grundpreis": t.grundpreis,
+            } for t in session.exec(
+                select(Tariff).where(Tariff.system_id == system.id)
+                .order_by(Tariff.gueltig_ab)).all()]
+        sections.append(section)
+    return sections
+
+
+@router.get("/api/export/data.csv")
+def export_flat_csv(
+    from_: Optional[date] = Query(None, alias="from"),
+    to: Optional[date] = Query(None),
+    systems_param: Optional[str] = Query(None, alias="systems"),
+    include_inactive: bool = Query(False),
+    dialect: str = Query("de", pattern="^(de|international)$"),
+    session: Session = Depends(get_session),
+):
+    """Flaches CSV über alle Systeme – eine Zeile je Ablesung, mit abgeleiteten
+    Größen. Für Tabellenkalkulation und Auswertungswerkzeuge, NICHT für den
+    Re-Import; dafür bleibt `/api/systems/{id}/export.csv` zuständig."""
+    sections = _export_sections(session, systems_param, include_inactive, from_, to, False)
+    data = exporter.build_csv(sections, dialect)
+    stamp = date.today().isoformat()
+    return Response(
+        content=data, media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="zaehlwerk-daten_{stamp}.csv"'},
+    )
+
+
+@router.get("/api/export/data.json")
+def export_full_json(
+    from_: Optional[date] = Query(None, alias="from"),
+    to: Optional[date] = Query(None),
+    systems_param: Optional[str] = Query(None, alias="systems"),
+    include_inactive: bool = Query(False),
+    include_derived: bool = Query(True, description="Verbrauch, Kosten, Ausreißer mitgeben"),
+    include_meta: bool = Query(True, description="Zähler-Metadaten und Tarife mitgeben"),
+    pretty: bool = Query(True),
+    session: Session = Depends(get_session),
+):
+    """Vollständiger strukturierter Export."""
+    from ..database import engine
+    from ..migrations import schema_version
+
+    sections = _export_sections(session, systems_param, include_inactive,
+                                from_, to, include_meta)
+    data = exporter.build_json(
+        sections, app_version=APP_VERSION, schema_version=schema_version(engine),
+        derived=include_derived, pretty=pretty, von=from_, bis=to,
+    )
+    stamp = date.today().isoformat()
+    return Response(
+        content=data, media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="zaehlwerk-daten_{stamp}.json"'},
+    )
 
 
 @router.get("/api/export.zip")

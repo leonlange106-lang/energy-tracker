@@ -14,6 +14,25 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.19.0] - 2026-07-18
+
+### Added
+
+- [Backend/Export] Ergänzt `GET /api/export/data.csv`: ein flaches CSV über alle Systeme mit einer Zeile je Ablesung, angereichert um Intervalllänge, Verbrauch, Tagesverbrauch, Ausreißerkennzeichnung sowie erfasste, geschätzte und tarifbasierte Kosten.
+- [Backend/Export] Ergänzt `GET /api/export/data.json`: ein vollständiger strukturierter Export mit Systemstammdaten, Zusatzfeldern, Statistik, Zähler-Metadaten, Tarifperioden und Ablesungen. Abgeleitete Werte und Metadaten lassen sich einzeln abwählen.
+- [Backend/Export] Führt im JSON-Kopf Format- und Schemaversion, Anwendungsversion, Erstellungszeitpunkt und ausgewerteten Zeitraum mit, sodass ein einlesendes Werkzeug Formatänderungen erkennen kann, statt sie an den Feldern zu erraten.
+- [Backend/Export] Ergänzt zwei CSV-Varianten: `de` mit Semikolon, Dezimalkomma und UTF-8-Kennung für Excel, `international` mit Komma und Dezimalpunkt für pandas und R.
+- [Backend/Export] Beide Endpunkte übernehmen Zeitraum, Systemauswahl und die Einbeziehung archivierter Systeme aus denselben Parametern wie der PDF-Bericht.
+- [Frontend/Export] Ergänzt im Dialog vor dem Export die Formate CSV und JSON samt Variantenwahl und weist aus, welche Formate wieder eingelesen werden können und welche nicht.
+- [Frontend/UI] Ergänzt in Sektion A der Einstellungen einen direkten Einstieg in den Rohdaten-Export.
+
+### Changed
+
+- [Backend/version.py] Führt die Anwendungsversion an einer Stelle zusammen; `main.py` und die Laufzeitdiagnose beziehen sie von dort, statt sie jeweils eigenständig zu setzen.
+- [Backend/Export] Baut CSV und JSON auf derselben Datenaufbereitung auf, damit beide Formate inhaltlich nicht auseinanderlaufen können.
+
+---
+
 ## [2.18.0] - 2026-07-18
 
 ### Added
@@ -457,7 +476,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.18.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.0...HEAD
+[2.19.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.18.0...v2.19.0
 [2.18.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.17.0...v2.18.0
 [2.17.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.16.0...v2.17.0
 [2.16.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.15.0...v2.16.0

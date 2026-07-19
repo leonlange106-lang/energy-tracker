@@ -7,11 +7,12 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import init_db
+from .version import APP_VERSION
 from . import backup as backup_mod, mqtt_client, notifier, outbound
 from .routers import (backups, external, ha, imports, meters, mqtt, readings,
                       settings as settings_router, systems, tariffs)
 
-app = FastAPI(title="Zählwerk API", version="2.18.0")
+app = FastAPI(title="Zählwerk API", version=APP_VERSION)
 
 app.add_middleware(
     CORSMiddleware,

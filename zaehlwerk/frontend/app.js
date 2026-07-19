@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.18.0";
+const APP_VERSION = "2.19.0";
 const APP_CHANGELOG = [
+  { v: "2.19.0", d: "18.07.2026", items: [
+    "Rohdaten-Export als flaches CSV über alle Systeme und als strukturiertes JSON",
+    "CSV wahlweise für Excel (Semikolon, Dezimalkomma, BOM) oder pandas/R",
+    "Beide Formate mit Verbrauch, Tagesverbrauch, Ausreißern und Kosten",
+  ]},
   { v: "2.18.0", d: "18.07.2026", items: [
     "Tasmota nativ: ENERGY.Total, Total_In und COUNTER.C1 ohne manuelle JSON-Pfade",
     "Auto-Discovery über tele/+/SENSOR mit Geräteliste und Ein-Klick-Zuordnung",
@@ -1912,6 +1917,9 @@ createApp({
         systemColors: true,
         includeChart: true,
         includeTable: true,
+        dialect: "de",
+        includeDerived: true,
+        includeMeta: true,
         theme: t,
       };
       this.showExportCfg = true;
@@ -1960,18 +1968,45 @@ createApp({
       return p.toString() ? "?" + p.toString() : "";
     },
     expCount() { return this.expCfg ? this.expCfg.systemIds.length : 0; },
+    /* Rohdaten-Export braucht nur Zeitraum und Auswahl - Farben und
+       Diagrammoptionen gelten ausschliesslich fuer das PDF. */
+    expDataQuery() {
+      const c = this.expCfg;
+      const p = new URLSearchParams();
+      if (c.from) p.set("from", c.from);
+      if (c.to) p.set("to", c.to);
+      const all = this.systems.filter((s) => c.includeInactive || s.aktiv);
+      if (c.systemIds.length && c.systemIds.length < all.length) {
+        p.set("systems", c.systemIds.join(","));
+      }
+      if (c.includeInactive) p.set("include_inactive", "true");
+      return p;
+    },
     runExport() {
       const c = this.expCfg;
       if (!c.systemIds.length) { this.notify("Kein System ausgewählt", "err"); return; }
-      const q = this.expQuery();
       this.showExportCfg = false;
+      const stamp = today();
+      const fail = (e) => this.notify(e.message, "err");
+
       if (c.format === "zip") {
-        fetchBlobDownload("api/export.zip", "zaehlwerk-export.zip")
-          .catch((e) => this.notify(e.message, "err"));
+        fetchBlobDownload("api/export.zip", "zaehlwerk-export.zip").catch(fail);
         return;
       }
-      fetchBlobDownload(`api/report.pdf${q}`, "zaehlwerk-gesamtbericht.pdf")
-        .catch((e) => this.notify(e.message, "err"));
+      if (c.format === "csv") {
+        const p = this.expDataQuery();
+        p.set("dialect", c.dialect);
+        fetchBlobDownload(`api/export/data.csv?${p}`, `zaehlwerk-daten_${stamp}.csv`).catch(fail);
+        return;
+      }
+      if (c.format === "json") {
+        const p = this.expDataQuery();
+        if (!c.includeDerived) p.set("include_derived", "false");
+        if (!c.includeMeta) p.set("include_meta", "false");
+        fetchBlobDownload(`api/export/data.json?${p}`, `zaehlwerk-daten_${stamp}.json`).catch(fail);
+        return;
+      }
+      fetchBlobDownload(`api/report.pdf${this.expQuery()}`, "zaehlwerk-gesamtbericht.pdf").catch(fail);
     },
     openCombinedReport() {
       this.openExportConfig();
@@ -2547,7 +2582,8 @@ createApp({
           <div class="settings-actions">
             <button class="btn btn-primary" :disabled="backupBusy" @click="runBackup">
               {{ backupBusy ? 'Sichere …' : '⇩ Jetzt sichern' }}</button>
-            <button class="btn" @click="exportAll">⇩ Gesamt-Export (CSV + Konfiguration)</button>
+            <button class="btn" @click="exportAll">⇩ Sicherung (ZIP)</button>
+            <button class="btn" @click="openExportConfig">⇩ Rohdaten (CSV / JSON) …</button>
           </div>
 
           <table class="info-table" v-if="backupStatus && backupStatus.entries.length">
@@ -2750,13 +2786,43 @@ createApp({
 
         <div class="field">
           <label>Format</label>
-          <div class="seg">
-            <button :class="{active: expCfg.format==='pdf'}" @click="expCfg.format='pdf'">PDF-Bericht</button>
-            <button :class="{active: expCfg.format==='zip'}" @click="expCfg.format='zip'">ZIP (CSV + Konfiguration)</button>
+          <div class="seg exp-seg">
+            <button :class="{active: expCfg.format==='pdf'}"  @click="expCfg.format='pdf'">PDF-Bericht</button>
+            <button :class="{active: expCfg.format==='csv'}"  @click="expCfg.format='csv'">CSV (Rohdaten)</button>
+            <button :class="{active: expCfg.format==='json'}" @click="expCfg.format='json'">JSON (Rohdaten)</button>
+            <button :class="{active: expCfg.format==='zip'}"  @click="expCfg.format='zip'">ZIP (Sicherung)</button>
           </div>
-          <div class="hint" v-if="expCfg.format==='zip'">
-            Der ZIP-Export sichert immer den vollständigen Bestand – Zeitraum, Auswahl und
-            Farben gelten nur für den PDF-Bericht.
+
+          <div class="hint ks-note" v-if="expCfg.format==='zip'">
+            Sicherungsformat. Enthält immer den <strong>vollständigen</strong> Bestand –
+            Zeitraum, Systemauswahl und Farben gelten dafür nicht. Nur dieses Format und
+            die systemweise CSV lassen sich wieder <strong>einlesen</strong>.
+          </div>
+          <div class="hint ks-note" v-else-if="expCfg.format==='csv' || expCfg.format==='json'">
+            Ausgabeformat für externe Auswertung, mit Verbrauch, Tagesverbrauch und Kosten.
+            <strong>Nicht</strong> nach Zählwerk zurück importierbar – dafür ZIP verwenden.
+          </div>
+
+          <div class="field-row" v-if="expCfg.format==='csv'">
+            <div class="field">
+              <label>CSV-Variante</label>
+              <div class="seg">
+                <button :class="{active: expCfg.dialect==='de'}" @click="expCfg.dialect='de'">Excel (DE)</button>
+                <button :class="{active: expCfg.dialect==='international'}" @click="expCfg.dialect='international'">pandas / R</button>
+              </div>
+              <div class="hint">
+                {{ expCfg.dialect==='de'
+                  ? 'Semikolon, Dezimalkomma, UTF-8 mit BOM – öffnet in Excel direkt korrekt.'
+                  : 'Komma, Dezimalpunkt, ohne BOM.' }}
+              </div>
+            </div>
+          </div>
+          <div class="field" v-if="expCfg.format==='json'">
+            <label class="check"><input type="checkbox" v-model="expCfg.includeDerived" />
+              <span>Abgeleitete Werte einschließen
+                <small>Verbrauch, Tagesverbrauch, Ausreißer, Kosten</small></span></label>
+            <label class="check"><input type="checkbox" v-model="expCfg.includeMeta" />
+              <span>Zähler-Metadaten und Tarife einschließen</span></label>
           </div>
         </div>
 
