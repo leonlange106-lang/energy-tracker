@@ -14,6 +14,26 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.20.0] - 2026-07-18
+
+### Fixed
+
+- [Backend/MQTT] Erkennt Zählerstände nun auch dann, wenn der Gruppenname im Telegramm frei gewählt ist. Beim SML-Skript von Tasmota bestimmt der Anwender diesen Namen selbst, sodass ein Lesekopf beispielsweise unter `MT631.Total_in` veröffentlicht; die bisherige Prüfung fester Pfade wie `ENERGY.Total` konnte das grundsätzlich nicht treffen.
+- [Backend/MQTT] Durchsucht die Nutzlast rekursiv bis Ebene sechs nach bekannten Feldnamen: OBIS-Kennzahl `1_8_0`, `Total_in`, `E_in`, `Zaehlerstand`, `Total`, `Counter`, `Verbrauch` und weitere, jeweils mit Rangfolge. Teiltreffer wie `SML_Total` werden nachrangig berücksichtigt.
+- [Backend/MQTT] Schließt Felder aus, die sicher kein Zählerstand sind, darunter Momentanleistung, Spannung, Frequenz, Tages- und Vortageswerte, Signalstärke und Einspeisung. Ohne diese Sperre hätte die Suche bei einem Telegramm ohne Zählerstand einen beliebigen Zahlenwert übernommen.
+- [Backend/MQTT] Wertet Zahlen aus, die als Zeichenkette mit Einheit vorliegen, etwa `"11265.043 kWh"`, und akzeptiert das Komma als Dezimaltrennzeichen.
+- [Backend/MQTT] Verwirft Werte über zehn Millionen; manche Skripte geben Zeitstempel oder Seriennummern als Zahl aus, die sonst als Zählerstand durchgingen.
+
+### Added
+
+- [Backend/MQTT] Protokolliert bei nicht erkanntem Telegramm die vollständige rohe Nutzlast sowie sämtliche gefundenen Zahlenpfade mit Wert. Ohne diese Ausgabe ließ sich nicht bestimmen, auf welchem Pfad der Zählerstand tatsächlich liegt.
+- [Backend/MQTT] Führt die rohe Nutzlast und die Zahlenpfade je erkanntem Gerät mit, begrenzt auf viertausend Zeichen.
+- [Backend/MQTT] Ergänzt `zusatzfelder["mqtt_path"]` je System sowie `POST /api/mqtt/path`. Ein hinterlegter Pfad hat Vorrang vor der automatischen Erkennung, was mehrdeutige Telegramme auflöst, etwa bei einem Zweirichtungszähler mit Bezug und Einspeisung.
+- [Frontend/UI] Zeigt bei nicht erkanntem Gerät die rohe Nutzlast und alle Zahlenfelder mit Wert aufklappbar an; bei mehreren möglichen Feldern wird die getroffene Wahl hervorgehoben.
+- [Frontend/UI] Ergänzt das Feld MQTT JSON-Pfad im Systemdialog.
+
+---
+
 ## [2.19.1] - 2026-07-18
 
 ### Fixed
@@ -492,7 +512,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.1...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.20.0...HEAD
+[2.20.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.1...v2.20.0
 [2.19.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.0...v2.19.1
 [2.19.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.18.0...v2.19.0
 [2.18.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.17.0...v2.18.0

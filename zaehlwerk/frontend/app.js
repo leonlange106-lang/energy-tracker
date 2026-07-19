@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.19.1";
+const APP_VERSION = "2.20.0";
 const APP_CHANGELOG = [
+  { v: "2.20.0", d: "18.07.2026", items: [
+    "SML-Telegramme werden erkannt, auch wenn der Gruppenname frei gewählt ist",
+    "Rohdaten und alle Zahlenpfade werden bei nicht erkanntem Telegramm angezeigt",
+    "JSON-Pfad je System festlegbar – schlägt die automatische Erkennung",
+  ]},
   { v: "2.19.1", d: "18.07.2026", items: [
     "Speichern-Leiste am Ende der Einstellungen statt mitten auf der Seite",
     "Bleibt beim Scrollen am unteren Rand sichtbar und zeigt die Zahl der Änderungen",
@@ -265,6 +270,7 @@ const COMMON_FIELDS = [
   { key: "ablese_intervall_tage", label: "Ablese-Intervall in Tagen (für Fälligkeit, optional)", type: "number" },
   { key: "ha_entity", label: "HA-Entity Zählerstand (optional, z. B. sensor.stromzaehler)", type: "text" },
   { key: "mqtt_topic", label: "MQTT-Topic (optional, z. B. tele/hichi/SENSOR)", type: "text" },
+  { key: "mqtt_path", label: "MQTT JSON-Pfad (optional, z. B. MT631.Total_in)", type: "text" },
   { key: "ha_unit", label: "Einheit des HA-Sensors (leer = wie von HA gemeldet)", type: "select",
     options: ["", "Wh", "kWh", "MWh", "L", "m³"] },
 ];
@@ -2525,6 +2531,31 @@ createApp({
                   <span v-else>kein Zählerstand im Telegramm</span>
                   <span v-if="d.power !== null && d.power !== undefined">{{ d.power }} W</span>
                 </div>
+                <!-- Diagnose: bei nicht erkanntem Telegramm die rohe Nutzlast und
+                     alle Zahlenpfade zeigen – damit lässt sich der Pfad ablesen. -->
+                <details class="mq-raw" v-if="!d.usable && d.raw">
+                  <summary>Rohdaten anzeigen ({{ (d.numeric_paths || []).length }} Zahlenfelder)</summary>
+                  <div class="mq-paths" v-if="d.numeric_paths && d.numeric_paths.length">
+                    <div v-for="p in d.numeric_paths" :key="p.path" class="mq-path">
+                      <code>{{ p.path }}</code><span>{{ p.value }}</span>
+                    </div>
+                  </div>
+                  <pre class="mq-json">{{ d.raw }}</pre>
+                  <div class="hint">
+                    Den passenden Pfad im System unter „✎ Bearbeiten“ → <strong>MQTT JSON-Pfad</strong>
+                    eintragen. Er hat dann Vorrang vor der automatischen Erkennung.
+                  </div>
+                </details>
+                <details class="mq-raw" v-else-if="d.candidates && d.candidates.length > 1">
+                  <summary>{{ d.candidates.length }} mögliche Felder – Zuordnung prüfen</summary>
+                  <div class="mq-paths">
+                    <div v-for="c in d.candidates" :key="c.path" class="mq-path"
+                         :class="{sel: c.path === d.path}">
+                      <code>{{ c.path }}</code><span>{{ c.value }}</span>
+                    </div>
+                  </div>
+                </details>
+
                 <div class="mq-dev-act" v-if="d.usable && !d.assigned">
                   <select class="select" v-model="assignTarget[d.device]">
                     <option :value="null">System wählen …</option>

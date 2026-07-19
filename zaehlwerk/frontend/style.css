@@ -1089,3 +1089,18 @@ html { scrollbar-gutter: stable; }
   .save-bar .btn { flex: 1; justify-content: center; }
   .save-bar .btn-primary { flex: 1.6; }
 }
+
+/* ---------- MQTT-Diagnose ---------- */
+.mq-raw { margin-top: 10px; }
+.mq-raw summary { cursor: pointer; font-size: 12px; color: var(--md-primary);
+  padding: 4px 0; list-style-position: inside; }
+.mq-paths { display: flex; flex-direction: column; gap: 2px; margin: 8px 0; }
+.mq-path { display: flex; justify-content: space-between; gap: 12px;
+  padding: 4px 8px; border-radius: 8px; font-size: 12px; background: var(--md-surface-c-low); }
+.mq-path.sel { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+.mq-path code { font-size: 11px; }
+.mq-path span { font-family: var(--mono); }
+.mq-json { margin: 8px 0 0; padding: 10px 12px; border-radius: 10px;
+  background: var(--md-surface-c-low); font-family: var(--mono); font-size: 11px;
+  line-height: 16px; white-space: pre-wrap; word-break: break-all; max-height: 220px;
+  overflow-y: auto; }

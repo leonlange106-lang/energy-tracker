@@ -79,6 +79,7 @@ JSON_KEYS = ["value", "total", "total_kwh", "total_in", "energy", "state",
 #   COUNTER.C1..C4    Impulseingänge – Reed-Kontakt am Gas- oder Wasserzähler
 # Die Reihenfolge ist die Priorität: ein Gerät mit ENERGY liefert dort den
 # Zählerstand, COUNTER wäre dann nur ein Nebenwert.
+# Bekannte Direktpfade. Sie werden zuerst geprüft, weil sie eindeutig sind.
 TASMOTA_PATHS = [
     (("energy", "total"),     "kWh",     "Stromzähler / SML-Lesekopf"),
     (("energy", "total_in"),  "kWh",     "Zweirichtungszähler (Bezug)"),
@@ -86,8 +87,115 @@ TASMOTA_PATHS = [
     (("counter", "c2"),       "Impulse", "Impulseingang C2"),
 ]
 
+# Rekursive Suche als zweite Stufe.
+#
+# Grund: Beim SML-Skript von Tasmota bestimmt der Anwender den Gruppennamen
+# selbst. Ein Skript mit der Zeile `+1,3,s,16,9600,MT631` veröffentlicht unter
+# {"MT631":{"Total_in":…}} – der Pfad ist also weder "ENERGY" noch sonst
+# vorhersagbar. Fest verdrahtete Pfade können das prinzipiell nicht treffen.
+# Gesucht wird deshalb nach dem BLATTNAMEN, unabhängig davon, wo er hängt.
+#
+# Reihenfolge = Priorität. Kleinere Zahl gewinnt.
+READING_KEYS = [
+    # OBIS 1.8.0 ist der Bezugszähler – die eindeutigste Angabe überhaupt
+    ("1_8_0", 0), ("1-0:1.8.0", 0), ("obis_1_8_0", 0), ("1.8.0", 0),
+    ("total_in", 1), ("totalin", 1), ("e_in", 1), ("ein", 1), ("bezug", 1),
+    ("zaehlerstand", 1), ("zählerstand", 1), ("meter_reading", 1),
+    ("total", 2), ("total_kwh", 2), ("energy_total", 2), ("kwh_total", 2),
+    ("counter", 3), ("c1", 3), ("value", 3), ("reading", 3), ("stand", 3),
+    ("verbrauch", 4), ("consumption", 4), ("volume", 4), ("m3", 4),
+]
+READING_KEY_MAP = dict(READING_KEYS)
+
+# Blattnamen, die sicher KEIN Zählerstand sind. Ohne diese Liste würde die
+# Suche bei einem Telegramm ohne Zählerstand irgendeine Zahl greifen –
+# Momentanleistung, Spannung oder Signalstärke – und sie als Stand speichern.
+IGNORE_KEYS = {
+    "power", "power_curr", "power_in", "power_out", "curr", "current",
+    "voltage", "volt", "amperage", "factor", "frequency", "freq",
+    "today", "yesterday", "period", "apparentpower", "reactivepower",
+    "rssi", "signal", "linkcount", "temperature", "humidity", "pressure",
+    "total_out", "totalout", "e_out", "eout", "einspeisung", "2_8_0",
+    "1-0:2.8.0", "id", "index", "seconds", "uptime", "heap", "loadavg",
+}
+
+# Obergrenze gegen offensichtlichen Unsinn: kein Haushaltszähler steht bei
+# 10 Mio., wohl aber liefern manche Skripte Zeitstempel oder Seriennummern
+# als Zahl – die sollen nicht als Zählerstand durchgehen.
+MAX_PLAUSIBLE = 10_000_000
+
 TASMOTA_SENSOR_RE = re.compile(r"^(?P<prefix>[^/]+)/(?P<device>[^/]+)/SENSOR$")
 TASMOTA_LWT_RE = re.compile(r"^(?P<prefix>[^/]+)/(?P<device>[^/]+)/LWT$")
+
+
+def _norm_key(key: str) -> str:
+    return str(key).strip().lower().replace(" ", "_")
+
+
+def _as_number(value) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip().replace(",", ".")
+        # Einheiten abschneiden: manche Skripte liefern "11265.043 kWh"
+        parts = text.split()
+        if parts:
+            text = parts[0]
+        try:
+            return float(text)
+        except ValueError:
+            return None
+    return None
+
+
+def walk_numeric(obj, prefix: str = "", depth: int = 0) -> list[dict]:
+    """Alle Zahlenblätter im Baum mit vollständigem Pfad einsammeln.
+
+    Dient zwei Zwecken: der Kandidatensuche und – wenn nichts passt – der
+    Diagnose. Im Fehlerfall sieht man damit sofort, welche Pfade es überhaupt
+    gibt, statt im rohen JSON suchen zu müssen.
+    """
+    found = []
+    if depth > 6:
+        return found
+    if isinstance(obj, dict):
+        for key, val in obj.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            number = _as_number(val)
+            if number is not None:
+                found.append({"path": path, "key": _norm_key(key), "value": number})
+            else:
+                found += walk_numeric(val, path, depth + 1)
+    elif isinstance(obj, list):
+        for i, val in enumerate(obj):
+            found += walk_numeric(val, f"{prefix}[{i}]", depth + 1)
+    return found
+
+
+def find_candidates(data: dict) -> list[dict]:
+    """Zählerstand-Kandidaten, bester zuerst."""
+    out = []
+    for leaf in walk_numeric(data):
+        key = leaf["key"]
+        if key in IGNORE_KEYS:
+            continue
+        rank = READING_KEY_MAP.get(key)
+        if rank is None:
+            # Auch Teiltreffer zulassen: "Total_in_kwh", "SML_Total" …
+            for name, r in READING_KEYS:
+                if name in key:
+                    rank = r + 5
+                    break
+        if rank is None:
+            continue
+        if leaf["value"] < 0 or leaf["value"] > MAX_PLAUSIBLE:
+            continue
+        out.append({**leaf, "rank": rank})
+    # Bei gleichem Rang gewinnt der größere Wert: ein Zählerstand ist praktisch
+    # immer größer als ein danebenliegender Tages- oder Teilwert.
+    return sorted(out, key=lambda c: (c["rank"], -c["value"]))
 
 
 def _get_ci(obj: dict, key: str):
@@ -100,13 +208,24 @@ def _get_ci(obj: dict, key: str):
     return None
 
 
-def parse_tasmota(payload: str) -> Optional[dict]:
+def _unit_for(key: str) -> str:
+    if key in {"counter", "c1", "c2", "c3", "c4"}:
+        return "Impulse"
+    if key in {"volume", "m3"}:
+        return "m³"
+    return "kWh"
+
+
+def parse_tasmota(payload: str, prefer_path: Optional[str] = None) -> Optional[dict]:
     """Tasmota-Nutzlast auswerten.
 
-    Liefert {"value", "path", "unit", "kind", "extra"} oder None, wenn es sich
-    nicht um eine Tasmota-Telemetrie mit verwertbarem Zählerstand handelt.
-    `extra` enthält Momentanwerte wie Power – nicht zum Speichern, sondern zur
-    Anzeige in der Geräteliste.
+    Drei Stufen:
+      1. `prefer_path` – vom Anwender festgelegter Pfad, schlägt alles andere.
+      2. Bekannte Direktpfade (ENERGY.Total, COUNTER.C1 …).
+      3. Rekursive Suche nach bekannten Blattnamen im gesamten Baum.
+
+    Rückgabe enthält zusätzlich `candidates`, damit die Oberfläche die
+    Alternativen anzeigen kann, wenn die Automatik danebenliegt.
     """
     try:
         data = json.loads(payload)
@@ -115,40 +234,70 @@ def parse_tasmota(payload: str) -> Optional[dict]:
     if not isinstance(data, dict):
         return None
 
-    # StatusSNS umschließt bei manchen Abfragen dieselbe Struktur
     inner = _get_ci(data, "statussns")
     if isinstance(inner, dict):
         data = inner
 
+    candidates = find_candidates(data)
+
+    # --- Stufe 1: ausdrücklich gesetzter Pfad ---
+    if prefer_path:
+        wanted = prefer_path.strip().lower()
+        for leaf in walk_numeric(data):
+            if leaf["path"].lower() == wanted:
+                return {"value": leaf["value"], "path": leaf["path"],
+                        "unit": _unit_for(leaf["key"]), "kind": "fester Pfad",
+                        "source": "manuell", "candidates": candidates,
+                        "extra": _extra(data)}
+
+    # --- Stufe 2: bekannte Direktpfade ---
     for path, unit, kind in TASMOTA_PATHS:
         node = data
         for part in path:
             node = _get_ci(node, part)
             if node is None:
                 break
-        if node is None:
+        number = _as_number(node)
+        if number is None:
             continue
-        try:
-            value = float(str(node).replace(",", "."))
-        except (ValueError, TypeError):
-            continue
-        energy = _get_ci(data, "energy") or {}
-        return {
-            "value": value,
-            "path": ".".join(p.upper() for p in path),
-            "unit": unit,
-            "kind": kind,
-            "extra": {
-                "power": _get_ci(energy, "power"),
-                "today": _get_ci(energy, "today"),
-                "time": _get_ci(data, "time"),
-            },
-        }
+        return {"value": number, "path": ".".join(p.upper() for p in path),
+                "unit": unit, "kind": kind, "source": "direkt",
+                "candidates": candidates, "extra": _extra(data)}
+
+    # --- Stufe 3: rekursive Suche ---
+    if candidates:
+        best = candidates[0]
+        return {"value": best["value"], "path": best["path"],
+                "unit": _unit_for(best["key"]),
+                "kind": "erkannt über Feldnamen", "source": "gesucht",
+                "candidates": candidates, "extra": _extra(data)}
     return None
 
 
+def _extra(data: dict) -> dict:
+    """Momentanwerte für die Anzeige – nicht zum Speichern."""
+    energy = _get_ci(data, "energy") or {}
+    power = _get_ci(energy, "power")
+    if power is None:
+        for leaf in walk_numeric(data):
+            if leaf["key"] in {"power", "power_curr"}:
+                power = leaf["value"]
+                break
+    return {"power": power, "time": _get_ci(data, "time")}
+
+
+# Rohdaten werden gekappt: ein SML-Telegramm ist selten groesser, aber ein
+# fehlkonfiguriertes Geraet koennte den Ringpuffer sonst sprengen.
+RAW_LIMIT = 4000
+
+
 def _remember_device(topic: str, payload: str) -> None:
-    """Gerät aus einer Discovery-Nachricht in die Liste aufnehmen."""
+    """Gerät aus einer Discovery-Nachricht aufnehmen.
+
+    Die rohe Nutzlast wird IMMER mitgeführt, nicht nur im Fehlerfall. Ohne sie
+    lässt sich hinterher nicht klären, warum ein Gerät nicht erkannt wurde –
+    und genau das war beim Hichi-Lesekopf das Problem.
+    """
     match = TASMOTA_SENSOR_RE.match(topic)
     if not match:
         return
@@ -156,16 +305,38 @@ def _remember_device(topic: str, payload: str) -> None:
     device = match.group("device")
     entry = DISCOVERED.setdefault(device, {"device": device, "topic": topic,
                                            "online": None, "assigned": False})
+    raw = payload if len(payload) <= RAW_LIMIT else payload[:RAW_LIMIT] + " …[gekürzt]"
+
+    numeric_paths = []
+    try:
+        numeric_paths = [{"path": l["path"], "value": l["value"]}
+                         for l in walk_numeric(json.loads(payload))][:40]
+    except (ValueError, TypeError):
+        pass
+
     entry.update({
         "topic": topic,
         "last_seen": datetime.now().isoformat(timespec="seconds"),
         "value": parsed["value"] if parsed else None,
         "path": parsed["path"] if parsed else None,
         "unit": parsed["unit"] if parsed else None,
-        "kind": parsed["kind"] if parsed else "unbekannt",
+        "kind": parsed["kind"] if parsed else "kein Zählerstand erkannt",
+        "source": parsed["source"] if parsed else None,
+        "candidates": (parsed or {}).get("candidates") or [],
         "power": (parsed or {}).get("extra", {}).get("power"),
         "usable": parsed is not None,
+        "raw": raw,
+        "numeric_paths": numeric_paths,
     })
+
+    if not parsed:
+        # Vollständige Nutzlast ins Log – das ist die Information, mit der sich
+        # der richtige Pfad bestimmen lässt.
+        log.warning("Kein Zählerstand erkannt auf %s. Rohe Nutzlast: %s", topic, raw)
+        log.warning("Gefundene Zahlenpfade: %s",
+                    ", ".join(f"{p['path']}={p['value']}" for p in numeric_paths) or "keine")
+        _event("warn", f"{device}: kein Zählerstand erkannt – Rohdaten im Gerät hinterlegt",
+               topic=topic, raw=raw)
 
 
 def _remember_lwt(topic: str, payload: str) -> None:
@@ -283,6 +454,12 @@ def parse_payload(payload: str) -> Optional[float]:
 # --------------------------------------------------------------------------
 # Schreiben
 # --------------------------------------------------------------------------
+def _reading_path(system: System) -> Optional[str]:
+    """Vom Anwender festgelegter JSON-Pfad, falls hinterlegt."""
+    value = (system.zusatzfelder or {}).get("mqtt_path")
+    return str(value).strip() or None if value else None
+
+
 def _topic_map(session: Session) -> dict[str, System]:
     """Topic -> System. Das Topic steht in `zusatzfelder["mqtt_topic"]`,
     analog zur bereits vorhandenen `ha_entity`. Kein Schemaeingriff nötig."""
@@ -296,17 +473,30 @@ def _topic_map(session: Session) -> dict[str, System]:
 
 def ingest(topic: str, payload: str) -> Optional[dict]:
     """Eine Nachricht verarbeiten. Gibt das Ergebnis zurück oder None."""
-    # Tasmota zuerst: die generische Suche würde bei einem Gerät ohne ENERGY,
-    # aber mit anderen Zahlenfeldern, den falschen Wert greifen.
-    tas = parse_tasmota(payload)
-    value = tas["value"] if tas else parse_payload(payload)
-    if value is None:
-        _event("warn", f"Nutzlast nicht auswertbar auf {topic}", topic=topic)
-        return None
-
     with Session(engine) as session:
         system = _topic_map(session).get(topic)
         if not system:
+            return None
+
+        # Tasmota zuerst, mit dem am System hinterlegten Pfad als Vorgabe.
+        # Die allgemeine Suche würde bei einem Gerät ohne Zählerstand, aber mit
+        # anderen Zahlenfeldern, den falschen Wert greifen.
+        tas = parse_tasmota(payload, prefer_path=_reading_path(system))
+        value = tas["value"] if tas else parse_payload(payload)
+
+        if value is None:
+            # Vollständige Nutzlast, nicht nur eine Fehlermeldung – nur damit
+            # lässt sich der richtige Pfad bestimmen.
+            raw = payload if len(payload) <= RAW_LIMIT else payload[:RAW_LIMIT] + " …[gekürzt]"
+            log.warning("Nutzlast auf %s nicht auswertbar. Roh: %s", topic, raw)
+            try:
+                paths = ", ".join(f"{l['path']}={l['value']}"
+                                  for l in walk_numeric(json.loads(payload))[:40])
+                log.warning("Gefundene Zahlenpfade: %s", paths or "keine")
+            except (ValueError, TypeError):
+                pass
+            _event("warn", f"{system.name}: Nutzlast nicht auswertbar – Rohdaten im Log",
+                   topic=topic, raw=raw)
             return None
 
         today = date.today()

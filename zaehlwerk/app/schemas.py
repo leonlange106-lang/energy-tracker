@@ -368,3 +368,9 @@ class MqttAssign(BaseModel):
     """Zuordnung eines erkannten Topics zu einem System."""
     system_id: str
     topic: str = Field(..., max_length=200, pattern=r"^[^#+\s]+$")
+
+
+class MqttPath(BaseModel):
+    """Fester JSON-Pfad zum Zählerstand, z. B. "MT631.Total_in"."""
+    system_id: str
+    path: Optional[str] = Field(None, max_length=200)

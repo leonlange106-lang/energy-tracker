@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 from .. import mqtt_client
 from ..database import get_session
 from ..models import System
-from ..schemas import MqttAssign
+from ..schemas import MqttAssign, MqttPath
 from .settings import read_settings
 
 router = APIRouter(prefix="/api/mqtt", tags=["mqtt"])
@@ -75,6 +75,28 @@ def assign(payload: MqttAssign, session: Session = Depends(get_session)):
     session.commit()
     mqtt_client.resubscribe()
     return {"system": system.name, "topic": payload.topic}
+
+
+@router.post("/path")
+def set_path(payload: MqttPath, session: Session = Depends(get_session)):
+    """JSON-Pfad für ein System festlegen bzw. löschen.
+
+    Nötig, wenn die automatische Erkennung mehrere Kandidaten hat oder
+    danebenliegt – etwa bei einem Zweirichtungszähler, bei dem sowohl Bezug
+    als auch Einspeisung im Telegramm stehen.
+    """
+    system = session.get(System, payload.system_id)
+    if not system:
+        raise HTTPException(404, "System nicht gefunden")
+    extra = dict(system.zusatzfelder or {})
+    if payload.path:
+        extra["mqtt_path"] = payload.path.strip()
+    else:
+        extra.pop("mqtt_path", None)
+    system.zusatzfelder = extra
+    session.add(system)
+    session.commit()
+    return {"system": system.name, "path": extra.get("mqtt_path")}
 
 
 @router.post("/resubscribe")
