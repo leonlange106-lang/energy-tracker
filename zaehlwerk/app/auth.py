@@ -78,6 +78,8 @@ ROUTE_RULES: list[tuple[str, Optional[set], str]] = [
     # Admin-Werkzeuge: Einblick in sämtliche Daten und den Systemzustand.
     # Steht bewusst an erster Stelle, damit keine spätere Regel sie aufweicht.
     ("/api/admin",        None,          "admin"),
+    # Erkennung schreibt nichts, gehört aber zur Erfassung: Rolle Schreiber.
+    ("/api/ocr",          None,          "writer"),
     # Eigenes Dashboard: jedes angemeldete Konto darf sein Layout lesen UND
     # schreiben. Ohne diese Ausnahme verlangte die Grundregel für schreibende
     # Verfahren die Rolle Schreiber – ein Leser könnte seine eigene Startseite

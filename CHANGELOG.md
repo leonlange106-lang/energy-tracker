@@ -14,6 +14,33 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.6.0] - 2026-07-19
+
+### Added
+
+- [Backend/OCR] Ergänzt eine serverseitige Zählerstand-Erkennung auf Basis von Tesseract mit deutschen Sprachdaten und einer Bildvorverarbeitung über OpenCV.
+- [Backend/OCR] Erzeugt vier Bildvarianten und übernimmt die mit der höchsten Zeichensicherheit: adaptiver Schwellwert für ungleichmäßige Beleuchtung, globaler Schwellwert für ausgeleuchtete Rollenzählwerke, invertiert für Anzeigen mit hellen Ziffern auf dunklem Grund sowie reine Kontrastanhebung ohne Binarisierung.
+- [Backend/OCR] Berücksichtigt die Aufnahmerichtung aus den Bilddaten, glättet kantenerhaltend und skaliert kleine Aufnahmen hoch, da Tesseract unterhalb von rund dreißig Pixeln Zeichenhöhe kaum noch erkennt.
+- [Backend/API] Ergänzt `POST /api/ocr/scan` und `GET /api/ocr/status`. Letzterer meldet, ob die Erkennung einsatzbereit ist, sodass die Oberfläche die Kamera andernfalls gar nicht erst anbietet.
+- [Backend/OCR] Zieht den zuletzt erfassten Stand zur Auswahl heran. Ein Zählerfoto enthält neben dem Zählwerk häufig Seriennummer, Eichjahr und Typenbezeichnung; welche der erkannten Zahlen gemeint ist, lässt sich am Vorwert zuverlässig entscheiden.
+- [Frontend/UI] Ergänzt nach der Erkennung einen Hinweis mit Sicherheitsangabe, letztem Stand und den übrigen erkannten Zahlen zur Auswahl; er verschwindet, sobald der Wert von Hand geändert wird.
+- [Deployment/Dockerfile] Ergänzt `tesseract-ocr`, `tesseract-ocr-deu` sowie die von OpenCV benötigten Systembibliotheken und entfernt die Paketlisten im selben Schritt.
+- [Deployment/requirements.txt] Ergänzt `pytesseract`, `opencv-python-headless` und `Pillow`.
+
+### Changed
+
+- [Frontend/UI] Verlagert die Erkennung vollständig auf den Server. Bisher lud die Oberfläche `tesseract.js` von einem Auslieferungsnetz; das scheiterte bei aktivem Offline-Modus, brachte keine deutschen Sprachdaten mit und ließ keine Vorverarbeitung zu. Damit entfällt die letzte funktionale Abhängigkeit von einem fremden Netz.
+- [Frontend/app.js] Entfernt die clientseitige Bildvorverarbeitung und Kandidatenauswahl; beides liegt nun im Backend.
+
+### Security
+
+- [Backend/routers/ocr.py] Begrenzt Hochladungen auf zwölf Megabyte, prüft den Dateityp und liest die Datei begrenzt ein, statt sie vollständig in den Speicher zu nehmen.
+- [Backend/ocr.py] Begrenzt die Bildfläche gegen Dekompressionsbomben und verarbeitet ausschließlich im Arbeitsspeicher, ohne die Datei abzulegen.
+- [Backend/routers/ocr.py] Protokolliert Ergebnis und ausführendes Konto, niemals das Bild selbst.
+- [Backend/auth.py] Beschränkt die Erkennung auf die Rolle Schreiber, da sie zur Erfassung gehört.
+
+---
+
 ## [3.5.1] - 2026-07-19
 
 ### Fixed
@@ -733,7 +760,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.5.1...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.5.1...v3.6.0
 [3.5.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.4.1...v3.5.0
 [3.4.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.4.0...v3.4.1

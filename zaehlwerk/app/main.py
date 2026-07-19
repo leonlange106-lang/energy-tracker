@@ -13,7 +13,7 @@ from .database import engine, init_db
 from .version import APP_VERSION
 from . import auth as auth_mod, backup as backup_mod, mqtt_client, notifier, outbound
 from .routers import (admin, auth as auth_router, backups, dashboard, external,
-                      ha, imports, meters, mqtt, readings,
+                      ha, imports, meters, mqtt, ocr as ocr_router, readings,
                       settings as settings_router, systems, tariffs)
 
 app = FastAPI(title="Zählwerk API", version=APP_VERSION)
@@ -27,6 +27,7 @@ app.add_middleware(
 
 app.include_router(admin.router)
 app.include_router(dashboard.router)
+app.include_router(ocr_router.router)
 app.include_router(auth_router.router)
 app.include_router(systems.router)
 app.include_router(readings.router)

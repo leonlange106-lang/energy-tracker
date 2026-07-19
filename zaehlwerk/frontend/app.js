@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.5.1";
+const APP_VERSION = "3.6.0";
 const APP_CHANGELOG = [
+  { v: "3.6.0", d: "19.07.2026", items: [
+    "Zählerstand-Erkennung läuft serverseitig mit Tesseract und Bildvorverarbeitung",
+    "Letzter Stand entscheidet zwischen Zählwerk, Seriennummer und Eichjahr",
+    "Hinweis samt Alternativen nach der Erkennung; erkannte Werte sind Vorschläge",
+    "Keine Bibliothek mehr aus dem Netz – Erkennung funktioniert offline",
+  ]},
   { v: "3.5.1", d: "19.07.2026", items: [
     "Changelog erscheint jetzt im Update-Dialog von Home Assistant",
     "deploy.ps1 prüft die Versionsgleichheit und setzt das Git-Tag selbst",
@@ -940,6 +946,8 @@ const SystemDetail = {
     showReading: false,
     showScanner: false,
     scanFileMode: false,
+    ocrHint: null,
+    ocrAvailable: null,
     scanBusy: false,
     scanStatus: "",
     showImport: false,
@@ -1114,7 +1122,17 @@ const SystemDetail = {
   },
   methods: {
     fmt, fmtDate, typeIcon,
-    async loadAll() { this.loading = true; await this.loadDynamic(); this.loading = false; },
+    async loadAll() {
+      this.loading = true;
+      await this.loadDynamic();
+      this.loading = false;
+      // Einmal je Ansicht: fehlt Tesseract im Abbild, wird die Kamera gar nicht
+      // erst angeboten statt erst nach dem Hochladen einen Fehler zu zeigen.
+      if (this.ocrAvailable === null) {
+        try { this.ocrAvailable = (await api("/api/ocr/status")).available; }
+        catch (_) { this.ocrAvailable = false; }
+      }
+    },
 
     /* ---------- Zähler-Metadaten ---------- */
     async loadMeters() {
@@ -1325,6 +1343,7 @@ const SystemDetail = {
     },
     openReading() {
       this.reading = { id: null, datum: today(), value: null, cost: null, meter_replaced: false, note: "" };
+      this.ocrHint = null;
       this.showReading = true;
       this.focusValue();
     },
@@ -1356,7 +1375,7 @@ const SystemDetail = {
       } catch (e) { this.notify(e.message, "err"); }
     },
 
-    /* ---------- OCR-Scanner (tesseract.js, lazy; Stream ODER natives Foto) ---------- */
+    /* ---------- Foto-Erfassung (Stream ODER natives Foto), Erkennung serverseitig ---------- */
     async openScanner() {
       // HA-App-WebViews (v.a. iOS) stellen keinen Kamera-Stream bereit -> natives Foto als Fallback
       const hasStream = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -1466,135 +1485,52 @@ const SystemDetail = {
       canvas.getContext("2d").drawImage(video, 0, (ch - cropH) / 2, cw, cropH, 0, 0, cw, cropH);
       this.runOcr(canvas);
     },
-    preprocessForOcr(src) {
-      // Hochskalieren + Graustufen + Otsu-Threshold (empirisch auf echten Zählerfotos kalibriert).
-      const scale = Math.max(1, Math.min(3, 1400 / src.width));
-      const c = document.createElement("canvas");
-      c.width = Math.round(src.width * scale);
-      c.height = Math.round(src.height * scale);
-      const ctx = c.getContext("2d");
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(src, 0, 0, c.width, c.height);
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      const d = img.data;
-      const n = d.length / 4;
-      // Graustufen + Histogramm
-      const hist = new Array(256).fill(0);
-      for (let i = 0; i < d.length; i += 4) {
-        const g = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0;
-        d[i] = d[i + 1] = d[i + 2] = g;
-        hist[g]++;
-      }
-      // Otsu-Schwelle (maximiert die Zwischenklassen-Varianz) – adaptiv statt fixem Faktor
-      let sumAll = 0;
-      for (let t = 0; t < 256; t++) sumAll += t * hist[t];
-      let sumB = 0, wB = 0, best = 0, thr = 128;
-      for (let t = 0; t < 256; t++) {
-        wB += hist[t];
-        if (wB === 0) continue;
-        const wF = n - wB;
-        if (wF === 0) break;
-        sumB += t * hist[t];
-        const mB = sumB / wB, mF = (sumAll - sumB) / wF;
-        const between = wB * wF * (mB - mF) * (mB - mF);
-        if (between > best) { best = between; thr = t; }
-      }
-      // Binarisieren + Polarität bestimmen
-      let dark = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        const v = d[i] <= thr ? 0 : 255;
-        d[i] = d[i + 1] = d[i + 2] = v;
-        if (v === 0) dark++;
-      }
-      // Mehr dunkel als hell -> Ziffern vermutlich hell (LCD) -> invertieren (Tesseract will dunkel/hell)
-      if (dark > n / 2) {
-        for (let i = 0; i < d.length; i += 4) {
-          const v = 255 - d[i];
-          d[i] = d[i + 1] = d[i + 2] = v;
-        }
-      }
-      ctx.putImageData(img, 0, 0);
-      return c;
-    },
-    pickOcrCandidate(text, modelBonus = 0) {
-      // Zeilenweise auswerten: die kWh-Zeile ist das Zählwerk, Adress-/Typenschild-Zeilen nicht.
-      const last = this.latestValue;
-      const cands = [];
-      for (let line of String(text).split(/\n/)) {
-        const hasKwh = /kwh/i.test(line);
-        // OBIS-Codes (1.8.0 etc.) entfernen, dann Einheiten raus
-        let l = line.replace(/\b\d\.\d{1,2}\.\d\b/g, " ").replace(/kwh|m³|m3/gi, " ");
-        const letters = (l.match(/[a-zäöüß]/gi) || []).length;
-        l = l.replace(/(\d)[ \t]+(?=\d)/g, "$1");
-        for (const m of l.match(/\d+[.,]?\d*/g) || []) {
-          const num = parseFloat(m.replace(",", "."));
-          const digits = m.replace(/[.,]/g, "").length;
-          let score = digits + modelBonus;
-          if (digits > 8) score -= 100;                 // Seriennummer o.ä.
-          if (digits < 3) score -= 20;                  // 473 W etc. eher nicht das Zählwerk
-          if (hasKwh) score += 200;                     // Einheit direkt daneben -> Zählwerk
-          if (letters >= 4) score -= 60;                // Adresse/Typenschild
-          if (last !== null && isFinite(num)) {
-            if (num >= last && num <= last + 100000) score += 100;
-            else if (num < last) score -= 50;
-            else score -= 30;
-          }
-          cands.push({ m, num, score, fromKwh: hasKwh });
-        }
-      }
-      if (!cands.length) return null;
-      cands.sort((a, b) => b.score - a.score);
-      return cands[0];
-    },
+    /* Erkennung läuft serverseitig. Der bisherige Weg über tesseract.js kam
+       von einem Auslieferungsnetz, scheiterte im Offline-Modus und konnte das
+       Bild nicht vorverarbeiten. Hier wird nur noch das Foto hochgeladen. */
     async runOcr(canvas) {
       this.scanBusy = true;
-      this.scanStatus = "Texterkennung läuft …";
+      this.scanStatus = "Bild wird ausgewertet …";
       try {
-        if (typeof Tesseract === "undefined") {
-          this.scanStatus = "Lade Texterkennung (einmalig) …";
-          await new Promise((res, rej) => {
-            const sc = document.createElement("script");
-            sc.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
-            sc.onload = res; sc.onerror = () => rej(new Error("tesseract.js nicht ladbar (offline?)"));
-            document.head.appendChild(sc);
-          });
-          this.scanStatus = "Texterkennung läuft …";
+        const blob = await new Promise((res) =>
+          canvas.toBlob(res, "image/jpeg", 0.92));
+        if (!blob) throw new Error("Bild nicht lesbar");
+
+        const form = new FormData();
+        form.append("file", blob, "zaehler.jpg");
+        // Systemkennung mitgeben: mit dem letzten Stand entscheidet der Server
+        // zwischen Zählwerk, Seriennummer und Eichjahr.
+        if (this.system && this.system.id) form.append("system_id", this.system.id);
+
+        // Kein Content-Type setzen – der Browser ergänzt die Trennmarke selbst.
+        const res = await fetch("api/ocr/scan", {
+          method: "POST", body: form, credentials: "same-origin",
+        });
+        if (!res.ok) {
+          let d; try { d = await res.json(); } catch (_) {}
+          throw new Error((d && d.detail) || res.statusText);
         }
-        const prepped = this.preprocessForOcr(canvas);
-        // Mehrere Segmentierungs-Modi: PSM 6 (Block) traf im Kalibriertest am besten,
-        // PSM 11 (sparse) und 7 (Zeile) als Ergänzung. Bester Kandidat per Scoring.
-        let best = null;
-        for (const psm of ["6", "11", "7"]) {
-          const r = await Tesseract.recognize(prepped, "eng", {
-            tessedit_char_whitelist: "0123456789., kWhm³",
-            tessedit_pageseg_mode: psm,
-          });
-          const cand = this.pickOcrCandidate(r.data.text);
-          if (cand && (!best || cand.score > best.score)) best = cand;
-          if (best && best.fromKwh && best.score > 200) break;   // klarer Treffer -> fertig
+        const r = await res.json();
+
+        if (r.value === null || r.value === undefined) {
+          this.scanStatus = "Nichts erkannt – Zählwerk formatfüllend in den Rahmen, "
+                          + "mehr Licht, nochmal versuchen.";
+          return;
         }
 
-        // Kein Treffer aus der kWh-Zeile? -> LCD vermutlich 7-Segment, Spezial-Modell versuchen
-        if (!best || !best.fromKwh) {
-          try {
-            this.scanStatus = "Digital-Display erkannt – lade 7-Segment-Modell …";
-            const r2 = await Tesseract.recognize(prepped, "letsgodigital", {
-              langPath: "https://cdn.jsdelivr.net/gh/arturaugusto/display_ocr@master/letsgodigital",
-              gzip: false,
-              tessedit_pageseg_mode: "7",
-            });
-            const b2 = this.pickOcrCandidate(r2.data.text, 40);
-            if (b2 && (!best || b2.score > best.score)) best = b2;
-          } catch (_) { /* Modell nicht ladbar -> beim eng-Ergebnis bleiben */ }
-        }
-
-        if (best) {
-          this.reading.value = best.m.replace(",", ".");
-          this.notify("Erkannt: " + best.m + " – bitte prüfen!", "ok");
-          this.closeScanner();
-        } else {
-          this.scanStatus = "Nichts erkannt – Zählwerk formatfüllend in den Rahmen, mehr Licht, nochmal versuchen.";
-        }
+        this.reading.value = String(r.value);
+        this.ocrHint = {
+          value: r.value,
+          confidence: r.confidence,
+          plausible: r.matched_previous !== false,
+          previous: r.previous,
+          candidates: (r.candidates || []).map((c) => c.value).slice(0, 5),
+        };
+        this.closeScanner();
+        this.notify(this.ocrHint.plausible
+          ? `Erkannt: ${fmt(r.value, 3)} – bitte prüfen`
+          : `Erkannt: ${fmt(r.value, 3)} – unplausibel, bitte prüfen`,
+          this.ocrHint.plausible ? "ok" : "err");
       } catch (e) {
         this.scanStatus = "Fehler: " + e.message;
       } finally {
@@ -2056,11 +1992,32 @@ const SystemDetail = {
             <div class="input-scan">
               <label class="tf"><input class="tf-input" type="number" step="any"
                      inputmode="decimal" enterkeyhint="done" autocomplete="off"
-                     v-model="reading.value" placeholder=" " ref="valueInput" /><span class="tf-label">Zählerstand ({{ system.einheit }})</span></label>
-              <button class="btn scan-trigger" @click="openScanner"
+                     v-model="reading.value" placeholder=" " ref="valueInput"
+                     @input="ocrHint = null" /><span class="tf-label">Zählerstand ({{ system.einheit }})</span></label>
+              <button v-if="ocrAvailable !== false" class="btn scan-trigger" @click="openScanner"
                       aria-label="Zählerstand per Kamera scannen" title="Zählerstand per Kamera scannen (Beta)">📷</button>
             </div>
           </div>
+          <!-- Hinweis nach automatischer Erkennung: der Wert ist ein Vorschlag,
+               keine Messung. Wird beim Tippen ausgeblendet. -->
+          <div class="ocr-hint" v-if="ocrHint" :class="{ warn: !ocrHint.plausible }">
+            <div class="oh-main">
+              {{ ocrHint.plausible ? '✓' : '⚠' }} Wert automatisch erkannt – bitte prüfen
+            </div>
+            <div class="oh-sub">
+              Sicherheit {{ Math.round(ocrHint.confidence) }} %
+              <span v-if="ocrHint.previous">· letzter Stand {{ fmt(ocrHint.previous, 1) }}</span>
+              <span v-if="!ocrHint.plausible">· liegt außerhalb des erwarteten Bereichs</span>
+            </div>
+            <div class="oh-alt" v-if="ocrHint.candidates.length > 1">
+              Alternativen:
+              <button v-for="c in ocrHint.candidates" :key="c" class="crumb"
+                      v-show="c !== ocrHint.value" @click="reading.value = String(c)">
+                {{ fmt(c, 3) }}
+              </button>
+            </div>
+          </div>
+
           <div class="field"><label>Datum</label><input class="input" type="date" v-model="reading.datum" /></div>
           <label class="tf"><input class="tf-input" type="number" step="any"
                  inputmode="decimal" autocomplete="off"
