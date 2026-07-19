@@ -97,6 +97,9 @@ class User(SQLModel, table=True):
     display_name: Optional[str] = None
     password_hash: Optional[str] = None          # None = Anmeldung über Ingress
     external_id: Optional[str] = Field(default=None, index=True)   # HA-Benutzerkennung
+    # Rolle steuert die Rechte. `is_admin` bleibt als Feld erhalten, wird aber
+    # nur noch aus der Rolle abgeleitet – Doppelpflege wäre eine Fehlerquelle.
+    role: str = Field(default="viewer", index=True)
     is_admin: bool = False
     aktiv: bool = True
     letzter_login: Optional[datetime] = None

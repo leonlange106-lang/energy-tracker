@@ -128,11 +128,37 @@ def _m004_users(conn: Connection) -> None:
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_users_external_id ON users (external_id)"))
 
 
+# --------------------------------------------------------------------------
+# Migration 5: Rollen
+# --------------------------------------------------------------------------
+def _m005_roles(conn: Connection) -> None:
+    """Erste echte Spaltenerweiterung an einer bestehenden Tabelle.
+
+    SQLite kann `ADD COLUMN` ohne Tabellenneubau, solange ein konstanter
+    Vorgabewert gesetzt wird. Die Spaltenprüfung davor macht den Schritt
+    idempotent – bei einer Neuinstallation hat `create_all()` sie bereits
+    angelegt und der Aufruf würde sonst mit "duplicate column" scheitern.
+    """
+    if "role" not in _columns(conn, "users"):
+        conn.execute(text(
+            "ALTER TABLE users ADD COLUMN role VARCHAR NOT NULL DEFAULT 'viewer'"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_users_role ON users (role)"))
+
+    # Bestandskonten einordnen: bisherige Administratoren behalten ihre
+    # Rechte, alle uebrigen duerfen weiterhin eintragen. Ein pauschales
+    # Herabstufen auf "viewer" wuerde bestehende Installationen lahmlegen.
+    conn.execute(text(
+        "UPDATE users SET role = 'admin' WHERE is_admin = 1 AND role = 'viewer'"))
+    conn.execute(text(
+        "UPDATE users SET role = 'writer' WHERE is_admin = 0 AND role = 'viewer'"))
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
     (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
     (3, "tariffs-Tabelle fuer Tarifperioden anlegen", _m003_tariffs),
     (4, "users-Tabelle fuer Benutzerkonten anlegen", _m004_users),
+    (5, "Rollenspalte an users ergaenzen", _m005_roles),
 ]
 
 

@@ -43,6 +43,78 @@ COOKIE_NAME = "zw_session"
 TOKEN_TTL_HOURS = 24 * 14          # 14 Tage; Verlängerung bei jedem Aufruf
 ALGORITHM = "HS256"
 
+# --------------------------------------------------------------------------
+# Rollen
+# --------------------------------------------------------------------------
+# Aufsteigend geordnet. Der Rang erlaubt Vergleiche der Form "mindestens".
+ROLES = {
+    "guest":  {"rank": 0, "label": "Gast",         "hint": "sieht nur Auswertungen"},
+    "viewer": {"rank": 1, "label": "Leser",        "hint": "sieht alles, ändert nichts"},
+    "writer": {"rank": 2, "label": "Schreiber",    "hint": "erfasst Werte und pflegt Systeme"},
+    "admin":  {"rank": 3, "label": "Administrator", "hint": "zusätzlich Einstellungen und Konten"},
+}
+DEFAULT_ROLE = "writer"
+
+
+def rank(role: str) -> int:
+    return ROLES.get(role or "", {}).get("rank", -1)
+
+
+def at_least(role: str, needed: str) -> bool:
+    return rank(role) >= rank(needed)
+
+
+# Verändernde Verfahren. Alles andere gilt als lesend.
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+# Zusätzliche Anforderungen je Pfadanfang. Geprüft wird der ERSTE passende
+# Eintrag, deshalb stehen spezifischere Pfade oben.
+#
+# Aufbau: (Pfadanfang, Verfahren oder None für alle, Mindestrolle)
+#
+# Grundregel darunter: lesend ab "guest" bzw. "viewer", schreibend ab "writer".
+# Diese Tabelle hebt nur an, wo mehr nötig ist.
+ROUTE_RULES: list[tuple[str, Optional[set], str]] = [
+    # Konten und Rollen ändern: ausschließlich Administratoren
+    ("/api/auth/users",   None,          "admin"),
+    # Betriebsparameter, Sicherungen, Broker, externe Dienste
+    # Auch LESEND nur für Administratoren: die Antwort nennt Broker-Host,
+    # Benutzernamen und Sicherungspfade.
+    ("/api/settings",     None,          "admin"),
+    ("/api/system/info",  None,          "viewer"),
+    ("/api/backup",       None,          "admin"),
+    ("/api/mqtt",         None,          "admin"),
+    # Lesende Abrufe lösen ausgehende Verbindungen aus – nicht für Gäste.
+    ("/api/external",     WRITE_METHODS, "admin"),
+    ("/api/external",     None,          "viewer"),
+    # Datenausleitung: für Gäste gesperrt, sonst lesend erlaubt
+    ("/api/export",       None,          "viewer"),
+    ("/api/report.pdf",   None,          "viewer"),
+]
+
+
+def required_role(path: str, method: str) -> str:
+    """Mindestrolle für diesen Aufruf."""
+    for prefix, methods, role in ROUTE_RULES:
+        if path.startswith(prefix) and (methods is None or method in methods):
+            return role
+    return "writer" if method in WRITE_METHODS else "guest"
+
+
+def permissions(role: str) -> dict:
+    """Rechteübersicht für die Oberfläche. Sie entscheidet damit, was sie
+    anzeigt – die Durchsetzung bleibt aber in der Middleware."""
+    return {
+        "role": role,
+        "label": ROLES.get(role, {}).get("label", role),
+        "read": at_least(role, "guest"),
+        "write": at_least(role, "writer"),
+        "admin": at_least(role, "admin"),
+        "export": at_least(role, "viewer"),
+        "settings": at_least(role, "admin"),
+    }
+
+
 # Diese Pfade sind ohne Anmeldung erreichbar. Bewusst kurz gehalten:
 # Statusabfrage, Anmeldung, Ersteinrichtung, Health-Check.
 PUBLIC_PATHS = {
@@ -201,6 +273,14 @@ def clear_cookie(response: Response) -> None:
 # --------------------------------------------------------------------------
 # Nutzer
 # --------------------------------------------------------------------------
+def _default_role(session: Session) -> str:
+    """Vorgaberolle für neu übernommene Konten, einstellbar."""
+    from .models import AppSetting
+    row = session.get(AppSetting, "default_role")
+    value = row.value if row else None
+    return value if value in ROLES else DEFAULT_ROLE
+
+
 def user_count(session: Session) -> int:
     return session.exec(select(func.count()).select_from(User)).one()
 
@@ -220,9 +300,13 @@ def ensure_ha_user(session: Session, info: dict) -> User:
             session.add(user)
             session.commit()
         return user
+    # Das erste Konto wird Administrator – sonst käme niemand an die
+    # Einstellungen. Alle weiteren bekommen die eingestellte Vorgabe.
+    first = user_count(session) == 0
+    role = "admin" if first else _default_role(session)
     user = User(username=info["username"], display_name=info["display_name"],
                 external_id=info["external_id"], password_hash=None,
-                is_admin=user_count(session) == 0)
+                role=role, is_admin=role == "admin")
     session.add(user)
     session.commit()
     session.refresh(user)

@@ -119,6 +119,7 @@ class AppSettingsRead(BaseModel):
     mqtt_base_topic: str = "tele"
     mqtt_tasmota_discovery: bool = False
     mqtt_interval: str = "daily"
+    default_role: str = "writer"
     # Kein Passwortfeld: der Server gibt nur bekannt, ob eines hinterlegt ist.
     mqtt_password_set: bool = False
     notify_enabled: bool
@@ -159,6 +160,7 @@ class AppSettingsUpdate(BaseModel):
     mqtt_tasmota_discovery: Optional[bool] = None
     mqtt_interval: Optional[str] = Field(
         None, pattern="^(daily|weekly|monthly|quarterly|yearly)$")
+    default_role: Optional[str] = Field(None, pattern="^(guest|viewer|writer|admin)$")
 
     @field_validator("outlier_sigma")
     @classmethod
@@ -384,8 +386,15 @@ class UserRead(BaseModel):
     id: str
     username: str
     display_name: str
+    role: str = "viewer"
     is_admin: bool = False
+    aktiv: bool = True
     source: str = "lokal"        # "lokal" | "homeassistant"
+
+
+class UserUpdate(BaseModel):
+    role: Optional[str] = Field(None, pattern="^(guest|viewer|writer|admin)$")
+    aktiv: Optional[bool] = None
 
 
 class AuthStatus(BaseModel):
@@ -394,6 +403,8 @@ class AuthStatus(BaseModel):
     setup_required: bool
     crypto_available: bool
     user: Optional[UserRead] = None
+    permissions: Optional[dict[str, Any]] = None
+    roles: list[dict[str, Any]] = []
 
 
 class LoginRequest(BaseModel):

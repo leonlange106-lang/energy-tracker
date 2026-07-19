@@ -56,6 +56,8 @@ DEFAULTS: dict[str, object] = {
     "mqtt_tasmota_discovery": False,
     # Globale Vorgabe; je System über zusatzfelder["mqtt_interval"] übersteuerbar.
     "mqtt_interval": "daily",
+    # Rolle für neu übernommene Home-Assistant-Konten.
+    "default_role": "writer",
 }
 
 _BOOL = lambda v: str(v).lower() in {"1", "true", "ja", "yes"}  # noqa: E731
@@ -78,6 +80,7 @@ _CASTS = {
     "mqtt_base_topic": str,
     "mqtt_tasmota_discovery": _BOOL,
     "mqtt_interval": str,
+    "default_role": str,
 }
 
 # Diese Schluessel verlassen den Server NIE im Klartext. Die Leseantwort meldet

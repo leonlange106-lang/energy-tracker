@@ -68,6 +68,18 @@ async def auth_middleware(request: Request, call_next):
     if user is None:
         return JSONResponse({"detail": "Nicht angemeldet"}, status_code=401)
 
+    # ---------- Autorisierung ----------
+    # Die Prüfung sitzt bewusst hier und nicht in den einzelnen Routen: eine
+    # neue Route ist damit automatisch abgedeckt, statt erst durch eine
+    # vergessene Absicherung offen zu stehen.
+    needed = auth_mod.required_role(path, request.method)
+    if not auth_mod.at_least(user.role, needed):
+        return JSONResponse({
+            "detail": f"Keine Berechtigung. Erforderlich: "
+                      f"{auth_mod.ROLES.get(needed, {}).get('label', needed)}, "
+                      f"vorhanden: {auth_mod.ROLES.get(user.role, {}).get('label', user.role)}."
+        }, status_code=403)
+
     request.state.user = user
     return await call_next(request)
 

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
 from ..database import get_session
-from ..models import Meter, Reading, System
+from ..models import Meter, Reading, System, Tariff
 from ..schemas import SystemCreate, SystemRead, SystemUpdate
 
 router = APIRouter(prefix="/api/systems", tags=["systems"])
@@ -64,5 +64,7 @@ def delete_system(system_id: str, session: Session = Depends(get_session)):
         session.delete(r)
     for m in session.exec(select(Meter).where(Meter.system_id == system_id)).all():
         session.delete(m)
+    for t in session.exec(select(Tariff).where(Tariff.system_id == system_id)).all():
+        session.delete(t)
     session.delete(system)
     session.commit()
