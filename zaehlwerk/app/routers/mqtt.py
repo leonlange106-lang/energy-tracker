@@ -18,12 +18,18 @@ def status(session: Session = Depends(get_session)):
     for s in session.exec(select(System).where(System.aktiv == True)).all():  # noqa: E712
         topic = (s.zusatzfelder or {}).get("mqtt_topic")
         if topic:
-            mapped.append({"system": s.name, "einheit": s.einheit, "topic": topic})
+            iv = mqtt_client._interval_for(s, cfg.get("mqtt_interval")
+                                           or mqtt_client.DEFAULT_INTERVAL)
+            mapped.append({"system": s.name, "einheit": s.einheit, "topic": topic,
+                           "interval": iv,
+                           "interval_label": mqtt_client.MQTT_INTERVALS[iv]["label"],
+                           "own_interval": bool((s.zusatzfelder or {}).get("mqtt_interval"))})
     return {
         **mqtt_client.status(),
         "enabled": bool(cfg.get("mqtt_enabled")),
         "use_supervisor": bool(cfg.get("mqtt_use_supervisor", True)),
         "supervisor_offer": mqtt_client.supervisor_broker() is not None,
+        "interval": cfg.get("mqtt_interval") or mqtt_client.DEFAULT_INTERVAL,
         "mapped": mapped,
     }
 
@@ -43,6 +49,13 @@ def devices():
     """Erkannte Tasmota-Geräte. Enthält keine Zugangsdaten."""
     return {"devices": mqtt_client.status()["devices"],
             "discovery": mqtt_client._state.get("discovery", False)}
+
+
+@router.get("/intervals")
+def intervals():
+    """Auswahlwerte für die Oberfläche samt Erläuterung."""
+    return {"default": mqtt_client.DEFAULT_INTERVAL,
+            "options": [{"key": k, **v} for k, v in mqtt_client.MQTT_INTERVALS.items()]}
 
 
 @router.post("/devices/forget")

@@ -54,6 +54,8 @@ DEFAULTS: dict[str, object] = {
     "mqtt_password": "",
     "mqtt_base_topic": "tele",
     "mqtt_tasmota_discovery": False,
+    # Globale Vorgabe; je System über zusatzfelder["mqtt_interval"] übersteuerbar.
+    "mqtt_interval": "daily",
 }
 
 _BOOL = lambda v: str(v).lower() in {"1", "true", "ja", "yes"}  # noqa: E731
@@ -75,6 +77,7 @@ _CASTS = {
     "mqtt_password": str,
     "mqtt_base_topic": str,
     "mqtt_tasmota_discovery": _BOOL,
+    "mqtt_interval": str,
 }
 
 # Diese Schluessel verlassen den Server NIE im Klartext. Die Leseantwort meldet

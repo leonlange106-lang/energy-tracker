@@ -27,7 +27,7 @@ import re
 import threading
 import urllib.request
 from collections import deque
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 from sqlmodel import Session, select
@@ -59,6 +59,7 @@ _state: dict[str, Any] = {
     "written": 0,
     "discovery": False,
     "discovery_prefix": "tele",
+    "interval": DEFAULT_INTERVAL,
 }
 
 # Übliche Schlüssel in JSON-Nutzlasten, Reihenfolge = Priorität. Der Vergleich
@@ -286,6 +287,43 @@ def _extra(data: dict) -> dict:
     return {"power": power, "time": _get_ci(data, "time")}
 
 
+# --------------------------------------------------------------------------
+# Speicherintervall
+# --------------------------------------------------------------------------
+# Je Periode wird höchstens EIN Datensatz geführt und innerhalb der laufenden
+# Periode aktualisiert. Feiner als täglich ist nicht möglich, weil
+# `Reading.datum` eine Datumsspalte ist – ein stündlicher Takt bräuchte einen
+# Zeitstempel und damit eine Schemaänderung.
+MQTT_INTERVALS = {
+    "daily":     {"label": "Täglich",       "hint": "ein Wert je Tag"},
+    "weekly":    {"label": "Wöchentlich",   "hint": "ein Wert je Kalenderwoche, ab Montag"},
+    "monthly":   {"label": "Monatlich",     "hint": "ein Wert je Kalendermonat"},
+    "quarterly": {"label": "Quartalsweise", "hint": "ein Wert je Quartal"},
+    "yearly":    {"label": "Jährlich",      "hint": "ein Wert je Kalenderjahr"},
+}
+DEFAULT_INTERVAL = "daily"
+
+
+def period_start(interval: str, day: date) -> date:
+    """Beginn der Periode, in die `day` fällt."""
+    if interval == "weekly":
+        return day - timedelta(days=day.weekday())      # Montag
+    if interval == "monthly":
+        return day.replace(day=1)
+    if interval == "quarterly":
+        return day.replace(month=((day.month - 1) // 3) * 3 + 1, day=1)
+    if interval == "yearly":
+        return day.replace(month=1, day=1)
+    return day                                           # daily
+
+
+def _interval_for(system: System, fallback: str) -> str:
+    """Einstellung am System schlägt die globale Vorgabe."""
+    value = (system.zusatzfelder or {}).get("mqtt_interval")
+    value = str(value).strip() if value else ""
+    return value if value in MQTT_INTERVALS else fallback
+
+
 # Rohdaten werden gekappt: ein SML-Telegramm ist selten groesser, aber ein
 # fehlkonfiguriertes Geraet koennte den Ringpuffer sonst sprengen.
 RAW_LIMIT = 4000
@@ -500,12 +538,32 @@ def ingest(topic: str, payload: str) -> Optional[dict]:
             return None
 
         today = date.today()
+        interval = _interval_for(system, _state.get("interval") or DEFAULT_INTERVAL)
+        start = period_start(interval, today)
+
+        # Nur EIGENE Datensätze der laufenden Periode werden fortgeschrieben.
+        # Von Hand erfasste Ablesungen bleiben unangetastet – sie sind die
+        # verlässlichere Quelle und dürfen nicht überschrieben werden.
         existing = session.exec(
-            select(Reading).where(Reading.system_id == system.id, Reading.datum == today)
+            select(Reading)
+            .where(Reading.system_id == system.id, Reading.datum >= start,
+                   Reading.note == "MQTT")
+            .order_by(Reading.datum.desc())
         ).first()
 
+        # Liegt für heute bereits eine manuelle Ablesung vor, wird nichts
+        # geschrieben: zwei Datensätze mit gleichem Datum ergäben ein Intervall
+        # von null Tagen und damit einen unbrauchbaren Tagesverbrauch.
+        if existing is None:
+            manual_today = session.exec(
+                select(Reading).where(Reading.system_id == system.id,
+                                      Reading.datum == today)
+            ).first()
+            if manual_today is not None:
+                return None
+
         previous = session.exec(
-            select(Reading).where(Reading.system_id == system.id, Reading.datum < today)
+            select(Reading).where(Reading.system_id == system.id, Reading.datum < start)
             .order_by(Reading.datum.desc())
         ).first()
 
@@ -519,10 +577,10 @@ def ingest(topic: str, payload: str) -> Optional[dict]:
             return None
 
         if existing:
-            if float(existing.value) == value:
+            if float(existing.value) == value and existing.datum == today:
                 return None                      # nichts Neues
             existing.value = value
-            existing.note = (existing.note or "MQTT")
+            existing.datum = today               # Datum auf die jüngste Messung ziehen
             session.add(existing)
             action = "aktualisiert"
         else:
@@ -532,9 +590,11 @@ def ingest(topic: str, payload: str) -> Optional[dict]:
 
         session.commit()
         _state["written"] += 1
-        _event("info", f"{system.name}: {value} {system.einheit} {action}",
-               topic=topic, system=system.name, value=value)
-        return {"system": system.name, "value": value, "action": action}
+        label = MQTT_INTERVALS[interval]["label"].lower()
+        _event("info", f"{system.name}: {value} {system.einheit} {action} ({label})",
+               topic=topic, system=system.name, value=value, interval=interval)
+        return {"system": system.name, "value": value, "action": action,
+                "interval": interval, "period_start": start.isoformat()}
 
 
 # --------------------------------------------------------------------------
@@ -625,7 +685,8 @@ def start(cfg: dict) -> dict:
         _state.update({"broker": f"{broker['host']}:{broker['port']}",
                        "source": broker["source"], "last_error": None,
                        "discovery": bool(cfg.get("mqtt_tasmota_discovery")),
-                       "discovery_prefix": (cfg.get("mqtt_base_topic") or "tele").strip("/")})
+                       "discovery_prefix": (cfg.get("mqtt_base_topic") or "tele").strip("/"),
+                       "interval": cfg.get("mqtt_interval") or DEFAULT_INTERVAL})
         try:
             client.connect_async(broker["host"], broker["port"], keepalive=60)
             client.loop_start()

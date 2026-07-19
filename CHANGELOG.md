@@ -14,6 +14,23 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.1.0] - 2026-07-18
+
+### Added
+
+- [Backend/MQTT] Ergänzt ein wählbares Speicherintervall für übernommene Messwerte: täglich, wöchentlich ab Montag, monatlich, quartalsweise und jährlich. Je Periode wird ein Datensatz geführt und innerhalb der laufenden Periode fortgeschrieben.
+- [Backend/MQTT] Ergänzt `zusatzfelder["mqtt_interval"]` je System; ohne Eintrag gilt die globale Vorgabe aus den Einstellungen.
+- [Backend/routers/mqtt.py] Ergänzt `GET /api/mqtt/intervals` und weist Intervall sowie Herkunft der Einstellung in der Zuordnungstabelle aus.
+- [Backend/routers/settings.py] Ergänzt den Parameter `mqtt_interval` mit Prüfung gegen die zulässigen Werte.
+- [Frontend/UI] Ergänzt die Auswahl in den MQTT-Einstellungen und im Systemdialog; die Zuordnungstabelle zeigt je System das geltende Intervall und ob es abweichend gesetzt ist.
+
+### Fixed
+
+- [Backend/MQTT] Überschreibt keine von Hand erfassten Ablesungen mehr. Fortgeschrieben werden ausschließlich Datensätze aus der MQTT-Übernahme; liegt für den laufenden Tag bereits eine manuelle Ablesung vor, wird nichts geschrieben. Zwei Datensätze mit gleichem Datum hätten ein Intervall von null Tagen und damit einen unbrauchbaren Tagesverbrauch ergeben.
+- [Frontend/UI] Zeigt Auswahlfelder im Systemdialog mit lesbarer Beschriftung an, sofern hinterlegt; zuvor erschien der technische Wert.
+
+---
+
 ## [3.0.0] - 2026-07-18
 
 ### Added
@@ -572,7 +589,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.21.1...v3.0.0
 [2.21.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.21.0...v2.21.1
 [2.21.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.20.0...v2.21.0

@@ -118,6 +118,7 @@ class AppSettingsRead(BaseModel):
     mqtt_username: str = ""
     mqtt_base_topic: str = "tele"
     mqtt_tasmota_discovery: bool = False
+    mqtt_interval: str = "daily"
     # Kein Passwortfeld: der Server gibt nur bekannt, ob eines hinterlegt ist.
     mqtt_password_set: bool = False
     notify_enabled: bool
@@ -156,6 +157,8 @@ class AppSettingsUpdate(BaseModel):
     mqtt_password: Optional[str] = Field(None, max_length=256)
     mqtt_base_topic: Optional[str] = Field(None, max_length=120)
     mqtt_tasmota_discovery: Optional[bool] = None
+    mqtt_interval: Optional[str] = Field(
+        None, pattern="^(daily|weekly|monthly|quarterly|yearly)$")
 
     @field_validator("outlier_sigma")
     @classmethod

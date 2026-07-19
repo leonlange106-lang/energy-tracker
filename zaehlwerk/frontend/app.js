@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.0.0";
+const APP_VERSION = "3.1.0";
 const APP_CHANGELOG = [
+  { v: "3.1.0", d: "18.07.2026", items: [
+    "MQTT-Speicherintervall wählbar: täglich, wöchentlich, monatlich, quartalsweise, jährlich",
+    "Je System abweichend einstellbar, sonst gilt die globale Vorgabe",
+    "Von Hand erfasste Ablesungen werden nie durch MQTT überschrieben",
+  ]},
   { v: "3.0.0", d: "18.07.2026", items: [
     "Benutzerkonten und Anmeldung; alle API-Pfade sind geschützt",
     "Unter Home Assistant übernimmt Zählwerk die dortige Anmeldung – kein zweiter Login",
@@ -285,6 +290,10 @@ const COMMON_FIELDS = [
   { key: "ha_entity", label: "HA-Entity Zählerstand (optional, z. B. sensor.stromzaehler)", type: "text" },
   { key: "mqtt_topic", label: "MQTT-Topic (optional, z. B. tele/hichi/SENSOR)", type: "text" },
   { key: "mqtt_path", label: "MQTT JSON-Pfad (optional, z. B. MT631.Total_in)", type: "text" },
+  { key: "mqtt_interval", label: "MQTT-Speicherintervall (leer = globale Vorgabe)", type: "select",
+    options: ["", "daily", "weekly", "monthly", "quarterly", "yearly"],
+    labels: { "": "Globale Vorgabe", daily: "Täglich", weekly: "Wöchentlich",
+              monthly: "Monatlich", quarterly: "Quartalsweise", yearly: "Jährlich" } },
   { key: "ha_unit", label: "Einheit des HA-Sensors (leer = wie von HA gemeldet)", type: "select",
     options: ["", "Wh", "kWh", "MWh", "L", "m³"] },
 ];
@@ -2283,6 +2292,7 @@ createApp({
             mqtt_username: d.mqtt_username || "",
             mqtt_base_topic: d.mqtt_base_topic || "tele",
             mqtt_tasmota_discovery: !!d.mqtt_tasmota_discovery,
+            mqtt_interval: d.mqtt_interval || "daily",
             // Leeres Feld = unveraendert lassen, nicht loeschen
             ...(this.mqttPassword ? { mqtt_password: this.mqttPassword } : {}),
           }),
@@ -2701,6 +2711,22 @@ createApp({
                     <code>/+/LWT</code> und listet gefundene Geräte. Es wird nichts gespeichert,
                     solange kein Topic zugeordnet ist.</small></span></label>
             </div>
+            <div class="field">
+              <label>Speicherintervall (Vorgabe)</label>
+              <select class="select" v-model="appSettingsDraft.mqtt_interval" @change="validateSettings">
+                <option value="daily">Täglich – ein Wert je Tag</option>
+                <option value="weekly">Wöchentlich – ein Wert je Kalenderwoche</option>
+                <option value="monthly">Monatlich – ein Wert je Kalendermonat</option>
+                <option value="quarterly">Quartalsweise – ein Wert je Quartal</option>
+                <option value="yearly">Jährlich – ein Wert je Kalenderjahr</option>
+              </select>
+              <div class="hint">
+                Je Periode wird ein Datensatz geführt und innerhalb der laufenden Periode
+                fortgeschrieben. Einzelne Systeme lassen sich unter „✎ Bearbeiten“ abweichend
+                einstellen. Von Hand erfasste Ablesungen werden nie überschrieben.
+              </div>
+            </div>
+
             <div class="field" v-if="appSettingsDraft.mqtt_tasmota_discovery">
               <label>Telemetrie-Präfix</label>
               <input class="input" v-model="appSettingsDraft.mqtt_base_topic" placeholder="tele" />
@@ -2769,7 +2795,10 @@ createApp({
               <tr v-if="mqttStatus.broker"><td>Broker</td><td class="num">{{ mqttStatus.broker }} · {{ mqttStatus.source }}</td></tr>
               <tr v-if="mqttStatus.last_error"><td>Letzter Fehler</td><td>{{ mqttStatus.last_error }}</td></tr>
               <tr><td>Nachrichten</td><td class="num">{{ mqttStatus.messages }} empfangen · {{ mqttStatus.written }} geschrieben</td></tr>
-              <tr v-for="m in mqttStatus.mapped" :key="m.topic"><td>{{ m.system }}</td><td class="num">{{ m.topic }}</td></tr>
+              <tr v-for="m in mqttStatus.mapped" :key="m.topic">
+                <td>{{ m.system }}<small class="bk-age"> · {{ m.interval_label }}{{ m.own_interval ? ' (eigen)' : '' }}</small></td>
+                <td class="num">{{ m.topic }}</td>
+              </tr>
             </table>
             <div class="hint" v-if="mqttStatus && !mqttStatus.mapped.length">
               Noch kein Topic zugeordnet. Trag es je System unter „✎ Bearbeiten“ im Feld
@@ -2960,7 +2989,9 @@ createApp({
         <div class="field" v-for="f in formExtra" :key="f.key">
           <label>{{ f.label }}</label>
           <select v-if="f.type==='select'" class="select" style="width:100%" v-model="sysForm.zusatzfelder[f.key]">
-            <option v-for="o in f.options" :key="o" :value="o">{{ o === '' ? '– automatisch –' : o }}</option>
+            <!-- f.labels erlaubt lesbare Beschriftungen; ohne sie bleibt der Wert selbst stehen. -->
+            <option v-for="o in f.options" :key="o" :value="o">{{
+              (f.labels && f.labels[o]) || (o === '' ? '– automatisch –' : o) }}</option>
           </select>
           <input v-else class="input" :type="f.type" v-model="sysForm.zusatzfelder[f.key]" />
         </div>
