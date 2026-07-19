@@ -4,8 +4,17 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.1.0";
+const APP_VERSION = "3.2.1";
 const APP_CHANGELOG = [
+  { v: "3.2.1", d: "19.07.2026", items: [
+    "Startabbruch behoben: Modulkonstante wurde vor ihrer Definition verwendet",
+  ]},
+  { v: "3.2.0", d: "18.07.2026", items: [
+    "Rollen: Administrator, Schreiber, Leser, Gast",
+    "Verändernde Aufrufe werden für Leser und Gast serverseitig abgewiesen",
+    "Oberfläche blendet Aktionen ohne Berechtigung aus",
+    "Rollenverwaltung in den Einstellungen",
+  ]},
   { v: "3.1.0", d: "18.07.2026", items: [
     "MQTT-Speicherintervall wählbar: täglich, wöchentlich, monatlich, quartalsweise, jährlich",
     "Je System abweichend einstellbar, sonst gilt die globale Vorgabe",
@@ -523,6 +532,16 @@ function hwSuggest(meter, system) {
    zu prüfen, meldet der Interceptor es einmal – die Oberfläche blendet dann
    die Anmeldung ein. Der Rückruf wird von der App beim Start gesetzt. */
 const authStore = reactive({ status: null, checked: false });
+
+/* Rechte modulweit verfügbar machen: die Root-App und die Unterkomponenten
+   müssen dieselbe Quelle nutzen, sonst blendet die eine aus, was die andere
+   noch anzeigt. Durchgesetzt werden die Rechte ohnehin im Backend. */
+function perms() {
+  return (authStore.status || {}).permissions
+         || { role: "guest", write: false, admin: false, export: false, settings: false };
+}
+const canWriteNow = () => !!perms().write;
+const canExportNow = () => !!perms().export;
 let onUnauthorized = () => {};
 
 async function api(path, opts = {}) {
@@ -785,6 +804,8 @@ const SystemDetail = {
       return this.allSystems.filter((s) => s.id !== this.system.id && s.aktiv);
     },
     outlierColor() { return chartColor("outlier", "#9A6A00"); },
+    canWrite() { return canWriteNow(); },
+    canExport() { return canExportNow(); },
     chart() {
       if (!this.chartData) return { labels: [], datasets: [] };
       const pick = (cd) =>
@@ -1399,10 +1420,11 @@ const SystemDetail = {
         </div>
       </div>
       <div class="dh-actions">
-        <button class="btn btn-sm" @click="$emit('edit', system)" title="System bearbeiten, archivieren oder löschen">✎ Bearbeiten</button>
-        <button class="btn btn-sm" @click="openImport">⇪ Import</button>
-        <button class="btn btn-sm" @click="openExport">⇩ CSV</button>
-        <button class="btn btn-tonal btn-sm" @click="openReport">⇩ PDF</button>
+        <button v-if="canWrite" class="btn btn-sm" @click="$emit('edit', system)"
+                title="System bearbeiten, archivieren oder löschen">✎ Bearbeiten</button>
+        <button v-if="canWrite" class="btn btn-sm" @click="openImport">⇪ Import</button>
+        <button v-if="canExport" class="btn btn-sm" @click="openExport">⇩ CSV</button>
+        <button v-if="canExport" class="btn btn-tonal btn-sm" @click="openReport">⇩ PDF</button>
       </div>
     </div>
 
@@ -1545,13 +1567,13 @@ const SystemDetail = {
       <div class="empty" v-else-if="!meters.length">
         <h3>Noch kein Zähler hinterlegt</h3>
         <p>Trag Hersteller, Modell und Bauart ein – daraus leitet Zählwerk passende Auslese-Hardware für die Smart-Meter-Nachrüstung ab.</p>
-        <button class="btn btn-primary" @click="openMeter(null)">＋ Zähler anlegen</button>
+        <button class="btn btn-primary" v-if="canWrite" @click="openMeter(null)">＋ Zähler anlegen</button>
       </div>
 
       <div v-else>
         <div class="eyebrow">
           Zähler
-          <button class="btn btn-sm" @click="openMeter(null)">＋ Zähler</button>
+          <button class="btn btn-sm" v-if="canWrite" @click="openMeter(null)">＋ Zähler</button>
         </div>
 
         <div v-for="m in meters" :key="m.id" class="card meter-card" :class="{removed: !m.aktiv}">
@@ -1566,7 +1588,7 @@ const SystemDetail = {
                 <span v-if="!m.aktiv">ausgebaut {{ fmtDate(m.ausgebaut_am) }}</span>
               </div>
             </div>
-            <div class="m-actions">
+            <div class="m-actions" v-if="canWrite">
               <button class="btn btn-sm" @click="openMeter(m)">✎</button>
               <hold-button :small="true" @held="deleteMeter(m)">✕ halten</hold-button>
             </div>
@@ -1604,17 +1626,17 @@ const SystemDetail = {
         <h3>Noch kein Tarif hinterlegt</h3>
         <p>Mit Arbeitspreis und Grundgebühr je Zeitraum rechnet Zählwerk die Kosten
            jedes Intervalls selbst aus – auch wenn mitten darin der Tarif gewechselt hat.</p>
-        <button class="btn btn-primary" @click="openTariff(null)">＋ Tarif anlegen</button>
+        <button class="btn btn-primary" v-if="canWrite" @click="openTariff(null)">＋ Tarif anlegen</button>
       </div>
       <div v-else>
-        <div class="eyebrow">Tarife <button class="btn btn-sm" @click="openTariff(null)">＋ Tarif</button></div>
+        <div class="eyebrow">Tarife <button class="btn btn-sm" v-if="canWrite" @click="openTariff(null)">＋ Tarif</button></div>
         <div v-for="t in tariffs" :key="t.id" class="card tariff-card" :class="{current: t.aktiv}">
           <div class="tf-head">
             <div>
               <div class="tf-name">{{ t.name || 'Ohne Bezeichnung' }}<span v-if="t.anbieter"> · {{ t.anbieter }}</span></div>
               <div class="tf-range">{{ tariffRange(t) }}<span v-if="t.aktiv" class="tf-now">aktuell</span></div>
             </div>
-            <div class="m-actions">
+            <div class="m-actions" v-if="canWrite">
               <button class="btn btn-sm" @click="openTariff(t)">✎</button>
               <hold-button :small="true" @held="deleteTariff(t)">✕ halten</hold-button>
             </div>
@@ -1865,6 +1887,7 @@ createApp({
     authForm: { username: "", display_name: "", password: "", password2: "" },
     authError: null,
     authBusy: false,
+    users: [],
   }),
   computed: {
     visibleSystems() { return this.systems.filter((s) => this.showArchived || s.aktiv); },
@@ -1885,6 +1908,14 @@ createApp({
       return !!(this.auth.checked && s && !s.authenticated);
     },
     currentUser() { return (this.auth.status || {}).user || null; },
+    authRoles() { return (this.auth.status || {}).roles || []; },
+    /* Einzige Quelle für die Sichtbarkeit im UI. Sie kommt vom Server, damit
+       Oberfläche und Middleware nicht auseinanderlaufen können. Das Ausblenden
+       ist Bequemlichkeit – durchgesetzt werden die Rechte im Backend. */
+    perms() { return perms(); },
+    canWrite() { return !!this.perms.write; },
+    isAdmin() { return !!this.perms.admin; },
+    canExport() { return !!this.perms.export; },
     setupValid() {
       const f = this.authForm;
       return f.username.trim().length >= 3 && f.password.length >= 12
@@ -1899,7 +1930,14 @@ createApp({
       const d = this.$refs.detail;
       return d && d.tab === "meters" ? "Zähler" : "Wert";
     },
-    visibleNavItems() { return this.navItems.filter((i) => !i.needsSystems || this.systems.length); },
+    visibleNavItems() {
+      return this.navItems.filter((i) => {
+        if (i.needsSystems && !this.systems.length) return false;
+        if (i.key === "einstellungen" && !this.isAdmin) return false;
+        if (i.key === "bericht" && !this.canExport) return false;
+        return true;
+      });
+    },
   },
   async mounted() {
     // Rückruf des Interceptors: bei 401 wird der Status neu geholt, wodurch
@@ -2197,7 +2235,7 @@ createApp({
       return r !== null && r < 3 ? `Kontrast ${r.toFixed(1)}:1 – auf dieser Fläche schwer erkennbar` : null;
     },
     fabAction() {
-      if (this.view === "settings") return;
+      if (!this.canWrite || this.view === "settings") return;
       const d = this.$refs.detail;
       if (this.view === "detail" && d) {
         // Kontextbezogen: im Zähler-Tab legt der FAB einen Zähler an
@@ -2224,12 +2262,14 @@ createApp({
     /* ---------- Sektion A: Anwendungsparameter ---------- */
     async loadSettings() {
       try {
+        if (!this.isAdmin) { this.settingsTab = "ui"; return; }
         const [s, i, x, b] = await Promise.all([
           api("/api/settings"), api("/api/system/info"), api("/api/external/status"),
           api("/api/backup"),
         ]);
         this.backupStatus = b;
         this.loadMqtt();
+        if (this.isAdmin) this.loadUsers();
         this.appSettings = s;
         this.appSettingsDraft = { ...s };
         this.sysInfo = i;
@@ -2309,6 +2349,23 @@ createApp({
         // 422 vom Server: Feldfehler sichtbar machen statt nur zu toasten
         this.notify("Nicht gespeichert: " + e.message, "err");
       } finally { this.settingsSaving = false; }
+    },
+    async loadUsers() {
+      try { this.users = await api("/api/auth/users"); }
+      catch (_) { this.users = []; }
+    },
+    async setUserRole(user, role) {
+      if (role === user.role) return;
+      try {
+        const updated = await api(`/api/auth/users/${user.id}`, {
+          method: "PATCH", body: JSON.stringify({ role }),
+        });
+        this.notify(`${updated.display_name}: ${updated.role}`, "ok");
+        await this.loadUsers();
+        // Eigene Rolle geändert? Dann Rechte neu holen, sonst zeigt die
+        // Oberfläche weiter, was der Server bereits ablehnt.
+        if (this.currentUser && user.id === this.currentUser.id) await this.checkAuth();
+      } catch (e) { this.notify(e.message, "err"); await this.loadUsers(); }
     },
     async loadMqtt() {
       try { this.mqttStatus = await api("/api/mqtt/status"); }
@@ -2426,7 +2483,7 @@ createApp({
 
   <!-- Sidebar: Navigation Rail (Desktop) / modaler Drawer (Mobile) -->
   <nav id="zw-nav" class="nav-rail" :class="{ expanded: navExpanded, drawer: navDrawer }" aria-label="Hauptnavigation">
-    <button class="fab rail-fab" @click="fabAction" :title="'Neu: ' + fabLabel">
+    <button class="fab rail-fab" v-if="canWrite" @click="fabAction" :title="'Neu: ' + fabLabel">
       <span class="fab-plus">＋</span><span class="fab-text">{{ fabLabel }}</span>
     </button>
     <template v-for="it in visibleNavItems" :key="it.key">
@@ -2505,12 +2562,12 @@ createApp({
     </div>
     <div class="sheet-foot">
       <button class="btn" @click="showSysSheet=false">Schließen</button>
-      <button class="btn btn-primary" @click="sheetNewSystem">＋ System anlegen</button>
+      <button class="btn btn-primary" v-if="canWrite" @click="sheetNewSystem">＋ System anlegen</button>
     </div>
   </div>
 
   <!-- FAB (Mobile) -->
-  <div class="fab-screen"><button class="fab" @click="fabAction" :title="view==='menu' ? 'System anlegen' : 'Neuer Wert'">＋</button></div>
+  <div class="fab-screen" v-if="canWrite"><button class="fab" @click="fabAction" :title="'Neu: ' + fabLabel">＋</button></div>
 
   <div class="wrap">
     <div v-if="loading" class="center-load"><span class="spin"></span></div>
@@ -2551,7 +2608,7 @@ createApp({
     <template v-else-if="view==='settings'">
       <div class="eyebrow">Einstellungen</div>
       <div class="seg settings-seg">
-        <button :class="{active: settingsTab==='app'}" @click="settingsTab='app'">A · System</button>
+        <button v-if="isAdmin" :class="{active: settingsTab==='app'}" @click="settingsTab='app'">A · System</button>
         <button :class="{active: settingsTab==='ui'}"  @click="settingsTab='ui'">B · Web-App</button>
       </div>
 
@@ -2639,6 +2696,33 @@ createApp({
           <div class="settings-actions" v-else>
             <button class="btn" @click="doLogout">Abmelden</button>
           </div>
+        </div>
+
+        <div class="card set-card" v-if="isAdmin">
+          <h3>Konten &amp; Rollen</h3>
+          <p class="hint">Änderungen greifen beim nächsten Aufruf des jeweiligen Kontos.
+            Die Rechte werden serverseitig durchgesetzt, das Ausblenden in der Oberfläche
+            ist nur Beiwerk.</p>
+          <div class="field">
+            <label>Rolle für neu übernommene Home-Assistant-Konten</label>
+            <select class="select" v-model="appSettingsDraft.default_role" @change="validateSettings">
+              <option v-for="r in authRoles" :key="r.key" :value="r.key">{{ r.label }} – {{ r.hint }}</option>
+            </select>
+          </div>
+          <table class="info-table" v-if="users.length">
+            <tr v-for="u in users" :key="u.id">
+              <td>
+                {{ u.display_name }}
+                <small class="bk-age"> · {{ u.username }}{{ u.source === 'homeassistant' ? ' · HA' : '' }}</small>
+              </td>
+              <td class="num">
+                <select class="select role-select" :value="u.role" @change="setUserRole(u, $event.target.value)">
+                  <option v-for="r in authRoles" :key="r.key" :value="r.key">{{ r.label }}</option>
+                </select>
+              </td>
+            </tr>
+          </table>
+          <div class="hint" v-else>Konten erscheinen, sobald sie sich erstmals angemeldet haben.</div>
         </div>
 
         <div class="card set-card" v-if="sysInfo">

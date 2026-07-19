@@ -49,6 +49,43 @@ DISCOVERED: dict[str, dict] = {}
 
 _client = None
 _lock = threading.Lock()
+# --------------------------------------------------------------------------
+# Speicherintervall
+# --------------------------------------------------------------------------
+# Je Periode wird höchstens EIN Datensatz geführt und innerhalb der laufenden
+# Periode aktualisiert. Feiner als täglich ist nicht möglich, weil
+# `Reading.datum` eine Datumsspalte ist – ein stündlicher Takt bräuchte einen
+# Zeitstempel und damit eine Schemaänderung.
+MQTT_INTERVALS = {
+    "daily":     {"label": "Täglich",       "hint": "ein Wert je Tag"},
+    "weekly":    {"label": "Wöchentlich",   "hint": "ein Wert je Kalenderwoche, ab Montag"},
+    "monthly":   {"label": "Monatlich",     "hint": "ein Wert je Kalendermonat"},
+    "quarterly": {"label": "Quartalsweise", "hint": "ein Wert je Quartal"},
+    "yearly":    {"label": "Jährlich",      "hint": "ein Wert je Kalenderjahr"},
+}
+DEFAULT_INTERVAL = "daily"
+
+
+def period_start(interval: str, day: date) -> date:
+    """Beginn der Periode, in die `day` fällt."""
+    if interval == "weekly":
+        return day - timedelta(days=day.weekday())      # Montag
+    if interval == "monthly":
+        return day.replace(day=1)
+    if interval == "quarterly":
+        return day.replace(month=((day.month - 1) // 3) * 3 + 1, day=1)
+    if interval == "yearly":
+        return day.replace(month=1, day=1)
+    return day                                           # daily
+
+
+def _interval_for(system: System, fallback: str) -> str:
+    """Einstellung am System schlägt die globale Vorgabe."""
+    value = (system.zusatzfelder or {}).get("mqtt_interval")
+    value = str(value).strip() if value else ""
+    return value if value in MQTT_INTERVALS else fallback
+
+
 _state: dict[str, Any] = {
     "connected": False,
     "broker": None,
@@ -285,43 +322,6 @@ def _extra(data: dict) -> dict:
                 power = leaf["value"]
                 break
     return {"power": power, "time": _get_ci(data, "time")}
-
-
-# --------------------------------------------------------------------------
-# Speicherintervall
-# --------------------------------------------------------------------------
-# Je Periode wird höchstens EIN Datensatz geführt und innerhalb der laufenden
-# Periode aktualisiert. Feiner als täglich ist nicht möglich, weil
-# `Reading.datum` eine Datumsspalte ist – ein stündlicher Takt bräuchte einen
-# Zeitstempel und damit eine Schemaänderung.
-MQTT_INTERVALS = {
-    "daily":     {"label": "Täglich",       "hint": "ein Wert je Tag"},
-    "weekly":    {"label": "Wöchentlich",   "hint": "ein Wert je Kalenderwoche, ab Montag"},
-    "monthly":   {"label": "Monatlich",     "hint": "ein Wert je Kalendermonat"},
-    "quarterly": {"label": "Quartalsweise", "hint": "ein Wert je Quartal"},
-    "yearly":    {"label": "Jährlich",      "hint": "ein Wert je Kalenderjahr"},
-}
-DEFAULT_INTERVAL = "daily"
-
-
-def period_start(interval: str, day: date) -> date:
-    """Beginn der Periode, in die `day` fällt."""
-    if interval == "weekly":
-        return day - timedelta(days=day.weekday())      # Montag
-    if interval == "monthly":
-        return day.replace(day=1)
-    if interval == "quarterly":
-        return day.replace(month=((day.month - 1) // 3) * 3 + 1, day=1)
-    if interval == "yearly":
-        return day.replace(month=1, day=1)
-    return day                                           # daily
-
-
-def _interval_for(system: System, fallback: str) -> str:
-    """Einstellung am System schlägt die globale Vorgabe."""
-    value = (system.zusatzfelder or {}).get("mqtt_interval")
-    value = str(value).strip() if value else ""
-    return value if value in MQTT_INTERVALS else fallback
 
 
 # Rohdaten werden gekappt: ein SML-Telegramm ist selten groesser, aber ein

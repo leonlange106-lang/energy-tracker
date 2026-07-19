@@ -14,6 +14,37 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.2.1] - 2026-07-19
+
+### Fixed
+
+- [Backend/MQTT] Behebt einen Startabbruch mit `NameError: name 'DEFAULT_INTERVAL' is not defined`. Die in 3.1.0 ergänzten Konstanten für das Speicherintervall standen im Modul unterhalb des Zustandsobjekts, das sie bereits beim Import verwendet; der Rumpf eines Moduls wird jedoch von oben nach unten ausgeführt. Die Konstanten stehen nun vor ihrer ersten Verwendung.
+
+---
+
+## [3.2.0] - 2026-07-18
+
+### Added
+
+- [Backend/RBAC] Ergänzt vier Rollen mit aufsteigender Berechtigung: Gast sieht ausschließlich Auswertungen, Leser sieht alles einschließlich Ausleitungen, Schreiber erfasst Werte und pflegt Systeme, Zähler und Tarife, Administrator verwaltet zusätzlich Einstellungen, Sicherungen, Broker und Konten.
+- [Backend/migrations.py] Ergänzt Migration 5, die die Spalte `role` an die Tabelle `users` anfügt und Bestandskonten einordnet: bisherige Administratoren behalten ihre Rechte, alle übrigen erhalten die Rolle Schreiber. Ein pauschales Herabstufen hätte bestehende Installationen lahmgelegt.
+- [Backend/routers/auth.py] Ergänzt `GET /api/auth/users` und `PATCH /api/auth/users/{id}` zur Verwaltung von Rolle und Aktivstatus.
+- [Backend/routers/auth.py] Ergänzt in `GET /api/auth/status` die aufgelösten Rechte und die verfügbaren Rollen, sodass die Oberfläche ihre Anzeige daraus ableitet, statt eigene Annahmen zu treffen.
+- [Backend/routers/settings.py] Ergänzt den Parameter `default_role` für neu übernommene Home-Assistant-Konten.
+- [Frontend/UI] Ergänzt die Rollenverwaltung in Sektion A der Einstellungen.
+
+### Security
+
+- [Backend/RBAC] Prüft die Berechtigung in der Middleware statt in den einzelnen Routen. Eine neu hinzugefügte Route ist damit von Beginn an abgedeckt, statt erst durch eine vergessene Absicherung offen zu stehen.
+- [Backend/RBAC] Weist verändernde Verfahren für Leser und Gast mit HTTP 403 ab. Die Antwort nennt die erforderliche und die vorhandene Rolle.
+- [Backend/RBAC] Beschränkt Einstellungen, Sicherungen, Broker-Verwaltung und Kontenverwaltung auf Administratoren, und zwar auch lesend: die Antwort auf `GET /api/settings` nennt Broker-Host, Benutzernamen und Sicherungspfade.
+- [Backend/RBAC] Beschränkt Berichte und Rohdaten-Ausleitung auf die Rolle Leser aufwärts; Gästen bleibt die Ausleitung des Gesamtbestands verwehrt.
+- [Backend/RBAC] Beschränkt lesende Aufrufe externer Dienste auf die Rolle Leser aufwärts, da sie ausgehende Verbindungen auslösen.
+- [Backend/routers/auth.py] Verhindert, dass der letzte aktive Administrator sich herabstuft oder deaktiviert; andernfalls käme niemand mehr an Einstellungen und Rollenverwaltung.
+- [Frontend/UI] Blendet Aktionen ohne Berechtigung vollständig aus, darunter die Plus-Schaltflächen, Bearbeiten und Löschen, Import sowie die Einstellungen. Maßgeblich sind die vom Server gemeldeten Rechte; die Durchsetzung bleibt im Backend.
+
+---
+
 ## [3.1.0] - 2026-07-18
 
 ### Added
@@ -589,7 +620,9 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.1...HEAD
+[3.2.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.0...v3.2.1
+[3.2.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.21.1...v3.0.0
 [2.21.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.21.0...v2.21.1
