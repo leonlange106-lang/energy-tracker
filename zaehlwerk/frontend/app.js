@@ -4,8 +4,12 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.21.0";
+const APP_VERSION = "2.21.1";
 const APP_CHANGELOG = [
+  { v: "2.21.1", d: "18.07.2026", items: [
+    "Reiter „Zähler\" und „Tarife\" zeigen ihre Anzahl schon beim Laden der Seite",
+    "Anzahlen kommen aus dem Dashboard-Request – keine zusätzlichen Abfragen",
+  ]},
   { v: "2.21.0", d: "18.07.2026", items: [
     "Mobile Systemauswahl als Modal Bottom Sheet über die untere Navigationsleiste",
     "Tipp auf das bereits aktive Zählwerk-Ziel öffnet die Liste, sonst führt er zur Übersicht",
@@ -673,6 +677,10 @@ const SystemDetail = {
     // Zähler-Metadaten (v2.10.0) + Hardware-Empfehlung
     meters: [],
     metersLoaded: false,
+    // Anzahlen getrennt von den Listen: sie stammen aus dem Dashboard-Request
+    // und stehen damit schon vor dem ersten Öffnen des jeweiligen Reiters.
+    meterCount: null,
+    tariffCount: null,
     showMeter: false,
     meterForm: null,
     bauarten: [],
@@ -852,6 +860,9 @@ const SystemDetail = {
         this.meters = ms;
         this.bauarten = ba;
         this.metersLoaded = true;
+        // Nach dem Laden gilt die Liste als maßgeblich – so bleibt die Zahl
+        // auch nach Anlegen oder Löschen korrekt, ohne erneuten Dashboard-Aufruf.
+        this.meterCount = ms.length;
       } catch (e) { this.notify("Zähler nicht ladbar: " + e.message, "err"); }
     },
     openMeter(m) {
@@ -902,6 +913,7 @@ const SystemDetail = {
       try {
         this.tariffs = await api(`/api/systems/${this.system.id}/tariffs`);
         this.tariffsLoaded = true;
+        this.tariffCount = this.tariffs.length;
       } catch (e) { this.notify("Tarife nicht ladbar: " + e.message, "err"); }
     },
     openTariff(t) {
@@ -962,6 +974,12 @@ const SystemDetail = {
       // Ein kombinierter Request statt drei (eine Berechnung im Backend)
       const d = await api(`/api/systems/${this.system.id}/dashboard${q}`);
       this.readings = d.readings; this.stats = d.stats; this.chartData = d.chart;
+      // Anzahlen kommen direkt mit – die Reiter zeigen sie ab dem ersten
+      // Rendern, ohne dass die vollständigen Listen geladen werden müssen.
+      if (d.counts) {
+        this.meterCount = d.counts.meters;
+        this.tariffCount = d.counts.tariffs;
+      }
       this.page = 1;
       this.expandedId = null;
       await this.loadOverlays();
@@ -1360,8 +1378,8 @@ const SystemDetail = {
     <div class="tabs">
       <button class="tab" :class="{active: tab==='chart'}" @click="tab='chart'">Auswertung</button>
       <button class="tab" :class="{active: tab==='list'}" @click="tab='list'">Werte ({{ readings.length }})</button>
-      <button class="tab" :class="{active: tab==='meters'}" @click="tab='meters'">Zähler<span v-if="metersLoaded && meters.length"> ({{ meters.length }})</span></button>
-      <button class="tab" :class="{active: tab==='tariffs'}" @click="tab='tariffs'">Tarife<span v-if="tariffsLoaded && tariffs.length"> ({{ tariffs.length }})</span></button>
+      <button class="tab" :class="{active: tab==='meters'}" @click="tab='meters'">Zähler<span v-if="meterCount"> ({{ meterCount }})</span></button>
+      <button class="tab" :class="{active: tab==='tariffs'}" @click="tab='tariffs'">Tarife<span v-if="tariffCount"> ({{ tariffCount }})</span></button>
     </div>
 
     <transition name="m3sw" mode="out-in">

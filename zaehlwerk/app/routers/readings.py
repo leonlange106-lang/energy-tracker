@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from .. import exporter, logic, report
 from ..version import APP_VERSION
@@ -220,7 +220,20 @@ def get_dashboard(
         "meter_replaced": [bool(e.get("meter_replaced")) for e in enriched],
     }
     readings = [{**e, "datum": e["datum"].isoformat()} for e in enriched]
-    return {"readings": readings, "stats": stats, "chart": chart}
+
+    # Anzahlen für die Reiterbeschriftung. Bewusst nur COUNT statt der
+    # vollständigen Listen: die Oberfläche braucht beim Laden lediglich die
+    # Zahl, die Datensätze selbst erst beim Öffnen des jeweiligen Reiters.
+    # Zwei billige Aggregatabfragen sparen zwei zusätzliche Rundläufe.
+    counts = {
+        "meters": session.exec(
+            select(func.count()).select_from(Meter)
+            .where(Meter.system_id == system_id)).one(),
+        "tariffs": session.exec(
+            select(func.count()).select_from(Tariff)
+            .where(Tariff.system_id == system_id)).one(),
+    }
+    return {"readings": readings, "stats": stats, "chart": chart, "counts": counts}
 
 
 @router.get("/api/overview")

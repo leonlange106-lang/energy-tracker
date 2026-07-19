@@ -14,6 +14,19 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.21.1] - 2026-07-18
+
+### Fixed
+
+- [Frontend/Tabs] Zeigt die Anzahl in den Reitern Zähler und Tarife bereits beim Laden der Systemansicht an. Bisher war die Beschriftung an den Ladezustand der jeweiligen Liste gebunden, und die wurde erst beim Anklicken des Reiters angefordert; die Zahl erschien deshalb nachträglich.
+- [Frontend/Tabs] Trennt die Anzahl vom Ladezustand der Liste. Nach dem Öffnen eines Reiters gilt die geladene Liste als maßgeblich, sodass die Zahl auch nach Anlegen oder Löschen ohne erneuten Dashboard-Aufruf stimmt.
+
+### Changed
+
+- [Backend/API] Ergänzt `GET /api/systems/{id}/dashboard` um den Abschnitt `counts` mit der Anzahl der Zähler und Tarifperioden. Verwendet werden zwei Aggregatabfragen statt der vollständigen Datensätze, da die Oberfläche beim Laden nur die Zahl benötigt; die Listen selbst werden weiterhin erst beim Öffnen des jeweiligen Reiters geladen. Zwei zusätzliche Rundläufe je Systemansicht entfallen damit.
+
+---
+
 ## [2.21.0] - 2026-07-18
 
 ### Added
@@ -528,7 +541,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.21.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.21.1...HEAD
+[2.21.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.21.0...v2.21.1
 [2.21.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.20.0...v2.21.0
 [2.20.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.1...v2.20.0
 [2.19.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.0...v2.19.1
