@@ -1042,3 +1042,50 @@ html { scrollbar-gutter: stable; }
 .mq-dot.off { background: var(--md-error); }
 .mq-dot.unknown { background: transparent; }
 @media (max-width: 640px) { .mq-dev-act { flex-direction: column; align-items: stretch; } }
+
+/* ---------- Einstellungen: haftende Speichern-Leiste ----------
+   `position: sticky` statt `fixed`: die Leiste ist das letzte Element des
+   Formulars und klebt beim Scrollen am unteren Rand, kommt am Seitenende aber
+   in ihrer natürlichen Position zur Ruhe. Ein fixes Element müsste den
+   Inhaltsabstand von Hand nachhalten und läge auch dann noch da, wenn man
+   längst in Sektion B ist. */
+.save-bar {
+  position: sticky;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 20;
+  display: flex; align-items: center; gap: 10px;
+  margin: 20px 0 8px;
+  padding: 12px 16px;
+  border-radius: 20px;
+  background: var(--md-surface-c-high);
+  border: 1px solid var(--md-outline-variant);
+  box-shadow: var(--md-shadow-2);
+  transition: border-color var(--dur-short) var(--ease-standard),
+              background var(--dur-short) var(--ease-standard);
+}
+/* Zustand über die Kante, nicht über eine Farbfläche – bleibt im
+   Hochkontrast-Theme und bei Farbfehlsichtigkeit unterscheidbar. */
+.save-bar.dirty { border-color: var(--md-primary); }
+.save-bar.invalid { border-color: var(--md-error); }
+
+.sb-info { flex: 1; min-width: 0; font-size: 13px; line-height: 18px;
+  color: var(--md-on-surface-variant); }
+.sb-info .sb-clean { color: var(--md-on-surface-variant); opacity: .75; }
+.sb-info .sb-err { color: var(--md-error); font-weight: 500; }
+.save-bar .btn { flex: 0 0 auto; }
+
+/* Ohne diesen Abstand klebte die Leiste am letzten Rand des Containers und
+   hätte keinen Raum zum Haften. */
+.set-card:last-of-type { margin-bottom: 4px; }
+
+@media (max-width: 840px) {
+  /* Über der Bottom-Navigation halten, sonst liegt sie darunter.
+     72px = Höhe der Leiste inkl. Innenabstand. */
+  .save-bar { bottom: calc(72px + max(12px, env(safe-area-inset-bottom))); }
+}
+@media (max-width: 640px) {
+  .save-bar { flex-wrap: wrap; padding: 12px 14px; }
+  .sb-info { flex: 1 0 100%; margin-bottom: 4px; }
+  .save-bar .btn { flex: 1; justify-content: center; }
+  .save-bar .btn-primary { flex: 1.6; }
+}

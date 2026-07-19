@@ -14,6 +14,22 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.19.1] - 2026-07-18
+
+### Fixed
+
+- [Frontend/Settings] Verschiebt die Schaltflächen Speichern und Verwerfen aus der Karte Anwendungsparameter an das Ende von Sektion A. Sie galten schon bisher für sämtliche Felder der Sektion, standen aber seit den Ergänzungen um Kill-Switch, Sicherung und MQTT mitten auf der Seite und wirkten dadurch, als beträfen sie nur die umgebende Karte.
+- [Frontend/Settings] Hält die Leiste über `position: sticky` beim Scrollen am unteren Rand sichtbar; am Seitenende kommt sie in ihrer natürlichen Position zur Ruhe. Anders als ein fest positioniertes Element braucht das keinen von Hand gepflegten Inhaltsabstand und bleibt nicht sichtbar, wenn Sektion B geöffnet ist.
+- [Frontend/Settings] Rückt die Leiste auf schmalen Viewports über die untere Navigationsleiste, damit sie nicht darunter liegt.
+- [Frontend/Settings] Beziffert die ungespeicherten Änderungen und sperrt das Speichern, solange ein Feld die Prüfung nicht besteht; zuvor führte ein Klick zu einer Fehlermeldung erst nach dem Versuch.
+- [Frontend/Settings] Erkennt ein neu eingetragenes MQTT-Passwort als Änderung. Da der Server das Passwort nie zurückgibt, wurde es vom bisherigen Abgleich nicht erfasst und der Speichern-Button blieb gesperrt.
+
+### Changed
+
+- [Frontend/style.css] Kennzeichnet den Zustand der Leiste über die Rahmenfarbe statt über eine Farbfläche, damit die Unterscheidung im Hochkontrast-Theme und bei Farbfehlsichtigkeit erhalten bleibt.
+
+---
+
 ## [2.19.0] - 2026-07-18
 
 ### Added
@@ -476,7 +492,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.1...HEAD
+[2.19.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.0...v2.19.1
 [2.19.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.18.0...v2.19.0
 [2.18.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.17.0...v2.18.0
 [2.17.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.16.0...v2.17.0

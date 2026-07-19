@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.19.0";
+const APP_VERSION = "2.19.1";
 const APP_CHANGELOG = [
+  { v: "2.19.1", d: "18.07.2026", items: [
+    "Speichern-Leiste am Ende der Einstellungen statt mitten auf der Seite",
+    "Bleibt beim Scrollen am unteren Rand sichtbar und zeigt die Zahl der Änderungen",
+    "Speichern gesperrt, solange ein Feld fehlerhaft ist",
+  ]},
   { v: "2.19.0", d: "18.07.2026", items: [
     "Rohdaten-Export als flaches CSV über alle Systeme und als strukturiertes JSON",
     "CSV wahlweise für Excel (Semikolon, Dezimalkomma, BOM) oder pandas/R",
@@ -2091,11 +2096,18 @@ createApp({
       this.settingsErrors = err;
       return Object.keys(err).length === 0;
     },
-    settingsDirty() {
-      if (!this.appSettings || !this.appSettingsDraft) return false;
-      return Object.keys(this.appSettings).some(
+    settingsChangedKeys() {
+      if (!this.appSettings || !this.appSettingsDraft) return [];
+      return Object.keys(this.appSettings).filter(
         (k) => String(this.appSettings[k]) !== String(this.appSettingsDraft[k]));
     },
+    settingsChangeCount() {
+      // Das Passwort steckt nicht in appSettings – es wird nie zurückgegeben –
+      // zählt aber als Änderung, sobald etwas eingetippt wurde.
+      return this.settingsChangedKeys().length + (this.mqttPassword ? 1 : 0);
+    },
+    settingsDirty() { return this.settingsChangeCount() > 0; },
+    settingsErrorCount() { return Object.keys(this.settingsErrors || {}).length; },
     async saveSettings() {
       if (!this.validateSettings()) { this.notify("Bitte Eingaben prüfen", "err"); return; }
       this.settingsSaving = true;
@@ -2413,10 +2425,6 @@ createApp({
             <div class="hint" v-else>Ø + n·σ gilt als Ausreißer. Kleiner = empfindlicher. Standard 2,0.</div>
           </div>
 
-          <div class="settings-actions">
-            <button class="btn" :disabled="!settingsDirty()" @click="revertSettings">Verwerfen</button>
-            <button class="btn btn-primary" :disabled="settingsSaving || !settingsDirty()" @click="saveSettings">Speichern</button>
-          </div>
         </div>
 
         <div class="card set-card" v-if="sysInfo">
@@ -2596,6 +2604,27 @@ createApp({
             </tr>
           </table>
           <div class="hint" v-else-if="backupStatus">Noch keine Sicherung vorhanden.</div>
+        </div>
+
+        <!-- Speichern gilt für ALLE Felder der Sektion A, nicht nur für die
+             Karte, in der der Button bisher stand. Deshalb eigene Leiste am
+             Ende, die beim Scrollen am unteren Rand haften bleibt. -->
+        <div class="save-bar" :class="{ dirty: settingsDirty(), invalid: settingsErrorCount() > 0 }"
+             v-if="appSettingsDraft">
+          <div class="sb-info">
+            <span v-if="settingsSaving">Speichert …</span>
+            <span v-else-if="settingsErrorCount()" class="sb-err">
+              ⚠ {{ settingsErrorCount() }} {{ settingsErrorCount()===1 ? 'Feld' : 'Felder' }} prüfen
+            </span>
+            <span v-else-if="settingsDirty()">
+              {{ settingsChangeCount() }} ungespeicherte Änderung{{ settingsChangeCount()===1 ? '' : 'en' }}
+            </span>
+            <span v-else class="sb-clean">✓ Alles gespeichert</span>
+          </div>
+          <button class="btn" :disabled="!settingsDirty() || settingsSaving" @click="revertSettings">Verwerfen</button>
+          <button class="btn btn-primary"
+                  :disabled="settingsSaving || !settingsDirty() || settingsErrorCount() > 0"
+                  @click="saveSettings">Speichern</button>
         </div>
       </template>
 
