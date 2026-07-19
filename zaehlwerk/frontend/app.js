@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "2.20.0";
+const APP_VERSION = "2.21.0";
 const APP_CHANGELOG = [
+  { v: "2.21.0", d: "18.07.2026", items: [
+    "Mobile Systemauswahl als Modal Bottom Sheet über die untere Navigationsleiste",
+    "Tipp auf das bereits aktive Zählwerk-Ziel öffnet die Liste, sonst führt er zur Übersicht",
+    "Gleiche Sprungziele wie in der Desktop-Sidebar",
+  ]},
   { v: "2.20.0", d: "18.07.2026", items: [
     "SML-Telegramme werden erkannt, auch wenn der Gruppenname frei gewählt ist",
     "Rohdaten und alle Zahlenpfade werden bei nicht erkanntem Telegramm angezeigt",
@@ -1806,6 +1811,7 @@ createApp({
     navDrawer: false,
     navItems: NAV_ITEMS,
     navSubOpen: localStorage.getItem("zw_nav_sub") === "1",
+    showSysSheet: false,
   }),
   computed: {
     visibleSystems() { return this.systems.filter((s) => this.showArchived || s.aktiv); },
@@ -1818,6 +1824,7 @@ createApp({
     activeNav() { return this.view === "settings" ? "einstellungen" : "zaehlwerk"; },
     navMenuIcon() { return SVG.menu; },
     chevronIcon() { return SVG.chevron; },
+    navHomeIcon() { return SVG.home; },
     /* Unterpunkte = aktive Systeme in der Reihenfolge der Übersicht.
        Archivierte bleiben draußen: die Sidebar ist ein Sprungziel für den
        Alltag, nicht der Ort, an dem Altbestand verwaltet wird. */
@@ -1865,10 +1872,43 @@ createApp({
       this.closeDrawer();
       this.open(s);
     },
-    onNavKey(ev) { if (ev.key === "Escape" && this.navDrawer) this.navDrawer = false; },
+
+    /* ---------- Mobile Bottom Sheet ---------- */
+    /* M3: die Primäraktion eines Navigationsziels muss immer zuerst greifen.
+       Der erste Tipp führt daher zur Übersicht; erst ein Tipp auf das BEREITS
+       aktive Ziel öffnet die Systemauswahl. So ist die Übersicht nie hinter
+       einem Overlay versteckt, und der Pfeil am aktiven Eintrag zeigt an,
+       dass dort noch etwas liegt. */
+    goNavMobile(item) {
+      if (item.expandable && this.navSubItems.length && this.activeNav === item.key) {
+        this.showSysSheet = true;
+        return;
+      }
+      this.goNav(item);
+    },
+    sheetGoOverview() {
+      this.showSysSheet = false;
+      this.back();
+    },
+    sheetGoSystem(s) {
+      this.showSysSheet = false;
+      this.open(s);
+    },
+    sheetNewSystem() {
+      this.showSysSheet = false;
+      this.newSystem();
+    },
+    onNavKey(ev) {
+      if (ev.key !== "Escape") return;
+      if (this.showSysSheet) { this.showSysSheet = false; return; }
+      if (this.navDrawer) this.navDrawer = false;
+    },
     /* Beim Wechsel auf einen schmalen Viewport darf kein Drawer offen bleiben,
        sonst laege er unsichtbar ueber der Bottom-Bar und blockierte Klicks. */
-    onNavResize() { if (this.isCompact() && this.navDrawer) this.navDrawer = false; },
+    onNavResize() {
+      if (this.isCompact() && this.navDrawer) this.navDrawer = false;
+      if (!this.isCompact() && this.showSysSheet) this.showSysSheet = false;
+    },
     openSettings() {
       this.view = "settings";
       window.scrollTo(0, 0);
@@ -2312,11 +2352,46 @@ createApp({
   <!-- Bottom Navigation (Mobile) -->
   <nav class="nav-bottom" aria-label="Schnellzugriff">
     <button v-for="it in visibleNavItems.filter(i => i.primary)" :key="it.key"
-            class="nav-item" :class="{ active: activeNav===it.key }" @click="goNav(it)">
+            class="nav-item" :class="{ active: activeNav===it.key, 'has-sub': it.expandable && navSubItems.length }"
+            :aria-haspopup="it.expandable && navSubItems.length ? 'dialog' : null"
+            :aria-expanded="it.expandable ? String(showSysSheet) : null"
+            @click="goNavMobile(it)">
       <span class="nav-pill" v-html="it.icon"></span>
       {{ it.label }}
+      <!-- Hinweis, dass hinter dem aktiven Eintrag mehr steckt -->
+      <span v-if="it.expandable && navSubItems.length && activeNav===it.key"
+            class="nav-caret" v-html="chevronIcon" aria-hidden="true"></span>
     </button>
   </nav>
+
+  <!-- Modal Bottom Sheet: Systemauswahl (Mobile) -->
+  <div class="sheet-scrim" v-if="showSysSheet" @click="showSysSheet=false"></div>
+  <div class="sys-sheet" v-if="showSysSheet" role="dialog" aria-modal="true"
+       aria-label="System wählen">
+    <div class="sheet-handle" @click="showSysSheet=false"></div>
+    <div class="sheet-head">
+      <h3>System wählen</h3>
+      <span class="sheet-count">{{ navSubItems.length }}</span>
+    </div>
+    <div class="sheet-list">
+      <button class="sheet-item" :class="{ active: view==='menu' }" @click="sheetGoOverview">
+        <span class="si-icon" v-html="navHomeIcon"></span>
+        <span class="si-label">Übersicht</span>
+        <span class="si-meta">alle Systeme</span>
+      </button>
+      <div class="sheet-sep"></div>
+      <button v-for="s in navSubItems" :key="s.id" class="sheet-item"
+              :class="{ active: view==='detail' && selected===s.id }" @click="sheetGoSystem(s)">
+        <span class="si-dot" :style="{background: s.farbe}"></span>
+        <span class="si-label">{{ typeIcon(s.typ) }} {{ s.name }}</span>
+        <span class="si-meta">{{ s.einheit }}</span>
+      </button>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn" @click="showSysSheet=false">Schließen</button>
+      <button class="btn btn-primary" @click="sheetNewSystem">＋ System anlegen</button>
+    </div>
+  </div>
 
   <!-- FAB (Mobile) -->
   <div class="fab-screen"><button class="fab" @click="fabAction" :title="view==='menu' ? 'System anlegen' : 'Neuer Wert'">＋</button></div>

@@ -14,6 +14,22 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [2.21.0] - 2026-07-18
+
+### Added
+
+- [Frontend/Mobile-Nav] Ergänzt die Systemauswahl auf schmalen Viewports als modales Bottom Sheet. Es listet dieselben Ziele wie die Unterliste der Desktop-Sidebar, jeweils mit Farbpunkt, Typ-Symbol, Name und Einheit, und hebt das geöffnete System hervor.
+- [Frontend/Mobile-Nav] Ergänzt im Sheet einen Eintrag für die Übersicht sowie eine Schaltfläche zum Anlegen eines Systems.
+- [Frontend/Mobile-Nav] Ergänzt am aktiven Zählwerk-Ziel der unteren Navigationsleiste einen Pfeil als Hinweis darauf, dass sich dort die Auswahl öffnen lässt.
+- [Frontend/Mobile-Nav] Schließt das Sheet über Auswahl, Tippen auf den abgedunkelten Hintergrund, die Escape-Taste sowie beim Wechsel auf einen breiten Viewport, wo die Sidebar die Aufgabe übernimmt.
+
+### Changed
+
+- [Frontend/Mobile-Nav] Legt fest, dass ein Tipp auf das Zählwerk-Ziel zunächst zur Übersicht führt und erst ein weiterer Tipp auf das bereits aktive Ziel die Auswahl öffnet. Damit bleibt die Primäraktion des Navigationsziels erhalten, statt hinter einem Overlay zu verschwinden.
+- [Frontend/style.css] Führt für das Sheet eigene Regeln ein, statt die Dialogdarstellung aus 2.9.1 mitzunutzen; jene greift erst ab 640 Pixel abwärts, die untere Navigationsleiste erscheint jedoch bereits ab 840 Pixel.
+
+---
+
 ## [2.20.0] - 2026-07-18
 
 ### Fixed
@@ -512,7 +528,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.20.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.21.0...HEAD
+[2.21.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.20.0...v2.21.0
 [2.20.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.1...v2.20.0
 [2.19.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.19.0...v2.19.1
 [2.19.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v2.18.0...v2.19.0
