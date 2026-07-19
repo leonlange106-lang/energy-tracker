@@ -14,6 +14,14 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.2.2] - 2026-07-19
+
+### Changed
+
+- [Deployment/config.yaml] Hebt die Version auf 3.2.2 an. Der Inhalt entspricht 3.2.1; die Nummer war bereits durch eine unvollständige Auslieferung belegt, in der `app/routers/auth.py` fehlte. Home Assistant vergleicht die Angabe in `config.yaml` mit der installierten Fassung und hätte bei gleicher Nummer kein Update angeboten.
+
+---
+
 ## [3.2.1] - 2026-07-19
 
 ### Fixed
@@ -620,7 +628,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.1...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.2...HEAD
+[3.2.2]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.1...v3.2.2
 [3.2.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.0.0...v3.1.0

@@ -4,10 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.2.1";
+const APP_VERSION = "3.2.2";
 const APP_CHANGELOG = [
+  { v: "3.2.2", d: "19.07.2026", items: [
+    "Erneute Auslieferung des 3.2.1-Standes unter neuer Nummer",
+  ]},
   { v: "3.2.1", d: "19.07.2026", items: [
     "Startabbruch behoben: Modulkonstante wurde vor ihrer Definition verwendet",
+    "Auslieferung als vollständiges Paket statt Einzeldateien",
   ]},
   { v: "3.2.0", d: "18.07.2026", items: [
     "Rollen: Administrator, Schreiber, Leser, Gast",
