@@ -4,8 +4,12 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.5.0";
+const APP_VERSION = "3.5.1";
 const APP_CHANGELOG = [
+  { v: "3.5.1", d: "19.07.2026", items: [
+    "Changelog erscheint jetzt im Update-Dialog von Home Assistant",
+    "deploy.ps1 prüft die Versionsgleichheit und setzt das Git-Tag selbst",
+  ]},
   { v: "3.5.0", d: "19.07.2026", items: [
     "Dashboard mit frei anordenbaren Kacheln, je Konto gespeichert",
     "Kacheln: Letzter Stand, Verlauf, Verteilung, Kosten",
