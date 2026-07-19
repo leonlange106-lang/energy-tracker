@@ -1301,3 +1301,57 @@ input[type="number"] { height: var(--tap-min); min-height: 0; padding: 0 14px; }
 @media (max-width: 520px) {
   .exp-dates { display: grid; grid-template-columns: 1fr; gap: 12px; }
 }
+
+/* ---------- Sammelauswahl in der Werte-Tabelle ---------- */
+.col-sel { width: 44px; text-align: center; padding-right: 0 !important; }
+.col-sel input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
+@media (pointer: coarse) {
+  .col-sel { width: 52px; }
+  .col-sel input[type="checkbox"] { width: 24px; height: 24px; }
+}
+/* Markierte Zeile über Fläche UND linke Kante kennzeichnen: die Fläche allein
+   ist im Hochkontrast-Theme kaum vom Zeilenwechsel zu unterscheiden. */
+.row-main.picked > td { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+.row-main.picked > td:first-child { box-shadow: inset 3px 0 0 var(--md-primary); }
+
+.select-hint {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 2px;
+  background: var(--md-surface-c); border-bottom: 1px solid var(--md-outline-variant);
+  font-size: 13px; color: var(--md-on-surface-variant);
+}
+
+/* Aktionsleiste: haftet unten, weicht aber der Navigationsleiste und dem
+   Freiraum für die schwebende Schaltfläche aus. */
+.bulk-bar {
+  position: sticky; z-index: 25;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 10px;
+  margin: 14px 0 4px; padding: 12px 16px;
+  border-radius: 24px;
+  background: var(--md-inverse-surface); color: var(--md-inverse-on-surface);
+  box-shadow: var(--md-shadow-3);
+  animation: bulk-in var(--dur-med) var(--ease-emph-decel);
+}
+@keyframes bulk-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.bb-info { flex: 1; min-width: 0; font-size: 14px; }
+.bb-info strong { font-size: 16px; }
+.bb-info small { opacity: .75; margin-left: 4px; }
+/* Auf der dunklen Leiste brauchen die Schaltflächen eigene Farben. */
+.bulk-bar .btn { background: transparent; color: var(--md-inverse-on-surface);
+  border: 1px solid color-mix(in srgb, var(--md-inverse-on-surface) 45%, transparent); }
+.bulk-bar .btn:hover { background: color-mix(in srgb, var(--md-inverse-on-surface) 12%, transparent); }
+.bulk-bar .holdbtn { color: var(--md-inverse-on-surface);
+  border-color: color-mix(in srgb, var(--md-inverse-on-surface) 45%, transparent); }
+
+@media (max-width: 840px) {
+  .bulk-bar { bottom: calc(var(--fab-gap) + 8px); }
+}
+@media (max-width: 520px) {
+  .bulk-bar { flex-wrap: wrap; }
+  .bb-info { flex: 1 0 100%; margin-bottom: 4px; }
+  .bulk-bar .btn, .bulk-bar .holdbtn { flex: 1; justify-content: center; }
+}

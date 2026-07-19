@@ -15,7 +15,8 @@ from ..version import APP_VERSION
 from ..due import system_due_entries
 from ..database import get_session
 from ..models import Meter, Reading, System, Tariff
-from ..schemas import ChartData, ReadingCreate, ReadingRead, StatsRead
+from ..schemas import (BulkDeleteRequest, ChartData, ReadingCreate,
+                       ReadingRead, StatsRead)
 from .settings import read_settings
 
 router = APIRouter(tags=["readings"])
@@ -329,6 +330,47 @@ def _export_sections(session: Session, systems_param: Optional[str],
                 .order_by(Tariff.gueltig_ab)).all()]
         sections.append(section)
     return sections
+
+
+@router.post("/api/systems/{system_id}/readings/bulk-delete")
+def bulk_delete_readings(system_id: str, payload: BulkDeleteRequest,
+                         session: Session = Depends(get_session)):
+    """Mehrere Ablesungen in einem Vorgang löschen.
+
+    Bewusst ein eigener Endpunkt statt vieler Einzelaufrufe: nur so ist die
+    Löschung atomar. Bräche ein Aufruf in der Mitte ab, bliebe ein halb
+    bereinigter Bestand zurück – und weil sich jeder Verbrauchswert aus dem
+    Abstand zur Vorablesung ergibt, wäre die Auswertung danach schlicht falsch.
+
+    Die Kennungen werden gegen das System geprüft. Fremde oder unbekannte
+    Kennungen entfallen still, statt den ganzen Vorgang scheitern zu lassen;
+    die Antwort nennt die tatsächlich gelöschte Anzahl.
+    """
+    system = _require_system(system_id, session)
+    ids = {i.strip() for i in payload.ids if i and i.strip()}
+    if not ids:
+        raise HTTPException(422, "Keine Kennungen übergeben")
+
+    rows = session.exec(
+        select(Reading).where(Reading.system_id == system.id, Reading.id.in_(ids))
+    ).all()
+    if not rows:
+        raise HTTPException(404, "Keine passenden Ablesungen gefunden")
+
+    # Ein Zählertausch markiert den Beginn eines neuen Zählwerks. Wird er
+    # gelöscht, rechnet die Auswertung über die Tauschgrenze hinweg und
+    # liefert einen sinnlosen Verbrauch. Die Antwort weist das aus.
+    swaps = [r for r in rows if r.meter_replaced]
+
+    for row in rows:
+        session.delete(row)
+    session.commit()
+
+    return {"deleted": len(rows), "requested": len(ids),
+            "meter_replacements_removed": len(swaps),
+            "remaining": session.exec(
+                select(func.count()).select_from(Reading)
+                .where(Reading.system_id == system.id)).one()}
 
 
 @router.get("/api/export/data.csv")

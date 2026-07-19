@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.3.1";
+const APP_VERSION = "3.4.0";
 const APP_CHANGELOG = [
+  { v: "3.4.0", d: "19.07.2026", items: [
+    "Sammelauswahl in der Werte-Tabelle mit Aktionsleiste",
+    "Seite oder alle Treffer auswählen, Auswahl überlebt Seitenwechsel",
+    "Sammellöschung in einem Vorgang statt vieler Einzelaufrufe",
+  ]},
   { v: "3.3.1", d: "19.07.2026", items: [
     "Schwebende Schaltfläche verdeckt die letzte Tabellenzeile nicht mehr",
     "Datumsfelder haben dieselbe Höhe wie Textfelder",
@@ -738,6 +743,12 @@ const SystemDetail = {
   emits: ["back", "edit", "changed"],
   data: () => ({
     tab: "chart",
+    /* Sammelauswahl. Die Kennungen liegen in einem Set, nicht als Marke am
+       Datensatz: so überlebt die Auswahl Seitenwechsel, Sortierung und
+       Neuladen der Zeilen. */
+    selectMode: false,
+    selected: new Set(),
+    bulkBusy: false,
     // Zähler-Metadaten (v2.10.0) + Hardware-Empfehlung
     meters: [],
     metersLoaded: false,
@@ -819,6 +830,34 @@ const SystemDetail = {
     },
     outlierColor() { return chartColor("outlier", "#9A6A00"); },
     canWrite() { return canWriteNow(); },
+
+    /* Grundlage aller Auswahllogik ist die GEFILTERTE Menge, nicht die
+       Rohdaten: "alle auswählen" bei gesetztem Filter darf nur das treffen,
+       was der Nutzer auch sieht. */
+    selectableIds() { return this.filtered.map((r) => r.id); },
+    pageIds() { return this.paged.map((r) => r.id); },
+    selectedCount() { return this.selected.size; },
+    pageAllSelected() {
+      const ids = this.pageIds;
+      return ids.length > 0 && ids.every((id) => this.selected.has(id));
+    },
+    pageSomeSelected() {
+      return !this.pageAllSelected && this.pageIds.some((id) => this.selected.has(id));
+    },
+    allFilteredSelected() {
+      const ids = this.selectableIds;
+      return ids.length > 0 && ids.every((id) => this.selected.has(id));
+    },
+    /* Hinweis anbieten, sobald die Seite vollständig markiert ist, es aber
+       außerhalb der Seite noch weitere Treffer gibt. Ohne diesen Schritt
+       glaubt man leicht, mit dem Kopf-Häkchen alles erfasst zu haben. */
+    canSelectAllFiltered() {
+      return this.pageAllSelected && !this.allFilteredSelected
+             && this.selectableIds.length > this.pageIds.length;
+    },
+    selectedSwaps() {
+      return this.filtered.filter((r) => this.selected.has(r.id) && r.meter_replaced).length;
+    },
     canExport() { return canExportNow(); },
     chart() {
       if (!this.chartData) return { labels: [], datasets: [] };
@@ -902,7 +941,14 @@ const SystemDetail = {
   },
   watch: {
     range() { this.loadDynamic(); },
+    /* Ändert sich die gefilterte Menge, wären zuvor markierte Zeilen unsichtbar
+       ausgewählt – und ein Klick auf Löschen träfe Datensätze, die gerade
+       niemand sieht. Deshalb Auswahl verwerfen. */
+    filter() { if (this.selected.size) this.clearSelection(); },
+    onlyOutliers() { if (this.selected.size) this.clearSelection(); },
     tab(v) {
+      // Auswahlmodus gehört zur Werte-Tabelle; beim Verlassen aufräumen.
+      if (v !== "list" && this.selectMode) { this.selectMode = false; this.clearSelection(); }
       if (v === "meters" && !this.metersLoaded) this.loadMeters();
       if (v === "tariffs" && !this.tariffsLoaded) this.loadTariffs();
     },
@@ -1066,7 +1112,51 @@ const SystemDetail = {
       if (i >= 0) this.overlayIds.splice(i, 1);
       else this.overlayIds.push(id);
     },
-    toggleRow(id) { this.expandedId = this.expandedId === id ? null : id; },
+    /* ---------- Sammelauswahl ---------- */
+    toggleSelectMode() {
+      this.selectMode = !this.selectMode;
+      if (!this.selectMode) this.clearSelection();
+      // Aufgeklappte Zeile schließen: im Auswahlmodus wäre der Klick auf die
+      // Zeile doppelt belegt.
+      this.expandedId = null;
+    },
+    clearSelection() { this.selected = new Set(); },
+    toggleSelect(id) {
+      // Neues Set statt Mutation: Vue 3 verfolgt Set-Änderungen zwar, aber
+      // eine neue Referenz macht abgeleitete Werte zuverlässig neu berechnet.
+      const next = new Set(this.selected);
+      next.has(id) ? next.delete(id) : next.add(id);
+      this.selected = next;
+    },
+    togglePage() {
+      const next = new Set(this.selected);
+      if (this.pageAllSelected) this.pageIds.forEach((id) => next.delete(id));
+      else this.pageIds.forEach((id) => next.add(id));
+      this.selected = next;
+    },
+    selectAllFiltered() { this.selected = new Set(this.selectableIds); },
+
+    async deleteSelected() {
+      if (!this.selected.size) return;
+      this.bulkBusy = true;
+      try {
+        const res = await api(`/api/systems/${this.system.id}/readings/bulk-delete`, {
+          method: "POST", body: JSON.stringify({ ids: [...this.selected] }),
+        });
+        const swaps = res.meter_replacements_removed
+          ? ` – darunter ${res.meter_replacements_removed} Zählertausch`
+          : "";
+        this.notify(`${res.deleted} Ablesung${res.deleted === 1 ? "" : "en"} gelöscht${swaps}`, "ok");
+        this.clearSelection();
+        this.selectMode = false;
+        await this.loadDynamic();
+        this.$emit("changed");
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.bulkBusy = false; }
+    },
+
+    toggleRow(id) {
+      if (this.selectMode) { this.toggleSelect(id); return; } this.expandedId = this.expandedId === id ? null : id; },
     setSort(k) { if (this.sortKey === k) this.sortDir = this.sortDir === "asc" ? "desc" : "asc"; else { this.sortKey = k; this.sortDir = "desc"; } },
     arrow(k) { return this.sortKey === k ? (this.sortDir === "asc" ? "↑" : "↓") : ""; },
 
@@ -1511,6 +1601,10 @@ const SystemDetail = {
         <input class="input" v-model="filter" placeholder="Filtern (Notiz / Datum)…" />
         <label class="check"><input type="checkbox" v-model="onlyOutliers" /> nur Ausreißer</label>
         <div class="spacer" style="flex:1"></div>
+        <button v-if="canWrite && readings.length" class="btn btn-sm"
+                :class="{'btn-tonal': selectMode}" @click="toggleSelectMode">
+          {{ selectMode ? '✕ Auswahl beenden' : '☑ Auswählen' }}
+        </button>
       </div>
 
       <div v-if="!readings.length" class="empty">
@@ -1520,10 +1614,24 @@ const SystemDetail = {
       </div>
 
       <div class="card" v-else>
+        <div v-if="selectMode && canSelectAllFiltered" class="select-hint">
+          Alle {{ pageIds.length }} auf dieser Seite ausgewählt.
+          <button class="crumb" @click="selectAllFiltered">
+            Alle {{ selectableIds.length }} Treffer auswählen
+          </button>
+        </div>
+
         <div class="table-scroll">
         <table>
           <thead>
             <tr>
+              <th v-if="selectMode" class="col-sel">
+                <!-- Zwischenstand über :indeterminate, sonst wäre eine teilweise
+                     markierte Seite optisch nicht von einer leeren zu unterscheiden. -->
+                <input type="checkbox" :checked="pageAllSelected"
+                       :indeterminate.prop="pageSomeSelected"
+                       @change="togglePage" :title="pageAllSelected ? 'Seite abwählen' : 'Seite auswählen'" />
+              </th>
               <th @click="setSort('datum')">Datum <span class="arrow">{{ arrow('datum') }}</span></th>
               <th @click="setSort('value')" class="r">Zählerstand <span class="arrow">{{ arrow('value') }}</span></th>
               <th @click="setSort('consumption')" class="r">Verbrauch <span class="arrow">{{ arrow('consumption') }}</span></th>
@@ -1534,7 +1642,11 @@ const SystemDetail = {
           </thead>
           <tbody>
             <template v-for="r in paged" :key="r.id">
-            <tr class="row-main" :class="{expanded: expandedId===r.id}" @click="toggleRow(r.id)">
+            <tr class="row-main" :class="{expanded: expandedId===r.id, picked: selected.has(r.id)}"
+                @click="toggleRow(r.id)">
+              <td v-if="selectMode" class="col-sel">
+                <input type="checkbox" :checked="selected.has(r.id)" @click.stop="toggleSelect(r.id)" />
+              </td>
               <td>{{ fmtDate(r.datum) }}</td>
               <td class="r num">{{ fmt(r.value, 1) }}</td>
               <td class="r num">
@@ -1545,12 +1657,12 @@ const SystemDetail = {
               </td>
               <td class="r num col-cost">{{ r.cost_effective === null || r.cost_effective === undefined ? '–' : (r.cost_estimated ? '≈ ' : '') + fmt(r.cost_effective) }}</td>
               <td class="col-note">{{ r.note || '' }}</td>
-              <td class="r col-del" style="white-space:nowrap">
+              <td class="r col-del" style="white-space:nowrap" v-if="!selectMode">
                 <button class="iconbtn" style="width:32px;height:32px" @click.stop="openEditReading(r)" title="Bearbeiten">✎</button>
                 <hold-button :small="true" :round="true" @held="deleteReading(r)">✕</hold-button>
               </td>
             </tr>
-            <tr v-if="expandedId===r.id" class="row-detail">
+            <tr v-if="expandedId===r.id && !selectMode" class="row-detail">
               <td colspan="6">
                 <div class="detail-grid">
                   <div><span class="dg-label">Kosten</span><span class="num">{{ r.cost_effective === null || r.cost_effective === undefined ? '–' : (r.cost_estimated ? '≈ ' : '') + fmt(r.cost_effective) + ' €' }}<span v-if="r.cost_estimated" class="hint-inline"> (geschätzt via Ø-Preis)</span></span></div>
@@ -1573,6 +1685,18 @@ const SystemDetail = {
           <button class="btn btn-sm" :disabled="page>=pageCount" @click="page++">Weiter ›</button>
         </div>
       </div>
+    </div>
+
+    <!-- Aktionsleiste der Sammelauswahl -->
+    <div class="bulk-bar" v-if="selectMode && selectedCount">
+      <div class="bb-info">
+        <strong>{{ selectedCount }}</strong> ausgewählt
+        <small v-if="selectedSwaps">· {{ selectedSwaps }} Zählertausch</small>
+      </div>
+      <button class="btn btn-sm" :disabled="bulkBusy" @click="clearSelection">Aufheben</button>
+      <hold-button :small="true" :disabled="bulkBusy" @held="deleteSelected">
+        {{ bulkBusy ? 'Löscht …' : '✕ Löschen (halten)' }}
+      </hold-button>
     </div>
 
     <!-- TAB: Zähler + Hardware-Empfehlung -->

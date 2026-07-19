@@ -14,6 +14,29 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.4.0] - 2026-07-19
+
+### Added
+
+- [Frontend/Table] Ergänzt einen Auswahlmodus in der Werte-Tabelle. Er ist standardmäßig aus und wird über eine Schaltfläche in der Werkzeugleiste eingeschaltet; sichtbar ist sie nur für Konten mit Schreibrecht.
+- [Frontend/Table] Ergänzt je Zeile ein Kontrollkästchen sowie eines in der Kopfzeile, das die aktuelle Seite auswählt. Bei teilweiser Auswahl wird der Zwischenstand angezeigt, sodass sich eine teilweise markierte Seite von einer leeren unterscheiden lässt.
+- [Frontend/Table] Ergänzt einen Hinweis, sobald die Seite vollständig markiert ist, außerhalb aber weitere Treffer liegen, samt Schaltfläche zur Auswahl aller gefilterten Einträge.
+- [Frontend/Table] Ergänzt eine Aktionsleiste, die ab dem ersten markierten Eintrag am unteren Rand einblendet, die Anzahl nennt und Aufheben sowie Löschen anbietet. Enthält die Auswahl Zählertausche, weist die Leiste deren Zahl gesondert aus.
+- [Backend/routers/readings.py] Ergänzt `POST /api/systems/{id}/readings/bulk-delete`. Die Löschung erfolgt in einem Vorgang, da jeder Verbrauchswert sich aus dem Abstand zur Vorablesung ergibt und ein Abbruch mitten in einer Folge von Einzelaufrufen einen widersprüchlichen Bestand hinterlassen würde.
+- [Backend/schemas.py] Begrenzt eine Sammellöschung auf tausend Kennungen je Aufruf.
+
+### Changed
+
+- [Frontend/Table] Blendet die Einzelaktionen je Zeile und die aufklappbare Detailzeile im Auswahlmodus aus, da der Klick auf die Zeile dort die Auswahl steuert.
+- [Frontend/Table] Verwirft die Auswahl beim Ändern von Filter oder Ausreißer-Einschränkung sowie beim Verlassen des Reiters. Andernfalls blieben Einträge unsichtbar markiert und eine Löschung träfe Datensätze, die gerade niemand sieht.
+- [Backend/routers/readings.py] Übergeht beim Sammellöschen Kennungen, die nicht zum System gehören oder nicht bestehen, statt den gesamten Vorgang abzubrechen; die Antwort nennt die tatsächlich gelöschte Anzahl und die verbleibenden Ablesungen.
+
+### Fixed
+
+- [Frontend/app.js] Führt zwei gleichnamige Beobachter für den aktiven Reiter zusammen. In einem Objektliteral überschreibt der zweite Eintrag den ersten stillschweigend, wodurch das Nachladen von Zählern und Tarifen ausgefallen wäre.
+
+---
+
 ## [3.3.1] - 2026-07-19
 
 ### Fixed
@@ -663,7 +686,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.3.1...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.2...v3.3.0
 [3.2.2]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.2.1...v3.2.2

@@ -425,3 +425,9 @@ class SqlQueryRequest(BaseModel):
     """Lesende Datenbankabfrage. Die Prüfung erfolgt serverseitig; die
     Längengrenze fängt nur offensichtlichen Unfug früh ab."""
     sql: str = Field(..., min_length=1, max_length=4000)
+
+
+class BulkDeleteRequest(BaseModel):
+    """Sammellöschung. Die Obergrenze verhindert, dass ein versehentlich
+    erzeugter Aufruf den gesamten Bestand in einem Zug entfernt."""
+    ids: list[str] = Field(..., min_length=1, max_length=1000)
