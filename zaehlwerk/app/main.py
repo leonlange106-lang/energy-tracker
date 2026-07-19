@@ -11,7 +11,8 @@ from sqlmodel import Session
 
 from .database import engine, init_db
 from .version import APP_VERSION
-from . import auth as auth_mod, backup as backup_mod, mqtt_client, notifier, outbound
+from . import (audit, auth as auth_mod, backup as backup_mod, mqtt_client,
+               notifier, outbound)
 from .routers import (admin, auth as auth_router, backups, dashboard, external,
                       ha, imports, meters, mqtt, ocr as ocr_router, readings,
                       settings as settings_router, systems, tariffs)
@@ -84,7 +85,14 @@ async def auth_middleware(request: Request, call_next):
         }, status_code=403)
 
     request.state.user = user
-    return await call_next(request)
+    # Konto für das Änderungsprotokoll hinterlegen. Muss nach der Anfrage
+    # zurückgesetzt werden, sonst schriebe der nächste Aufruf im selben
+    # Arbeitsfaden unter fremdem Namen.
+    audit.set_actor(user)
+    try:
+        return await call_next(request)
+    finally:
+        audit.clear_actor()
 
 
 @app.on_event("startup")
@@ -95,6 +103,9 @@ async def _startup():
     # Protokollpuffer vor allem anderen: sonst fehlen die Meldungen der
     # Startphase genau dann, wenn man sie braucht.
     admin.install_log_buffer()
+    # Vor init_db: die Ereignisse sollen auch Änderungen aus Migrationen und
+    # dem Startvorgang erfassen.
+    audit.install()
     outbound.install_socket_guard()
     init_db()
     if not auth_mod.ingress_mode() and not auth_mod.crypto_available():

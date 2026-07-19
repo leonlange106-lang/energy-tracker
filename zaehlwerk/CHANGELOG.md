@@ -14,6 +14,28 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.8.0] - 2026-07-19
+
+### Added
+
+- [Backend/Security] Ergänzt die Tabelle `audit_logs` mit Zeitpunkt, Konto, Aktion, Zieltabelle, Datensatzkennung sowie altem und neuem Wert als JSON; Migration 8 hebt `PRAGMA user_version` auf 8.
+- [Backend/Middleware] Ergänzt Ereignisbehandlungen der SQLAlchemy-Sitzung, die Anlegen, Ändern und Löschen an Ablesungen, Systemen, Tarifen, Zählern, Konten und Einstellungen selbsttätig festhalten. Bei Änderungen werden ausschließlich die tatsächlich veränderten Felder mit ihrem vorherigen und neuen Wert abgelegt.
+- [Backend/routers/admin.py] Ergänzt `GET /api/admin/audit` mit serverseitiger Seitenaufteilung und Filterung nach Aktion, Tabelle, Konto und Zeitraum sowie `GET /api/admin/audit/facets` für die Auswahlwerte.
+- [Backend/routers/settings.py] Ergänzt den Parameter `audit_keep_days` mit einer Untergrenze von dreißig Tagen.
+- [Backend/backup.py] Beschneidet das Änderungsprotokoll im täglichen Sicherungslauf, statt dafür einen zweiten Zeitplan zu führen.
+- [Frontend/Admin] Ergänzt den Reiter Änderungen in den Admin-Werkzeugen mit schreibgeschützter Tabelle, Filterleiste und Seitenblättern.
+
+### Security
+
+- [Backend/Security] Setzt die Unveränderlichkeit auf Datenbankebene durch. Ein Trigger weist jedes `UPDATE` auf `audit_logs` ab, ein zweiter jedes `DELETE` an Einträgen, die jünger als dreißig Tage sind. Die Sperre greift damit auch bei Zugriff über die Datenbankabfrage der Admin-Werkzeuge oder unmittelbar über `sqlite3`, wo Ereignisse des ORM wirkungslos wären.
+- [Backend/audit.py] Ermittelt das ausführende Konto über eine Kontextvariable, die die Middleware je Anfrage setzt und danach zurücksetzt. Ein Trigger allein könnte den Verursacher nicht feststellen, da SQLite keinen Sitzungskontext kennt.
+- [Backend/audit.py] Ersetzt Passwort-Streuwerte, den Signaturschlüssel der Sitzungen und das Broker-Passwort im Protokoll durch eine Platzhalterfolge. Das Protokoll ist für jeden Administrator lesbar.
+- [Backend/models.py] Verzichtet auf einen Fremdschlüssel zur Kontentabelle und führt den Benutzernamen zusätzlich als Text mit, damit Einträge das Entfernen eines Kontos überdauern.
+- [Backend/audit.py] Fasst Vorgänge mit mehr als fünfundzwanzig betroffenen Datensätzen je Tabelle zu einem Sammeleintrag zusammen. Ein Import mit mehreren tausend Zeilen hätte die Tabelle andernfalls in einem Vorgang unbrauchbar aufgebläht.
+- [Backend/audit.py] Schreibt die Einträge in derselben Transaktion wie die Änderung. Eine nebenläufige Warteschlange wäre schneller, verlöre Einträge aber gerade beim Abbruch mitten in einer Änderung.
+
+---
+
 ## [3.7.0] - 2026-07-19
 
 ### Added
@@ -780,7 +802,8 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.7.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.8.0...HEAD
+[3.8.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.5.1...v3.6.0
 [3.5.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.5.0...v3.5.1

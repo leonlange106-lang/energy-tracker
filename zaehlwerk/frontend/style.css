@@ -1478,3 +1478,20 @@ input[type="number"] { height: var(--tap-min); min-height: 0; padding: 0 14px; }
 .src-seg { flex: 0 0 auto; }
 .src-seg button { font-size: 12px; padding: 0 10px; }
 @media (max-width: 640px) { .src-seg { order: 3; flex-basis: 100%; } }
+
+/* ---------- Änderungsprotokoll ---------- */
+.audit-filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
+.audit-filters .select, .audit-filters .input { flex: 1 1 150px; min-width: 0; font-size: 13px; }
+.audit-table td { vertical-align: top; }
+.au-id { font-size: 11px; opacity: .75; max-width: 130px; }
+/* Der Vergleich kann lang werden – umbrechen statt die Tabelle zu sprengen. */
+.au-diff { white-space: normal; max-width: 380px; line-height: 17px; }
+.chip-act-insert { border-color: var(--md-primary); color: var(--md-primary); }
+.chip-act-update { border-color: var(--md-warn); color: var(--md-warn); }
+.chip-act-delete { border-color: var(--md-error); color: var(--md-error); }
+.audit-pager { display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-top: 14px; font-size: 13px; color: var(--md-on-surface-variant); }
+@media (max-width: 640px) {
+  .audit-filters .select, .audit-filters .input { flex-basis: 100%; }
+  .audit-pager { flex-wrap: wrap; justify-content: center; }
+}

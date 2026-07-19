@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.7.0";
+const APP_VERSION = "3.8.0";
 const APP_CHANGELOG = [
+  { v: "3.8.0", d: "19.07.2026", items: [
+    "Änderungsprotokoll für Ablesungen, Systeme, Tarife, Zähler, Konten und Einstellungen",
+    "Einträge sind unveränderlich – die Datenbank weist Änderungen selbst ab",
+    "Neuer Reiter „Änderungen“ in den Admin-Tools mit Filtern und Seitenaufteilung",
+  ]},
   { v: "3.7.0", d: "19.07.2026", items: [
     "Herkunft je Ablesung: Manuell, MQTT, HA oder Import",
     "Chips in der Werte-Tabelle und Filter nach Quelle",
@@ -2198,6 +2203,10 @@ createApp({
     adminSchema: [],
     adminLogs: [],
     adminTab: "diag",
+    auditEntries: [],
+    auditFacets: { actions: [], tables: [], users: [] },
+    auditFilter: { action: null, target_table: null, user_id: null, from: "", to: "" },
+    auditPage: 1, auditPages: 1, auditTotal: 0, auditLoading: false,
     logLevel: "INFO",
     sqlText: "SELECT name, typ, einheit FROM systems ORDER BY name",
     sqlResult: null,
@@ -2409,6 +2418,46 @@ createApp({
       } catch (e) { this.notify(e.message, "err"); }
       this.loadAdminLogs();
     },
+    async loadAudit(page = 1) {
+      this.auditLoading = true;
+      try {
+        const p = new URLSearchParams({ page: String(page), per_page: "50" });
+        for (const [k, v] of Object.entries(this.auditFilter)) {
+          if (v) p.set(k, v);
+        }
+        const r = await api(`/api/admin/audit?${p}`);
+        this.auditEntries = r.entries;
+        this.auditPage = r.page;
+        this.auditPages = r.pages;
+        this.auditTotal = r.total;
+        if (!this.auditFacets.actions.length) {
+          this.auditFacets = await api("/api/admin/audit/facets");
+        }
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.auditLoading = false; }
+    },
+    resetAuditFilter() {
+      this.auditFilter = { action: null, target_table: null, user_id: null, from: "", to: "" };
+      this.loadAudit(1);
+    },
+    /* Kurzfassung der Änderung. Der vollständige Vergleich stünde in der
+       Tabelle unlesbar; die geänderten Felder genügen zur Einordnung. */
+    auditSummary(e) {
+      if (e.new_value && e.new_value.bulk) {
+        return `${e.new_value.count} Datensätze (Sammelvorgang)`;
+      }
+      if (e.action === "UPDATE" && e.new_value) {
+        return Object.entries(e.new_value)
+          .map(([k, v]) => `${k}: ${e.old_value && e.old_value[k] !== undefined ? e.old_value[k] : '–'} → ${v}`)
+          .join(", ");
+      }
+      const src = e.action === "DELETE" ? e.old_value : e.new_value;
+      if (!src) return "–";
+      return Object.entries(src)
+        .filter(([k]) => !["id", "system_id", "erstellt_am"].includes(k))
+        .slice(0, 4).map(([k, v]) => `${k}: ${v}`).join(", ");
+    },
+
     async loadAdminLogs() {
       try {
         const r = await api(`/api/admin/logs?lines=200&level=${this.logLevel}`);
@@ -3153,6 +3202,7 @@ createApp({
         <button :class="{active: adminTab==='diag'}"  @click="adminTab='diag'">Diagnose</button>
         <button :class="{active: adminTab==='sql'}"   @click="adminTab='sql'">Abfrage</button>
         <button :class="{active: adminTab==='logs'}"  @click="adminTab='logs'; loadAdminLogs()">Protokoll</button>
+        <button :class="{active: adminTab==='audit'}" @click="adminTab='audit'; loadAudit()">Änderungen</button>
       </div>
 
       <!-- Diagnose -->
@@ -3237,6 +3287,62 @@ createApp({
             <button class="crumb" @click="useSample('SELECT * FROM ' + t.table + ' LIMIT 20')">{{ t.table }}</button>
             <small>{{ t.rows }} Zeilen · {{ t.columns.map(c => c.name).join(', ') }}</small>
           </div>
+        </div>
+      </template>
+
+      <!-- Änderungsprotokoll -->
+      <template v-else-if="adminTab==='audit'">
+        <div class="card set-card">
+          <h3>Änderungsprotokoll</h3>
+          <p class="hint">Schreibgeschützt. Einträge lassen sich weder ändern noch
+            innerhalb der ersten 30 Tage löschen – das setzt die Datenbank selbst durch.</p>
+
+          <div class="audit-filters">
+            <select class="select" v-model="auditFilter.action" @change="loadAudit(1)">
+              <option :value="null">Alle Aktionen</option>
+              <option v-for="a in auditFacets.actions" :key="a" :value="a">{{ a }}</option>
+            </select>
+            <select class="select" v-model="auditFilter.target_table" @change="loadAudit(1)">
+              <option :value="null">Alle Tabellen</option>
+              <option v-for="t in auditFacets.tables" :key="t" :value="t">{{ t }}</option>
+            </select>
+            <select class="select" v-model="auditFilter.user_id" @change="loadAudit(1)">
+              <option :value="null">Alle Konten</option>
+              <option v-for="u in auditFacets.users" :key="u.id || 'sys'" :value="u.id">{{ u.username }}</option>
+            </select>
+            <input class="input" type="date" v-model="auditFilter.from" @change="loadAudit(1)" title="von" />
+            <input class="input" type="date" v-model="auditFilter.to" @change="loadAudit(1)" title="bis" />
+            <button class="btn btn-sm" @click="resetAuditFilter">↺</button>
+          </div>
+
+          <div v-if="auditLoading" class="center-load"><span class="spin"></span></div>
+          <div class="hint" v-else-if="!auditEntries.length">Keine Einträge für diese Auswahl.</div>
+
+          <template v-else>
+            <div class="sql-scroll">
+              <table class="sql-table audit-table">
+                <thead>
+                  <tr><th>Zeit</th><th>Konto</th><th>Aktion</th><th>Tabelle</th><th>Datensatz</th><th>Änderung</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="e in auditEntries" :key="e.id">
+                    <td>{{ e.ts.replace('T', ' ').slice(0, 19) }}</td>
+                    <td>{{ e.username }}</td>
+                    <td><span class="chip" :class="'chip-act-' + e.action.toLowerCase()">{{ e.action }}</span></td>
+                    <td>{{ e.target_table }}</td>
+                    <td class="au-id">{{ e.target_id || '–' }}</td>
+                    <td class="au-diff">{{ auditSummary(e) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="pager audit-pager">
+              <button class="btn btn-sm" :disabled="auditPage<=1" @click="loadAudit(auditPage-1)">‹ Zurück</button>
+              <span>Seite {{ auditPage }} / {{ auditPages }} · {{ auditTotal }} Einträge</span>
+              <button class="btn btn-sm" :disabled="auditPage>=auditPages" @click="loadAudit(auditPage+1)">Weiter ›</button>
+            </div>
+          </template>
         </div>
       </template>
 

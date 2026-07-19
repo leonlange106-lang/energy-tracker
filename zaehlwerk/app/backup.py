@@ -158,9 +158,22 @@ def prune(keep_days: int = 7, keep_min: int = 3) -> list[str]:
     return removed
 
 
-def run_once(keep_days: int = 7) -> dict:
+def run_once(keep_days: int = 7, audit_keep_days: int = 365) -> dict:
     info = create_backup()
     info["pruned"] = prune(keep_days)
+    # Änderungsprotokoll im selben Lauf beschneiden: es wächst mit jeder
+    # Änderung und braucht sonst einen zweiten Zeitplan.
+    try:
+        from sqlmodel import Session
+        from . import audit
+        from .database import engine
+        with Session(engine) as session:
+            removed = audit.prune(session, audit_keep_days)
+            session.commit()
+        info["audit_pruned"] = removed
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Protokoll-Bereinigung übersprungen: %s", exc)
+        info["audit_pruned"] = 0
     return info
 
 
@@ -194,8 +207,9 @@ async def scheduler() -> None:
             enabled = await asyncio.to_thread(get_setting, "backup_enabled", True)
             at = await asyncio.to_thread(get_setting, "backup_time", "03:30")
             keep = int(await asyncio.to_thread(get_setting, "backup_keep_days", 7))
+            audit_keep = int(await asyncio.to_thread(get_setting, "audit_keep_days", 365))
         except Exception:  # noqa: BLE001
-            enabled, at, keep = True, "03:30", 7
+            enabled, at, keep, audit_keep = True, "03:30", 7, 365
 
         wait = _seconds_until(at)
         # Nicht länger als eine Stunde am Stück schlafen: sonst würde eine
@@ -206,7 +220,7 @@ async def scheduler() -> None:
         if not enabled:
             continue
         try:
-            await asyncio.to_thread(run_once, keep)
+            await asyncio.to_thread(run_once, keep, audit_keep)
         except Exception as exc:  # noqa: BLE001
             log.error("Automatische Sicherung fehlgeschlagen: %s", exc)
         await asyncio.sleep(90)   # Doppelauslösung innerhalb derselben Minute vermeiden

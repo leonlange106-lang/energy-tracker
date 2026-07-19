@@ -138,6 +138,27 @@ class Tariff(SQLModel, table=True):
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
 
 
+class AuditLog(SQLModel, table=True):
+    """Änderungsprotokoll. Wird ausschließlich angehängt.
+
+    Ohne Fremdschlüssel auf `users`: der Eintrag muss auch dann bestehen
+    bleiben, wenn das Konto später entfernt wird – sonst verschwände mit dem
+    Konto genau die Spur, die es zu dokumentieren gilt. Der Benutzername wird
+    deshalb zusätzlich als Text mitgeführt.
+    """
+    __tablename__ = "audit_logs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ts: datetime = Field(default_factory=datetime.utcnow, index=True)
+    user_id: Optional[str] = Field(default=None, index=True)
+    username: Optional[str] = None
+    action: str = Field(index=True)               # INSERT | UPDATE | DELETE
+    target_table: str = Field(index=True)
+    target_id: Optional[str] = Field(default=None, index=True)
+    old_value: Optional[str] = None               # JSON
+    new_value: Optional[str] = None               # JSON
+
+
 class AppSetting(SQLModel, table=True):
     """Anwendungsweite Einstellungen als Key/Value.
 

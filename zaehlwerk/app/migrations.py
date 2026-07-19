@@ -178,6 +178,52 @@ def _m007_reading_source(conn: Connection) -> None:
     conn.execute(text("UPDATE readings SET note = NULL WHERE note = 'MQTT'"))
 
 
+# --------------------------------------------------------------------------
+# Migration 8: Aenderungsprotokoll
+# --------------------------------------------------------------------------
+def _m008_audit(conn: Connection) -> None:
+    if not _table_exists(conn, "audit_logs"):
+        conn.execute(text("""
+            CREATE TABLE audit_logs (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts           DATETIME NOT NULL,
+                user_id      VARCHAR,
+                username     VARCHAR,
+                action       VARCHAR NOT NULL,
+                target_table VARCHAR NOT NULL,
+                target_id    VARCHAR,
+                old_value    TEXT,
+                new_value    TEXT
+            )
+        """))
+    for idx, col in [("ix_audit_ts", "ts"), ("ix_audit_user", "user_id"),
+                     ("ix_audit_action", "action"), ("ix_audit_table", "target_table"),
+                     ("ix_audit_target", "target_id")]:
+        conn.execute(text(f"CREATE INDEX IF NOT EXISTS {idx} ON audit_logs ({col})"))
+
+    # Unveraenderlichkeit auf Datenbankebene. Die Ereignisse im ORM schuetzen
+    # nur den Weg ueber die Anwendung; diese Trigger greifen auch bei einem
+    # Zugriff ueber die SQL-Konsole der Admin-Werkzeuge oder ueber sqlite3.
+    conn.execute(text("DROP TRIGGER IF EXISTS audit_logs_no_update"))
+    conn.execute(text("""
+        CREATE TRIGGER audit_logs_no_update BEFORE UPDATE ON audit_logs
+        BEGIN
+            SELECT RAISE(ABORT, 'audit_logs ist unveraenderlich');
+        END
+    """))
+    # Loeschen bleibt fuer die Aufbewahrungsfrist moeglich, aber erst ab 30
+    # Tagen: Bestand darf altern, ein frischer Eintrag laesst sich nicht
+    # beseitigen.
+    conn.execute(text("DROP TRIGGER IF EXISTS audit_logs_no_delete"))
+    conn.execute(text("""
+        CREATE TRIGGER audit_logs_no_delete BEFORE DELETE ON audit_logs
+        WHEN OLD.ts > datetime('now', '-30 days')
+        BEGIN
+            SELECT RAISE(ABORT, 'Eintraege juenger als 30 Tage sind geschuetzt');
+        END
+    """))
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
     (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
@@ -186,6 +232,7 @@ MIGRATIONS: list[tuple[int, str, callable]] = [
     (5, "Rollenspalte an users ergaenzen", _m005_roles),
     (6, "dashboard_layout an users ergaenzen", _m006_dashboard),
     (7, "source-Spalte an readings ergaenzen", _m007_reading_source),
+    (8, "audit_logs-Tabelle samt Unveraenderlichkeit anlegen", _m008_audit),
 ]
 
 

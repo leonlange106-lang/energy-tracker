@@ -23,6 +23,7 @@ gerade tut – ohne die Angriffsfläche zu verändern:
 Alle drei sind auf die Rolle Administrator beschränkt; die Prüfung erfolgt
 zentral in der Middleware.
 """
+import json
 import logging
 import re
 import sqlite3
@@ -30,15 +31,16 @@ import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlmodel import Session, select
 
 from .. import backup as backup_mod, mqtt_client, outbound
 from ..config import settings as runtime_settings
 from ..database import engine, get_session
 from ..migrations import schema_version
-from ..models import User
+from ..models import AuditLog, User
 from ..auth import current_user
 from ..schemas import SqlQueryRequest
 from ..version import APP_VERSION
@@ -280,6 +282,90 @@ def diagnostics(session: Session = Depends(get_session)):
             "supervisor_dir": backup_mod.backup_dir() == backup_mod.PRIMARY_DIR,
             "entries": len(backup_mod.list_backups()),
         },
+    }
+
+
+@router.get("/audit")
+def audit_logs(
+    page: int = 1,
+    per_page: int = 50,
+    action: Optional[str] = None,
+    target_table: Optional[str] = None,
+    user_id: Optional[str] = None,
+    from_: Optional[str] = Query(None, alias="from"),
+    to: Optional[str] = None,
+    session: Session = Depends(get_session),
+):
+    """Änderungsprotokoll, seitenweise.
+
+    Die Seitenaufteilung erfolgt in der Datenbank, nicht im Browser: die
+    Tabelle wächst mit jeder Änderung, und ein vollständiger Abruf wäre nach
+    wenigen Monaten unbrauchbar.
+    """
+    from sqlalchemy import func as sa_func
+
+    per_page = max(1, min(per_page, 200))
+    page = max(1, page)
+
+    stmt = select(AuditLog)
+    count_stmt = select(sa_func.count()).select_from(AuditLog)
+
+    def apply(s):
+        if action:
+            s = s.where(AuditLog.action == action.upper())
+        if target_table:
+            s = s.where(AuditLog.target_table == target_table)
+        if user_id:
+            s = s.where(AuditLog.user_id == user_id)
+        if from_:
+            s = s.where(AuditLog.ts >= from_)
+        if to:
+            # Bis einschließlich des genannten Tages
+            s = s.where(AuditLog.ts <= f"{to} 23:59:59")
+        return s
+
+    total = session.exec(apply(count_stmt)).one()
+    rows = session.exec(
+        apply(stmt).order_by(AuditLog.ts.desc(), AuditLog.id.desc())
+        .offset((page - 1) * per_page).limit(per_page)
+    ).all()
+
+    def parse(value):
+        if not value:
+            return None
+        try:
+            return json.loads(value)
+        except (ValueError, TypeError):
+            return {"_roh": value[:200]}
+
+    return {
+        "entries": [{
+            "id": r.id, "ts": r.ts.isoformat(timespec="seconds") if r.ts else None,
+            "user_id": r.user_id, "username": r.username or "System",
+            "action": r.action, "target_table": r.target_table, "target_id": r.target_id,
+            "old_value": parse(r.old_value), "new_value": parse(r.new_value),
+        } for r in rows],
+        "total": total, "page": page, "per_page": per_page,
+        "pages": max(1, (total + per_page - 1) // per_page),
+    }
+
+
+@router.get("/audit/facets")
+def audit_facets(session: Session = Depends(get_session)):
+    """Auswahlwerte für die Filter – nur was tatsächlich vorkommt."""
+    from sqlalchemy import distinct
+
+    def values(column):
+        return sorted(v for (v,) in session.exec(select(distinct(column))).all() if v)
+
+    users = session.exec(
+        select(distinct(AuditLog.user_id), AuditLog.username)).all()
+    return {
+        "actions": values(AuditLog.action),
+        "tables": values(AuditLog.target_table),
+        "users": [{"id": uid, "username": name or "System"}
+                  for uid, name in {(u, n) for u, n in users}],
+        "retention_min_days": 30,
     }
 
 
