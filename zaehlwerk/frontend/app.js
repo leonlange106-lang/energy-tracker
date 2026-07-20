@@ -4,8 +4,11 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.11.0";
+const APP_VERSION = "3.11.1";
 const APP_CHANGELOG = [
+  { v: "3.11.1", d: "20.07.2026", items: [
+    "Wiederherstellung verlangt jetzt die Bestätigung durch Eingabe des Wortes RESTORE statt eines einfachen Ja/Nein-Dialogs",
+  ]},
   { v: "3.11.0", d: "20.07.2026", items: [
     "Behebt einen mit 3.10.1 eingeführten Build-Fehler auf CPUs ohne SSE4.2 (opencv/numpy zurückgestuft)",
     "Neuer Menüpunkt „Datenmanagement“ in den Admin-Tools: Sicherungen erstellen, herunterladen und wiederherstellen an einem Ort",
@@ -2355,6 +2358,8 @@ createApp({
     backupBusy: false,
     restoreBusy: null,       // Dateiname der laufenden Wiederherstellung, sonst null
     restoreFile: null,       // hochgeladene Datei, noch nicht bestätigt
+    restoreConfirm: null,    // { kind: 'existing'|'upload', filename } während der Bestätigung
+    restoreConfirmText: "",
     mqttStatus: null,
     mqttPassword: "",
     assignTarget: {},
@@ -2683,45 +2688,47 @@ createApp({
     },
     /* Wiederherstellung ist destruktiv: der aktuelle Bestand wird zwar vorher
        automatisch weggesichert, alles seit der gewählten Sicherung geht aber
-       verloren. Ohne Rückfrage wäre ein Fehlklick nicht wiedergutzumachen. */
-    async restoreBackup(filename) {
-      if (!confirm(`Datenbank aus „${filename}“ wiederherstellen?\n\n`
-        + "Der aktuelle Stand wird vorher automatisch gesichert, aber alle "
-        + "Änderungen seit dieser Sicherung gehen verloren.")) return;
-      this.restoreBusy = filename;
-      try {
-        const r = await api(`/api/backup/restore/${encodeURIComponent(filename)}`, { method: "POST" });
-        this.notify(`Wiederhergestellt aus ${r.restored_from}`
-          + (r.safety_backup ? ` · Sicherheitskopie: ${r.safety_backup}` : ""), "ok");
-        await this.loadBackupStatus();
-        await this.load();          // Systeme/Ablesungen: Datenbestand hat sich geändert
-      } catch (e) { this.notify("Wiederherstellung fehlgeschlagen: " + e.message, "err"); }
-      finally { this.restoreBusy = null; }
+       verloren. Ein einfaches Ja/Nein ist dafür zu leicht wegzuklicken – die
+       Bestätigung verlangt deshalb, das Wort RESTORE abzutippen. */
+    restoreBackup(filename) {
+      this.restoreConfirm = { kind: "existing", filename };
+      this.restoreConfirmText = "";
     },
     onRestoreFile(e) { this.restoreFile = e.target.files[0] || null; },
-    async importRestore() {
+    importRestore() {
       if (!this.restoreFile) return;
-      if (!confirm(`Datenbank aus „${this.restoreFile.name}“ wiederherstellen?\n\n`
-        + "Der aktuelle Stand wird vorher automatisch gesichert, aber alle "
-        + "Änderungen seit dieser Datei gehen verloren.")) return;
-      this.restoreBusy = this.restoreFile.name;
+      this.restoreConfirm = { kind: "upload", filename: this.restoreFile.name };
+      this.restoreConfirmText = "";
+    },
+    cancelRestore() { this.restoreConfirm = null; this.restoreConfirmText = ""; },
+    async confirmRestore() {
+      const target = this.restoreConfirm;
+      if (!target || this.restoreConfirmText !== "RESTORE" || this.restoreBusy) return;
+      this.restoreBusy = target.filename;
       try {
-        const fd = new FormData();
-        fd.append("file", this.restoreFile);
-        // Kein Content-Type setzen – der Browser ergänzt die Trennmarke selbst.
-        const res = await fetch("api/backup/import", {
-          method: "POST", body: fd, credentials: "same-origin",
-        });
-        if (!res.ok) {
-          let d; try { d = await res.json(); } catch (_) {}
-          throw new Error((d && d.detail) || res.statusText);
+        let r;
+        if (target.kind === "existing") {
+          r = await api(`/api/backup/restore/${encodeURIComponent(target.filename)}`, { method: "POST" });
+        } else {
+          const fd = new FormData();
+          fd.append("file", this.restoreFile);
+          // Kein Content-Type setzen – der Browser ergänzt die Trennmarke selbst.
+          const res = await fetch("api/backup/import", {
+            method: "POST", body: fd, credentials: "same-origin",
+          });
+          if (!res.ok) {
+            let d; try { d = await res.json(); } catch (_) {}
+            throw new Error((d && d.detail) || res.statusText);
+          }
+          r = await res.json();
         }
-        const r = await res.json();
         this.notify(`Wiederhergestellt aus ${r.restored_from}`
           + (r.safety_backup ? ` · Sicherheitskopie: ${r.safety_backup}` : ""), "ok");
         this.restoreFile = null;
+        this.restoreConfirm = null;
+        this.restoreConfirmText = "";
         await this.loadBackupStatus();
-        await this.load();
+        await this.load();          // Systeme/Ablesungen: Datenbestand hat sich geändert
       } catch (e) { this.notify("Wiederherstellung fehlgeschlagen: " + e.message, "err"); }
       finally { this.restoreBusy = null; }
     },
@@ -4609,6 +4616,31 @@ createApp({
         <button class="btn btn-primary" :disabled="!expCount()" @click="runExport">
           {{ expCfg.format==='zip' ? 'ZIP herunterladen' : 'PDF erstellen' }}
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Wiederherstellung bestätigen -->
+  <div class="overlay" v-if="restoreConfirm" @click.self="cancelRestore">
+    <div class="modal">
+      <div class="modal-head"><h3>Datenbank wiederherstellen</h3></div>
+      <div class="modal-body">
+        <p class="hint">
+          Ersetzt die komplette Datenbank durch <code>{{ restoreConfirm.filename }}</code>.
+          Der aktuelle Stand wird vorher automatisch gesichert, aber alle Änderungen
+          seit dieser Sicherung gehen unwiderruflich verloren.
+        </p>
+        <div class="field">
+          <label>Zum Bestätigen <code>RESTORE</code> eingeben</label>
+          <input class="input" v-model="restoreConfirmText" autocomplete="off"
+                 spellcheck="false" placeholder="RESTORE" @keydown.enter="confirmRestore" />
+        </div>
+      </div>
+      <div class="modal-foot has-danger">
+        <button class="btn" @click="cancelRestore">Abbrechen</button>
+        <button class="btn btn-primary" :disabled="restoreConfirmText !== 'RESTORE' || !!restoreBusy"
+                @click="confirmRestore">
+          {{ restoreBusy ? 'Stelle wieder her …' : 'Wiederherstellen' }}</button>
       </div>
     </div>
   </div>
