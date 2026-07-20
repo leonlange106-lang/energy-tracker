@@ -4,8 +4,12 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.15.0";
+const APP_VERSION = "3.16.0";
 const APP_CHANGELOG = [
+  { v: "3.16.0", d: "20.07.2026", items: [
+    "Dashboard-Kacheln vom Typ Verlauf/Trend/Kostenprognose: benutzerdefinierter Zeitraum mit freier Wahl von Start- und Enddatum",
+    "Behebt einen seltenen Absturz von Dashboard-Diagrammen, wenn eine Kachel kurz nach dem Anlegen bearbeitet oder das Dashboard schnell hintereinander gespeichert und neu geladen wurde",
+  ]},
   { v: "3.15.0", d: "20.07.2026", items: [
     "Herkunfts-Badges (HA/Import/Manuell) und der Quellen-Filter in der Werte-Tabelle funktionierten in der Detailansicht eines Systems nicht (\"sourceLabel is not a function\") - behoben",
   ]},
@@ -672,10 +676,15 @@ const TIMEFRAMES = [
   { key: "ytd", label: "Lfd. Jahr", days: null },
   { key: "12m", label: "12 Monate", days: 365 },
   { key: "all", label: "Gesamt",   days: null },
+  { key: "custom", label: "Benutzerdefiniert", days: null },
 ];
 
-function sliceSeries(series, timeframe) {
+function sliceSeries(series, timeframe, from, to) {
   if (!series || !series.length || timeframe === "all") return series || [];
+  if (timeframe === "custom") {
+    if (!from && !to) return series;
+    return series.filter((p) => (!from || p.d >= from) && (!to || p.d <= to));
+  }
   const now = new Date();
   let cutoff;
   if (timeframe === "ytd") cutoff = new Date(now.getFullYear(), 0, 1);
@@ -696,13 +705,23 @@ const WidgetLineChart = {
   props: ["data", "series"],
   data: () => ({ chart: null }),
   mounted() { this.draw(); },
-  unmounted() { if (this.chart) this.chart.destroy(); },
+  unmounted() { this.destroyChart(); },
   watch: { series: { handler() { this.draw(); }, deep: true } },
   methods: {
+    // stop() vor destroy(): ohne sie kann Chart.js' Animator noch einen
+    // Frame für die alte Instanz einplanen, der nach destroy() auf
+    // ctx == null trifft ("Cannot read properties of null (reading 'save')") –
+    // besonders wenn eine Kachel kurz nach dem Anlegen erneut konfiguriert wird.
+    destroyChart() {
+      if (!this.chart) return;
+      this.chart.stop();
+      this.chart.destroy();
+      this.chart = null;
+    },
     draw() {
       const sets = (this.series || []).filter((s) => s.points && s.points.length);
       if (!this.$refs.cv || !sets.length) return;
-      if (this.chart) this.chart.destroy();
+      this.destroyChart();
 
       // Gemeinsame Zeitachse über alle Reihen: ohne sie zeichnete Chart.js
       // die zweite Reihe gegen die Beschriftungen der ersten und verschöbe sie.
@@ -742,6 +761,13 @@ const WidgetLineChart = {
         data: { labels, datasets },
         options: {
           responsive: true, maintainAspectRatio: false,
+          // Kacheln werden im Bearbeitungsmodus gezogen, skaliert und neu
+          // eingerichtet – oft innerhalb der sonst rund einsekündigen
+          // Eintrittsanimation der vorigen Instanz. Läuft dabei ein Resize
+          // in Chart.js' Animator hinein, greift dessen Redraw teils auf
+          // eine schon zerstörte Instanz zu ("Cannot read properties of
+          // null (reading 'save')"). Ohne Animation entfällt das Zeitfenster.
+          animation: false,
           interaction: { intersect: false, mode: "index" },
           plugins: {
             legend: { display: multi, position: "bottom",
@@ -773,7 +799,7 @@ const WidgetPieChart = {
   props: ["systems"],
   data: () => ({ chart: null }),
   mounted() { this.draw(); },
-  unmounted() { if (this.chart) this.chart.destroy(); },
+  unmounted() { this.destroyChart(); },
   watch: { systems: { handler() { this.draw(); }, deep: true } },
   computed: {
     withCost() {
@@ -781,9 +807,17 @@ const WidgetPieChart = {
     },
   },
   methods: {
+    // Siehe WidgetLineChart.destroyChart(): stop() vor destroy() verhindert
+    // einen bereits eingeplanten Animationsframe der alten Instanz.
+    destroyChart() {
+      if (!this.chart) return;
+      this.chart.stop();
+      this.chart.destroy();
+      this.chart = null;
+    },
     draw() {
       if (!this.$refs.cv || !this.withCost.length) return;
-      if (this.chart) this.chart.destroy();
+      this.destroyChart();
       this.chart = new Chart(this.$refs.cv, {
         type: "doughnut",
         data: {
@@ -796,6 +830,9 @@ const WidgetPieChart = {
         },
         options: {
           responsive: true, maintainAspectRatio: false, cutout: "58%",
+          // Siehe WidgetLineChart: Animation aus, damit ein Resize während
+          // der Bearbeitung nicht in eine laufende Eintrittsanimation läuft.
+          animation: false,
           plugins: {
             legend: {
               position: "bottom",
@@ -853,10 +890,10 @@ const WidgetLatestReading = {
 /* Trend: laufende gegen vorherige Periode gleicher Länge. Aussagekräftiger
    als ein absoluter Wert, weil Verbrauch stark saisonal schwankt. */
 const WidgetTrend = {
-  props: ["data", "timeframe"],
+  props: ["data", "timeframe", "rangeFrom", "rangeTo"],
   computed: {
     calc() {
-      const pts = sliceSeries((this.data || {}).series, this.timeframe || "30d");
+      const pts = sliceSeries((this.data || {}).series, this.timeframe || "30d", this.rangeFrom, this.rangeTo);
       if (!pts.length) return null;
       const half = Math.floor(pts.length / 2);
       if (half < 1) return null;
@@ -885,12 +922,12 @@ const WidgetTrend = {
 /* Kostenprognose: Tagesverbrauch der jüngsten Periode auf zwölf Monate
    hochgerechnet, bewertet mit dem Effektivpreis aus den Tarifen. */
 const WidgetCostForecast = {
-  props: ["data", "timeframe"],
+  props: ["data", "timeframe", "rangeFrom", "rangeTo"],
   computed: {
     calc() {
       const d = this.data;
       if (!d) return null;
-      const pts = sliceSeries(d.series, this.timeframe || "90d");
+      const pts = sliceSeries(d.series, this.timeframe || "90d", this.rangeFrom, this.rangeTo);
       if (!pts.length) return null;
       const perDay = pts.reduce((s, p) => s + p.v, 0) / pts.length;
       // Effektivpreis inklusive Grundgebühr, sonst Ø aus erfassten Kosten.
@@ -3145,16 +3182,29 @@ createApp({
     async loadDashboard() {
       this.dashLoading = true;
       try {
-        const [layout, data] = await Promise.all([
-          api("/api/user/dashboard"), api("/api/dashboard/data?months=24"),
-        ]);
+        // Layout zuerst: ein benutzerdefinierter Zeitraum kann weiter als die
+        // sonst üblichen 24 Monate zurückreichen, das Fenster für den
+        // Daten-Aufruf richtet sich danach statt fest verdrahtet zu sein.
+        const layout = await api("/api/user/dashboard");
         this.dashTiles = layout.tiles;
+        if (layout.recovered) this.notify("Layout war beschädigt – Vorgabe geladen", "err");
+        const data = await api(`/api/dashboard/data?months=${this.dashMonthsNeeded()}`);
         this.dashData = data.systems;
         this.dashRecent = data.recent || [];
         this.dashDirty = false;
-        if (layout.recovered) this.notify("Layout war beschädigt – Vorgabe geladen", "err");
       } catch (e) { this.notify(e.message, "err"); }
       finally { this.dashLoading = false; }
+    },
+    dashMonthsNeeded() {
+      let months = 24;
+      const now = new Date();
+      for (const t of this.dashTiles) {
+        if (t.timeframe !== "custom" || !t.range_from) continue;
+        const from = new Date(t.range_from);
+        const diff = (now.getFullYear() - from.getFullYear()) * 12 + (now.getMonth() - from.getMonth()) + 1;
+        if (diff > months) months = Math.min(diff, 240); // Deckel: 20 Jahre
+      }
+      return months;
     },
     trendOf(s) {
       const pts = sliceSeries(s.series, "90d");
@@ -3207,8 +3257,12 @@ createApp({
     tileNeedsTimeframe(t) {
       return t && ["line_chart", "trend", "cost_forecast"].includes(t.type);
     },
-    tfLabel(key) {
-      const tf = TIMEFRAMES.find((t) => t.key === (key || "12m"));
+    tfLabel(t) {
+      const key = (t && t.timeframe) || "12m";
+      if (key === "custom" && t && t.range_from && t.range_to) {
+        return `${fmtDate(t.range_from)} – ${fmtDate(t.range_to)}`;
+      }
+      const tf = TIMEFRAMES.find((x) => x.key === key);
       return tf ? tf.label : key;
     },
     /* Reihen einer Kachel: `system_ids` hat Vorrang, `system_id` bleibt als
@@ -3219,7 +3273,7 @@ createApp({
       return ids.map((id) => {
         const s = this.dashData.find((x) => x.id === id);
         if (!s) return null;
-        return { ...s, points: sliceSeries(s.series, t.timeframe || "12m") };
+        return { ...s, points: sliceSeries(s.series, t.timeframe || "12m", t.range_from, t.range_to) };
       }).filter(Boolean);
     },
     openTileConfig(tile) {
@@ -3227,9 +3281,17 @@ createApp({
       this.tileCfg = {
         ...tile,
         timeframe: tile.timeframe || "12m",
+        range_from: tile.range_from || "",
+        range_to: tile.range_to || "",
         system_ids: (tile.system_ids && tile.system_ids.length)
           ? [...tile.system_ids] : (tile.system_id ? [tile.system_id] : []),
       };
+    },
+    /* Benutzerdefinierter Zeitraum braucht Start und Ende, Start darf nicht
+       nach dem Ende liegen – sonst weist der Server die ganze Anordnung ab. */
+    tileRangeValid(t) {
+      if (!t || t.timeframe !== "custom") return true;
+      return !!(t.range_from && t.range_to && t.range_from <= t.range_to);
     },
     setTileType(key) {
       const def = WIDGET_TYPES.find((w) => w.key === key);
@@ -3249,13 +3311,17 @@ createApp({
       if (i >= 0) a.splice(i, 1); else a.push(id);
     },
     applyTileConfig() {
+      if (!this.tileRangeValid(this.tileCfg)) return;
       const t = this.dashTiles.find((x) => x.id === this.tileCfg.id);
       if (t) {
+        const custom = this.tileCfg.timeframe === "custom";
         Object.assign(t, {
           type: this.tileCfg.type,
           w: Math.min(4 - t.x, Math.max(1, this.tileCfg.w)),
           h: Math.min(4, Math.max(1, this.tileCfg.h)),
           timeframe: this.tileCfg.timeframe,
+          range_from: custom ? this.tileCfg.range_from : null,
+          range_to: custom ? this.tileCfg.range_to : null,
           system_ids: [...this.tileCfg.system_ids],
           // Erstes System zusätzlich in system_id: ältere Fassungen und der
           // Vorgabe-Aufbau lesen weiterhin dieses Feld.
@@ -3314,6 +3380,8 @@ createApp({
             id: t.id, type: t.type, x: t.x, y: t.y, w: t.w, h: t.h,
             system_id: t.system_id || null, system_ids: t.system_ids || [],
             timeframe: t.timeframe || "12m", title: t.title || null,
+            range_from: t.timeframe === "custom" ? (t.range_from || null) : null,
+            range_to: t.timeframe === "custom" ? (t.range_to || null) : null,
           })) }),
         });
         this.dashTiles = res.tiles;
@@ -3698,12 +3766,12 @@ createApp({
             <widget-line-chart     v-else-if="t.type==='line_chart'"  :series="tileSeries(t)" />
             <widget-pie-chart      v-else-if="t.type==='pie_chart'"   :systems="dashData" />
             <widget-cost-summary   v-else-if="t.type==='cost_summary'" :systems="dashData" />
-            <widget-trend          v-else-if="t.type==='trend'"        :data="dashSystem(t)" :timeframe="t.timeframe" />
-            <widget-cost-forecast  v-else-if="t.type==='cost_forecast'" :data="dashSystem(t)" :timeframe="t.timeframe" />
+            <widget-trend          v-else-if="t.type==='trend'"        :data="dashSystem(t)" :timeframe="t.timeframe" :range-from="t.range_from" :range-to="t.range_to" />
+            <widget-cost-forecast  v-else-if="t.type==='cost_forecast'" :data="dashSystem(t)" :timeframe="t.timeframe" :range-from="t.range_from" :range-to="t.range_to" />
 
             <div class="wg-tools" v-if="dashEdit">
               <button class="btn btn-sm wg-cfg" @click.stop="openTileConfig(t)">⚙ Einrichten</button>
-              <span class="wg-meta">{{ t.w }}×{{ t.h }}<span v-if="tileNeedsTimeframe(t)"> · {{ tfLabel(t.timeframe) }}</span></span>
+              <span class="wg-meta">{{ t.w }}×{{ t.h }}<span v-if="tileNeedsTimeframe(t)"> · {{ tfLabel(t) }}</span></span>
             </div>
           </div>
         </div>
@@ -3772,6 +3840,15 @@ createApp({
                       :class="{active: tileCfg.timeframe === tf.key}"
                       @click="tileCfg.timeframe = tf.key">{{ tf.label }}</button>
             </div>
+            <div class="field-row exp-dates" v-if="tileCfg.timeframe === 'custom'">
+              <div class="field"><label>Von</label>
+                <input class="input" type="date" v-model="tileCfg.range_from" :max="tileCfg.range_to || undefined" /></div>
+              <div class="field"><label>Bis</label>
+                <input class="input" type="date" v-model="tileCfg.range_to" :min="tileCfg.range_from || undefined" /></div>
+            </div>
+            <div class="hint" v-if="tileCfg.timeframe === 'custom' && !tileRangeValid(tileCfg)">
+              Bitte Start und Ende wählen – das Ende darf nicht vor dem Start liegen.
+            </div>
           </div>
 
           <div class="field">
@@ -3783,7 +3860,7 @@ createApp({
           <hold-button :small="true" @held="removeTileFromConfig">✕ Entfernen (halten)</hold-button>
           <span class="foot-spacer"></span>
           <button class="btn" @click="tileCfg = null">Abbrechen</button>
-          <button class="btn btn-primary" @click="applyTileConfig">Übernehmen</button>
+          <button class="btn btn-primary" :disabled="!tileRangeValid(tileCfg)" @click="applyTileConfig">Übernehmen</button>
         </div>
       </div>
     </div>
