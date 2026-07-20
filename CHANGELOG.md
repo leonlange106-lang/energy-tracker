@@ -9,6 +9,18 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.11.1] - 2026-07-20
+
+### Changed
+
+- [Frontend/Admin] Die Wiederherstellung (sowohl aus einer bestehenden Sicherung als auch per Datei-Upload) verlangt jetzt zusätzlich zur Warnung die Eingabe des Wortes `RESTORE` in einem eigenen Bestätigungsdialog, bevor der Vorgang startet. Ein einfaches Ja/Nein wäre für eine so folgenreiche, unumkehrbare Aktion zu leicht versehentlich wegzuklicken.
+
+### Hinweis
+
+- Die im Ticket vermutete Vermischung von „Werte nachtragen" (CSV-Anhängen je System) und „Systemwiederherstellung" (destruktives Überschreiben) bestand bei der Durchsicht nicht: Ersteres liegt bereits ausschließlich in der Zähler-Detailansicht, Letzteres ist bereits über die Rollenprüfung (`/api/backup` erfordert `admin`) und die Admin-Tools-Navigation hart isoliert. Hier war folglich nur der fehlende Hard-Prompt zu ergänzen.
+
+---
+
 ## [3.11.0] - 2026-07-20
 
 ### Fixed
