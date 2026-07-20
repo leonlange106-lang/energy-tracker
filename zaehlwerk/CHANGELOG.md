@@ -9,6 +9,18 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.15.0] - 2026-07-20
+
+### Fixed
+
+- **[Frontend/app.js] Kritisch:** Die Herkunfts-Badges (HA/Import/Manuell) und der zugehörige Quellen-Filter in der Werte-Tabelle der Systemdetailansicht warfen bei jeder Zeile mit nicht-manueller Quelle `TypeError: sourceLabel is not a function` und rissen damit die Anzeige ab. Ursache: Die `SystemDetail`-Komponente führt ein eigenes, von der `App`-Wurzelkomponente unabhängiges `methods`-Objekt; `sourceLabel` war dort nie registriert. Da Vues zur Laufzeit kompilierte `template:`-Strings über `with(_ctx)` ausgewertet werden, greift eine fehlende Methode nicht automatisch auf eine gleichnamige globale Funktion zurück, sondern schlägt fehl. Jetzt in `SystemDetail.methods` mit registriert.
+
+### Hinweis
+
+- Ticket-Annahme war, die Backend-Logik für `source` existiere bereits und fehle nur in der UI-Anzeige. Tatsächlich existierten Badges und Filter im Frontend schon seit v3.7.0 – sichtbar wurden sie aber nie, weil (a) der in v3.13.0 behobene `Reading.source`-Bug bis dahin jede Ablesung als `manual` speicherte, wodurch der betroffene Code-Pfad nie durchlaufen wurde, und (b) der oben beschriebene `sourceLabel`-Fehler, sobald doch einmal eine andere Quelle auftrat, die Anzeige zum Absturz brachte.
+
+---
+
 ## [3.14.0] - 2026-07-20
 
 ### Added
