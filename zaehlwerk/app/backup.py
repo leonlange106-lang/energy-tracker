@@ -25,8 +25,10 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 
 from .config import settings as runtime_settings
 
@@ -38,6 +40,22 @@ FILENAME_FMT = "zaehlwerk_%Y%m%d-%H%M%S.db.gz"
 
 PRIMARY_DIR = Path("/backup")
 FALLBACK_DIR = Path("/share/zaehlwerk-backups")
+
+# Obergrenze für hochgeladene Sicherungen. Großzügig bemessen, weil eine
+# Datenbank über Jahre durchaus in den zweistelligen MB-Bereich wächst.
+MAX_IMPORT_BYTES = 500 * 1024 * 1024
+
+# Tabellen, deren Fehlen zeigt, dass die Datei keine Zählwerk-Sicherung ist.
+# Bewusst knapp gehalten: eine ältere Sicherung darf jüngere Spalten oder
+# Tabellen vermissen – dafür laufen im Anschluss die Migrationen erneut.
+REQUIRED_TABLES = {"systems", "readings", "app_settings"}
+
+_restore_lock = threading.Lock()
+
+
+class RestoreError(Exception):
+    """Eine hochgeladene oder ausgewählte Datei ist keine gültige, unversehrte
+    Zählwerk-Sicherung und wird deshalb NICHT live geschaltet."""
 
 
 def backup_dir() -> Path:
@@ -112,6 +130,113 @@ def create_backup() -> dict:
     finally:
         tmp_db_path.unlink(missing_ok=True)
         tmp_gz_path.unlink(missing_ok=True)
+
+
+def _validate_candidate(path: Path) -> None:
+    """Prüft Integrität und Grundstruktur, BEVOR die Datei live geschaltet wird.
+
+    Zwei Prüfungen, beide auf der entpackten Kopie, nie auf dem Original:
+    `PRAGMA integrity_check` verwirft beschädigte Dateien, der Tabellenabgleich
+    verwirft Dateien, die zwar gültiges SQLite, aber keine Zählwerk-Sicherung
+    sind – ein falsch ausgewähltes Backup einer anderen Anwendung etwa.
+    """
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        raise RestoreError(f"Keine lesbare SQLite-Datenbank: {exc}") from exc
+    try:
+        try:
+            result = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        except sqlite3.DatabaseError as exc:
+            raise RestoreError(f"Keine lesbare SQLite-Datenbank: {exc}") from exc
+        if result != "ok":
+            raise RestoreError(f"Integritätsprüfung fehlgeschlagen: {result}")
+        tables = {row[0] for row in
+                  conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        missing = REQUIRED_TABLES - tables
+        if missing:
+            raise RestoreError(
+                "Keine Zählwerk-Sicherung – es fehlen die Tabellen: "
+                + ", ".join(sorted(missing)))
+    finally:
+        conn.close()
+
+
+def _record_restore_audit(source_name: str, safety_file: Optional[str]) -> None:
+    """Manueller Protokolleintrag: der Dateitausch läuft am ORM vorbei und
+    würde von der automatischen Änderungsprotokollierung sonst nicht erfasst."""
+    import json as _json
+
+    from sqlmodel import Session
+
+    from . import audit
+    from .database import engine
+    from .models import AuditLog
+
+    actor = audit.current_actor.get() or {}
+    with Session(engine) as session:
+        session.add(AuditLog(
+            user_id=actor.get("id"), username=actor.get("username"),
+            action="RESTORE", target_table="database", target_id=None,
+            new_value=_json.dumps(
+                {"restored_from": source_name, "safety_backup": safety_file},
+                ensure_ascii=False),
+        ))
+        session.commit()
+
+
+def restore_from_file(source: Path) -> dict:
+    """Ersetzt die laufende Datenbank durch den Inhalt einer gzip-Sicherung.
+
+    Reihenfolge ist die eigentliche Absicherung: entpacken -> validieren
+    (Integrität + Grundstruktur) -> Sicherheitskopie des AKTUELLEN Bestands ->
+    laufende Verbindungen trennen -> Zieldatei austauschen -> Migrationen
+    erneut anwenden, falls die Sicherung älter ist als der laufende
+    Schemastand. Schlägt einer der ersten beiden Schritte fehl, bleibt die
+    laufende Datenbank vollständig unangetastet.
+
+    Ein Prozesslock verhindert, dass zwei Wiederherstellungen gleichzeitig
+    laufen – ein zweiter Aufruf während einer laufenden Wiederherstellung
+    träfe auf eine Datenbank im Umbau.
+    """
+    if not source.is_file():
+        raise FileNotFoundError(f"Sicherung nicht gefunden: {source}")
+
+    with _restore_lock:
+        tmp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp_db.close()
+        tmp_db_path = Path(tmp_db.name)
+        try:
+            try:
+                with gzip.open(source, "rb") as f_in, open(tmp_db_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out, length=1024 * 1024)
+            except gzip.BadGzipFile as exc:
+                raise RestoreError(f"Keine gültige gzip-Datei: {exc}") from exc
+
+            _validate_candidate(tmp_db_path)
+
+            # Sicherheitsnetz: der aktuelle Bestand wird weggesichert, BEVOR er
+            # angefasst wird. Schlägt das fehl (z. B. Datenträger voll), bricht
+            # die Wiederherstellung hier ab statt einen unwiederbringlichen
+            # Zustand zu riskieren.
+            safety = create_backup()
+
+            from .database import engine, init_db
+            engine.dispose()      # Sperren/Verbindungen freigeben vor dem Dateitausch
+
+            target = _source_path()
+            for suffix in ("-wal", "-shm"):
+                Path(str(target) + suffix).unlink(missing_ok=True)
+            shutil.move(str(tmp_db_path), str(target))
+
+            init_db()              # legt fehlende Tabellen an, wendet Migrationen erneut an
+
+            log.warning("Datenbank wiederhergestellt aus %s (Sicherheitskopie: %s)",
+                        source.name, safety["file"])
+            _record_restore_audit(source.name, safety["file"])
+            return {"restored_from": source.name, "safety_backup": safety["file"]}
+        finally:
+            tmp_db_path.unlink(missing_ok=True)
 
 
 def list_backups() -> list[dict]:

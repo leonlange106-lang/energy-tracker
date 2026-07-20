@@ -9,6 +9,29 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.11.0] - 2026-07-20
+
+### Fixed
+
+- [Build/requirements.txt] **Behebt eine mit 3.10.1 eingeführte Regression:** Das dortige Pinnen auf `opencv-python-headless==5.0.0.93` zog transitiv `numpy>=2.3`, dessen offizielle Wheels mit der CPU-Baseline `x86-64-v2` (SSE4.2/POPCNT) gebaut sind. Auf x86-Hosts ohne diese Befehlssatzerweiterung (ältere/stromsparende CPUs, wie in einem konkreten Nutzer-Setup beobachtet) brach der Image-Build am Laufzeit-Import-Test mit `RuntimeError: NumPy was built with baseline optimizations (X86_V2) but your machine doesn't support` ab – der Fehler zeigte sich in Home Assistant nur als generisches „unknown error occurred while trying to build the image". `opencv-python-headless` deshalb auf `4.10.0.84` zurückgestuft und `numpy` explizit auf `1.26.4` gepinnt (Baseline nur SSE/SSE2/SSE3, breite Kompatibilität). `DEPS_VERSION` im Dockerfile erneut erhöht.
+
+### Added
+
+- [Backend/routers/backups.py] Ergänzt `POST /api/backup/restore/{filename}` zur Wiederherstellung aus einer bereits vorhandenen eigenen Sicherung sowie `POST /api/backup/import` zur Wiederherstellung aus einer hochgeladenen `.gz`-Sicherung.
+- [Backend/backup.py] `restore_from_file` prüft Integrität (`PRAGMA integrity_check`) und Grundstruktur (erforderliche Tabellen) der Kandidatendatei, BEVOR sie live geschaltet wird. Vor jedem Austausch wird der aktuelle Bestand automatisch als Sicherheitskopie weggesichert; schlägt das fehl, bricht die Wiederherstellung ab, statt einen unwiederbringlichen Zustand zu riskieren. Ein Prozesslock verhindert gleichzeitige Wiederherstellungen.
+- [Backend/backup.py] Der Dateitausch läuft am ORM vorbei und wird deshalb manuell im Änderungsprotokoll vermerkt (Aktion `RESTORE`).
+- [Frontend/Admin] Neuer Menüpunkt „Datenmanagement" in den Admin-Tools: Sicherungsliste mit Download UND Wiederherstellung je Eintrag, Datei-Upload für externe Sicherungen, Bestätigungsdialog vor jeder Wiederherstellung.
+
+### Changed
+
+- [Frontend/UI] Sicherung erstellen, als ZIP/Rohdaten exportieren und die Sicherungsliste sind aus den Einstellungen in die Admin-Tools (Datenmanagement) umgezogen. Der Zeitplan (aktiv/Uhrzeit/Aufbewahrung) bleibt in den Einstellungen, da er eine Systemkonfiguration und keine Aktion ist.
+
+### Hinweis
+
+- Die im Vorfeld vermutete Redundanz unter den bestehenden Export-Endpunkten (`export.csv`, `export.zip`, `export/data.csv`, `export/data.json`) hat sich bei der Durchsicht nicht bestätigt – die vier decken unterschiedliche, dokumentierte Zwecke ab (Re-Import je System, Voll-Sicherung, externe Auswertung flach/strukturiert) und wurden unverändert belassen.
+
+---
+
 ## [3.10.1] - 2026-07-20
 
 ### Fixed
