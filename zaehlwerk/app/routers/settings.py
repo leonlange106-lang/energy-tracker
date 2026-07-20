@@ -56,6 +56,10 @@ DEFAULTS: dict[str, object] = {
     "mqtt_tasmota_discovery": False,
     # Globale Vorgabe; je System über zusatzfelder["mqtt_interval"] übersteuerbar.
     "mqtt_interval": "daily",
+    # Watchdog: meldet über persistent_notification, wenn ein per MQTT
+    # angebundenes System zu lange keinen neuen Wert geliefert hat.
+    "mqtt_watchdog_enabled": True,
+    "mqtt_watchdog_hours": 48,
     # Rolle für neu übernommene Home-Assistant-Konten.
     "default_role": "writer",
     # Aufbewahrung des Änderungsprotokolls. Untergrenze 30 Tage, weil der
@@ -83,6 +87,8 @@ _CASTS = {
     "mqtt_base_topic": str,
     "mqtt_tasmota_discovery": _BOOL,
     "mqtt_interval": str,
+    "mqtt_watchdog_enabled": _BOOL,
+    "mqtt_watchdog_hours": int,
     "default_role": str,
     "audit_keep_days": int,
 }

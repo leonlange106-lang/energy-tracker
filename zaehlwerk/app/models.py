@@ -43,6 +43,15 @@ class Reading(SQLModel, table=True):
     cost: Optional[float] = None
     meter_replaced: bool = False
     note: Optional[str] = None
+    # Herkunft: manual | mqtt | ha_api | import. Spalte existiert seit
+    # Migration 7 (source-Spalte an readings ergänzen); hier bisher nicht
+    # deklariert. Ohne Deklaration kennt die ORM-Zuordnung die Spalte nicht -
+    # generierte INSERTs ließen sie aus, SQLite füllte sie über den
+    # Spalten-Standardwert 'manual' auf. Jede Ablesung landete dadurch
+    # unabhängig von ihrer echten Herkunft als 'manual' in der Datenbank, und
+    # `Reading.source` als Filterausdruck (z. B. beim Rohdaten-Export) war
+    # nicht auswertbar.
+    source: str = Field(default="manual", index=True)
 
 
 

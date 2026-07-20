@@ -9,6 +9,20 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.13.0] - 2026-07-20
+
+### Fixed
+
+- **[Backend/models.py] Kritisch:** `Reading.source` war seit Einführung der Spalte (Migration 7, v3.7.0) nie im SQLModel-Klassenmodell deklariert. Die ORM-Zuordnung kannte die Spalte dadurch nicht: generierte `INSERT`-Anweisungen ließen sie aus, SQLite füllte sie über den Spalten-Standardwert `'manual'` auf. Jede Ablesung – unabhängig davon, ob sie manuell, per MQTT, über eine Home-Assistant-Entity oder per CSV-Import entstand – wurde dadurch in der Datenbank als `manual` gespeichert; `Reading.source` als Filterausdruck (z. B. beim Rohdaten-Export nach Quelle) war zudem nicht auswertbar. Jetzt korrekt deklariert. Bereits gespeicherte Ablesungen bleiben mit ihrer fälschlich eingetragenen Quelle stehen – das lässt sich nachträglich nicht rekonstruieren –, ab dieser Version wird die tatsächliche Herkunft aber wieder korrekt erfasst.
+
+### Added
+
+- [Backend/Frontend/MQTT] Unbeteiligte Geräte in der Auto-Discovery-Liste lassen sich per „✕ Ignorieren“ dauerhaft ausblenden (persistiert, übersteht einen Neustart) und über „Wieder anzeigen“ zurückholen.
+- [Backend/notifier.py] Watchdog für MQTT-Systeme: meldet über `persistent_notification`, wenn ein per MQTT angebundenes System die konfigurierte Schwelle (Standard 48 h) ohne neuen Wert überschreitet. Die Schwelle skaliert automatisch mit dem Speicherintervall des Systems (mindestens das 1,5-fache der eigenen Periode) – ein wöchentlich speicherndes System löst dadurch keinen Fehlalarm aus, nur weil es per Design selten schreibt. Bewusst nur für MQTT: Werte über eine Home-Assistant-Entity entstehen erst, wenn jemand die App öffnet, Stille dort bedeutet "niemand hat abgelesen" und ist bereits über die reguläre Fälligkeits-Benachrichtigung abgedeckt.
+- [Frontend/Admin] Watchdog ein-/ausschaltbar und Schwelle einstellbar unter Admin-Tools → Netzwerk.
+
+---
+
 ## [3.12.0] - 2026-07-20
 
 ### Changed

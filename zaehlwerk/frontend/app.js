@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.12.0";
+const APP_VERSION = "3.13.0";
 const APP_CHANGELOG = [
+  { v: "3.13.0", d: "20.07.2026", items: [
+    "Behebt einen Bug, durch den die Herkunft (Quelle) jeder Ablesung unabhängig vom tatsächlichen Ursprung immer als „manuell“ gespeichert wurde",
+    "MQTT Auto-Discovery: unbeteiligte Geräte lassen sich dauerhaft ausblenden (Ignorieren-Button, wieder einblendbar)",
+    "Watchdog meldet über Home Assistant, wenn ein per MQTT angebundenes System zu lange keinen neuen Wert liefert",
+  ]},
   { v: "3.12.0", d: "20.07.2026", items: [
     "Admin-Tools zum Tab-Dashboard erweitert: System, Netzwerk, Zugriff, Datenmanagement, Diagnose, Abfrage, Protokoll, Änderungen",
     "Kill-Switch, Anwendungsparameter, MQTT-Einrichtung, Konten & Rollen und der Sicherungs-Zeitplan sind aus den Einstellungen in die Admin-Tools umgezogen",
@@ -3044,6 +3049,8 @@ createApp({
       }
       const bk = num(d.backup_keep_days);
       if (!Number.isInteger(bk) || bk < 1 || bk > 365) err.backup_keep_days = "1 bis 365 Tage";
+      const wd = num(d.mqtt_watchdog_hours);
+      if (!Number.isInteger(wd) || wd < 1 || wd > 336) err.mqtt_watchdog_hours = "1 bis 336 Stunden (14 Tage)";
       this.settingsErrors = err;
       return Object.keys(err).length === 0;
     },
@@ -3083,6 +3090,8 @@ createApp({
             mqtt_base_topic: d.mqtt_base_topic || "tele",
             mqtt_tasmota_discovery: !!d.mqtt_tasmota_discovery,
             mqtt_interval: d.mqtt_interval || "daily",
+            mqtt_watchdog_enabled: !!d.mqtt_watchdog_enabled,
+            mqtt_watchdog_hours: Number(d.mqtt_watchdog_hours || 48),
             // Leeres Feld = unveraendert lassen, nicht loeschen
             ...(this.mqttPassword ? { mqtt_password: this.mqttPassword } : {}),
           }),
@@ -3328,6 +3337,19 @@ createApp({
     async forgetDevices() {
       try { await api("/api/mqtt/devices/forget", { method: "POST" }); await this.loadMqtt(); }
       catch (e) { this.notify(e.message, "err"); }
+    },
+    async ignoreDevice(d) {
+      try {
+        await api("/api/mqtt/devices/ignore", { method: "POST", body: JSON.stringify({ device: d.device }) });
+        this.notify(`${d.device} wird nicht mehr angezeigt`, "ok");
+        await this.loadMqtt();
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async unignoreDevice(device) {
+      try {
+        await api("/api/mqtt/devices/unignore", { method: "POST", body: JSON.stringify({ device }) });
+        await this.loadMqtt();
+      } catch (e) { this.notify(e.message, "err"); }
     },
     async restartMqtt() {
       try {
@@ -3911,6 +3933,22 @@ createApp({
               <div class="hint">Tasmota-Standard ist <code>tele</code>. Nur ändern, wenn im Gerät angepasst.</div>
             </div>
 
+            <div class="field">
+              <label class="check"><input type="checkbox" v-model="appSettingsDraft.mqtt_watchdog_enabled" @change="validateSettings" />
+                <span>Watchdog aktiv
+                  <small>Meldet über Home Assistant, wenn ein zugeordnetes System zu lange keinen neuen
+                    MQTT-Wert liefert. Systeme mit längerem Speicherintervall (wöchentlich, monatlich …)
+                    bekommen automatisch mehr Kulanz, damit die reguläre Speicherpause keinen Fehlalarm auslöst.</small></span></label>
+            </div>
+            <div class="field" v-if="appSettingsDraft.mqtt_watchdog_enabled">
+              <label>Schwelle (Stunden)</label>
+              <input class="input" type="number" min="1" max="336" step="1"
+                     v-model="appSettingsDraft.mqtt_watchdog_hours"
+                     :class="{invalid: settingsErrors.mqtt_watchdog_hours}" @input="validateSettings" />
+              <div class="err-inline" v-if="settingsErrors.mqtt_watchdog_hours">{{ settingsErrors.mqtt_watchdog_hours }}</div>
+              <div class="hint" v-else>Gilt für täglich speichernde Systeme; Standard 48 Stunden.</div>
+            </div>
+
             <div class="settings-actions">
               <button class="btn" @click="restartMqtt">↻ Neu verbinden</button>
               <button class="btn btn-sm" @click="loadMqtt">Status aktualisieren</button>
@@ -3958,14 +3996,30 @@ createApp({
                   </div>
                 </details>
 
-                <div class="mq-dev-act" v-if="d.usable && !d.assigned">
-                  <select class="select" v-model="assignTarget[d.device]">
-                    <option :value="null">System wählen …</option>
-                    <option v-for="s in systems.filter(x => x.aktiv)" :key="s.id" :value="s.id">{{ s.name }}</option>
-                  </select>
-                  <button class="btn btn-sm" :disabled="!assignTarget[d.device]" @click="assignDevice(d)">Zuordnen</button>
+                <div class="mq-dev-act" v-if="!d.assigned">
+                  <template v-if="d.usable">
+                    <select class="select" v-model="assignTarget[d.device]">
+                      <option :value="null">System wählen …</option>
+                      <option v-for="s in systems.filter(x => x.aktiv)" :key="s.id" :value="s.id">{{ s.name }}</option>
+                    </select>
+                    <button class="btn btn-sm" :disabled="!assignTarget[d.device]" @click="assignDevice(d)">Zuordnen</button>
+                  </template>
+                  <button class="btn btn-sm" @click="ignoreDevice(d)"
+                          title="Unbeteiligtes Gerät dauerhaft ausblenden">✕ Ignorieren</button>
                 </div>
               </div>
+            </div>
+
+            <div class="mqtt-devices" v-if="mqttStatus && mqttStatus.ignored && mqttStatus.ignored.length">
+              <details>
+                <summary class="hw-head">Ignorierte Geräte ({{ mqttStatus.ignored.length }})</summary>
+                <div v-for="device in mqttStatus.ignored" :key="device" class="mq-dev">
+                  <div class="mq-dev-head"><strong>{{ device }}</strong></div>
+                  <div class="mq-dev-act">
+                    <button class="btn btn-sm" @click="unignoreDevice(device)">Wieder anzeigen</button>
+                  </div>
+                </div>
+              </details>
             </div>
 
             <table class="info-table" v-if="mqttStatus">
