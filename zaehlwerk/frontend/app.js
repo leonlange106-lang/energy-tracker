@@ -4,8 +4,11 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.14.0";
+const APP_VERSION = "3.15.0";
 const APP_CHANGELOG = [
+  { v: "3.15.0", d: "20.07.2026", items: [
+    "Herkunfts-Badges (HA/Import/Manuell) und der Quellen-Filter in der Werte-Tabelle funktionierten in der Detailansicht eines Systems nicht (\"sourceLabel is not a function\") - behoben",
+  ]},
   { v: "3.14.0", d: "20.07.2026", items: [
     "Änderungsprotokoll: einzelne Einträge lassen sich per „Rückgängig“ direkt zurücknehmen (Anlegen, Ändern, Löschen)",
   ]},
@@ -641,7 +644,14 @@ function hwSuggest(meter, system) {
 const SOURCE_LABELS = {
   manual: "Manuell", mqtt: "MQTT", ha_api: "HA", import: "Import",
 };
-const sourceLabel = (s) => SOURCE_LABELS[s] || s;
+// function-Deklaration statt const: kompilierte Vue-Templates laufen ohne
+// Zugriff auf den umgebenden Modul-Scope und lösen Bezeichner nur über `this`
+// oder `window` auf. Eine function-Deklaration hängt sich am Skript-Top-Level
+// an window - eine const-Zuweisung mit Pfeilfunktion (wie bisher hier) tut
+// das nicht und wäre im Template als "sourceLabel is not a function"
+// gescheitert, sobald tatsächlich eine Ablesung mit abweichender Quelle
+// existiert (bis zum Fix des source-Persistenz-Bugs kam das nie vor).
+function sourceLabel(s) { return SOURCE_LABELS[s] || s; }
 
 const WIDGET_TYPES = [
   { key: "latest_reading", label: "Letzter Stand",   needsSystem: true,  multi: false, w: 1, h: 1 },
@@ -1344,7 +1354,7 @@ const SystemDetail = {
     try { this.allSystems = await api("/api/systems"); } catch (_) {}
   },
   methods: {
-    fmt, fmtDate, typeIcon,
+    fmt, fmtDate, typeIcon, sourceLabel,
     async loadAll() {
       this.loading = true;
       await this.loadDynamic();
