@@ -1495,3 +1495,87 @@ input[type="number"] { height: var(--tap-min); min-height: 0; padding: 0 14px; }
   .audit-filters .select, .audit-filters .input { flex-basis: 100%; }
   .audit-pager { flex-wrap: wrap; justify-content: center; }
 }
+
+/* ---------- Quellenauswahl im Berichtsdialog ---------- */
+.exp-sources { display: flex; flex-wrap: wrap; gap: 8px; }
+.exp-src { padding: 6px 12px; border-radius: 20px; margin: 0;
+  border: 1px solid var(--md-outline-variant); cursor: pointer;
+  transition: background var(--dur-short) var(--ease-standard); }
+.exp-src.sel { background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container); border-color: transparent; }
+
+/* =========================================================================
+   Kachel-Konfiguration (3.9.0)
+   ========================================================================= */
+.wg-tools .wg-cfg { flex: 1; justify-content: center; }
+.wg-meta { font-size: 11px; font-family: var(--mono); color: var(--md-on-surface-variant);
+  white-space: nowrap; }
+.dash-grid.editing .wg { cursor: pointer; }
+.tile-types { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 520px) { .tile-types { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.tile-size { display: flex; gap: 24px; flex-wrap: wrap; }
+.ts-grid { display: flex; align-items: center; gap: 4px; }
+.ts-grid .crumb { min-width: 34px; justify-content: center; }
+.ts-grid .crumb.sel { background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container); border-color: transparent; }
+.ts-grid .hint { margin-left: 4px; }
+
+.tile-systems { display: flex; flex-direction: column; gap: 4px;
+  max-height: 220px; overflow-y: auto; }
+.tile-sys { padding: 8px 10px; border-radius: 10px; margin: 0; gap: 10px; }
+.tile-sys.sel { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+.tile-sys .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+
+.trend-up   { color: var(--md-error); }
+.trend-down { color: var(--md-primary); }
+.trend-flat { color: var(--md-on-surface-variant); }
+
+.nav-subitem .ns-icon { display: inline-flex; width: 18px; flex: 0 0 auto; opacity: .8; }
+.nav-subitem .ns-icon svg { width: 16px; height: 16px; }
+
+/* =========================================================================
+   Mobile Startseite (3.10.0)
+   ========================================================================= */
+.mh-greet { margin: 4px 0 18px; }
+.mh-hello { font-size: 24px; line-height: 30px; font-weight: 400; }
+.mh-date { font-size: 13px; color: var(--md-on-surface-variant); margin-top: 2px; }
+
+.mh-cards { display: flex; flex-direction: column; gap: 10px; }
+.mh-card { display: block; width: 100%; text-align: left; padding: 16px 18px;
+  border: none; cursor: pointer; font-family: var(--sans); color: inherit; }
+.mh-head { display: flex; align-items: center; gap: 8px; }
+.mh-head .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.mh-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mh-trend { font-size: 13px; flex: 0 0 auto; }
+.mh-trend.tr-up { color: var(--md-error); }
+.mh-trend.tr-down { color: var(--md-primary); }
+.mh-trend.tr-flat { color: var(--md-on-surface-variant); }
+.mh-val { font-size: 30px; line-height: 36px; font-weight: 500; margin-top: 6px;
+  letter-spacing: -.5px; }
+.mh-unit { font-size: 14px; margin-left: 5px; color: var(--md-on-surface-variant); }
+.mh-sub { font-size: 12px; color: var(--md-on-surface-variant); margin-top: 2px; }
+
+/* Haupthandlung bewusst groß und in Daumenreichweite. */
+.mh-actions { display: flex; gap: 10px; margin: 20px 0; }
+.mh-primary { flex: 1; min-height: 56px; font-size: 16px; justify-content: center; }
+.mh-scan { width: 56px; min-height: 56px; font-size: 22px; padding: 0; flex: 0 0 auto; }
+
+.mh-log { padding: 14px 16px; }
+.mh-log-row { display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 10px 4px; border: none; background: none; cursor: pointer;
+  border-bottom: 1px solid var(--md-outline-variant); text-align: left;
+  font-family: var(--sans); color: inherit; font-size: 13px; }
+.mh-log-row:last-child { border-bottom: none; }
+.mh-log-row .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.ml-sys { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ml-val { font-family: var(--mono); font-size: 12px; }
+.ml-date { font-size: 11px; color: var(--md-on-surface-variant); white-space: nowrap; }
+.mh-foot { text-align: center; margin: 20px 0 8px; }
+
+/* Ab Tablet-Breite ist die Startseite nicht vorgesehen – erreichbar bleibt
+   sie über die Navigation, die Darstellung wird dann aber zentriert begrenzt. */
+@media (min-width: 768px) {
+  .mh-cards, .mh-actions, .mh-log, .mh-greet { max-width: 560px; margin-left: auto; margin-right: auto; }
+}

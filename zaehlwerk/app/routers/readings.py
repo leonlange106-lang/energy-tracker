@@ -15,8 +15,8 @@ from ..version import APP_VERSION
 from ..due import system_due_entries
 from ..database import get_session
 from ..models import Meter, Reading, System, Tariff
-from ..schemas import (BulkDeleteRequest, ChartData, ReadingCreate,
-                       ReadingRead, StatsRead)
+from ..schemas import (READING_SOURCES_ALL, BulkDeleteRequest, ChartData,
+                       ReadingCreate, ReadingRead, StatsRead)
 from .settings import read_settings
 
 router = APIRouter(tags=["readings"])
@@ -39,10 +39,24 @@ def _reading_dict(r: Reading) -> dict:
     }
 
 
+def _parse_sources(value: Optional[str]) -> Optional[set[str]]:
+    """Komma-getrennte Herkunftsliste auswerten. Leer bedeutet: alle."""
+    if not value:
+        return None
+    wanted = {s.strip().lower() for s in value.split(",") if s.strip()}
+    valid = wanted & set(READING_SOURCES_ALL)
+    return valid or None
+
+
 def _query_readings(session: Session, system_id: str,
                     from_: Optional[date] = None, to: Optional[date] = None,
-                    limit: Optional[int] = None) -> list[dict]:
+                    limit: Optional[int] = None,
+                    sources: Optional[set[str]] = None) -> list[dict]:
     stmt = select(Reading).where(Reading.system_id == system_id)
+    if sources:
+        # Bestandsdaten vor 3.7.0 tragen 'manual'; NULL kann nach Migration 7
+        # nicht mehr vorkommen, die Prüfung bleibt dennoch als Rückfallebene.
+        stmt = stmt.where(Reading.source.in_(sources))
     if from_:
         stmt = stmt.where(Reading.datum >= datetime(from_.year, from_.month, from_.day))
     if to:
@@ -81,8 +95,9 @@ def _tariffs(session: Session, system_id: str) -> list[dict]:
 
 
 def _enriched(session: Session, system: System,
-              from_: Optional[date] = None, to: Optional[date] = None) -> list[dict]:
-    raw = _query_readings(session, system.id, from_, to)
+              from_: Optional[date] = None, to: Optional[date] = None,
+              sources: Optional[set[str]] = None) -> list[dict]:
+    raw = _query_readings(session, system.id, from_, to, sources=sources)
     enriched = logic.mark_outliers(
         logic.compute_intervals(raw, price=_price(system)), _sigma(session)
     )
@@ -291,7 +306,8 @@ def _readings_csv(raw: list[dict]) -> str:
 
 def _export_sections(session: Session, systems_param: Optional[str],
                      include_inactive: bool, from_: Optional[date],
-                     to: Optional[date], with_meta: bool) -> list[dict]:
+                     to: Optional[date], with_meta: bool,
+                     sources: Optional[set[str]] = None) -> list[dict]:
     """Systemauswahl auflösen und je System die angereicherten Daten bauen.
     Gemeinsame Grundlage von JSON- und CSV-Export – so können die beiden
     Formate nicht auseinanderlaufen."""
@@ -305,7 +321,7 @@ def _export_sections(session: Session, systems_param: Optional[str],
 
     sections = []
     for system in session.exec(stmt.order_by(System.name)).all():
-        enriched = _enriched(session, system, from_, to)
+        enriched = _enriched(session, system, from_, to, sources)
         stats = logic.compute_stats(enriched, _sigma(session))
         stats.update(logic.tariff_summary(enriched))
         section = {
@@ -385,12 +401,14 @@ def export_flat_csv(
     systems_param: Optional[str] = Query(None, alias="systems"),
     include_inactive: bool = Query(False),
     dialect: str = Query("de", pattern="^(de|international)$"),
+    sources: Optional[str] = Query(None),
     session: Session = Depends(get_session),
 ):
     """Flaches CSV über alle Systeme – eine Zeile je Ablesung, mit abgeleiteten
     Größen. Für Tabellenkalkulation und Auswertungswerkzeuge, NICHT für den
     Re-Import; dafür bleibt `/api/systems/{id}/export.csv` zuständig."""
-    sections = _export_sections(session, systems_param, include_inactive, from_, to, False)
+    sections = _export_sections(session, systems_param, include_inactive, from_, to,
+                                False, _parse_sources(sources))
     data = exporter.build_csv(sections, dialect)
     stamp = date.today().isoformat()
     return Response(
@@ -408,6 +426,7 @@ def export_full_json(
     include_derived: bool = Query(True, description="Verbrauch, Kosten, Ausreißer mitgeben"),
     include_meta: bool = Query(True, description="Zähler-Metadaten und Tarife mitgeben"),
     pretty: bool = Query(True),
+    sources: Optional[str] = Query(None),
     session: Session = Depends(get_session),
 ):
     """Vollständiger strukturierter Export."""
@@ -415,7 +434,7 @@ def export_full_json(
     from ..migrations import schema_version
 
     sections = _export_sections(session, systems_param, include_inactive,
-                                from_, to, include_meta)
+                                from_, to, include_meta, _parse_sources(sources))
     data = exporter.build_json(
         sections, app_version=APP_VERSION, schema_version=schema_version(engine),
         derived=include_derived, pretty=pretty, von=from_, bis=to,
@@ -483,10 +502,11 @@ def get_report(
     system_colors: bool = Query(False, description="Diagramm in der Systemfarbe zeichnen"),
     include_chart: bool = Query(True),
     include_table: bool = Query(True),
+    sources: Optional[str] = Query(None, description="Komma-getrennt: manual,mqtt,ha_api,import"),
     session: Session = Depends(get_session),
 ):
     system = _require_system(system_id, session)
-    enriched = _enriched(session, system, from_, to)
+    enriched = _enriched(session, system, from_, to, _parse_sources(sources))
     pdf = report.build_report_pdf(
         system={"name": system.name, "typ": system.typ, "einheit": system.einheit},
         enriched=enriched,
@@ -517,8 +537,10 @@ def get_combined_report(
     system_colors: bool = Query(False),
     include_chart: bool = Query(True),
     include_table: bool = Query(True),
+    sources: Optional[str] = Query(None, description="Komma-getrennt: manual,mqtt,ha_api,import"),
     session: Session = Depends(get_session),
 ):
+    wanted_sources = _parse_sources(sources)
     stmt = select(System)
     if not include_inactive:
         stmt = stmt.where(System.aktiv == True)  # noqa: E712
@@ -532,7 +554,7 @@ def get_combined_report(
 
     sections = []
     for system in systems:
-        enriched = _enriched(session, system, from_, to)
+        enriched = _enriched(session, system, from_, to, wanted_sources)
         sections.append({
             "system": {"name": system.name, "typ": system.typ,
                        "einheit": system.einheit, "farbe": system.farbe},

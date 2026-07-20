@@ -14,6 +14,53 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.10.0] - 2026-07-19
+
+### Added
+
+- [Frontend/Mobile] Ergänzt eine eigene Startseite für schmale Geräte mit festem, senkrechtem Aufbau: oben die drei Systeme mit dem höchsten Tagesverbrauch samt Trendanzeige, in der Mitte die Erfassung einer Ablesung mit unmittelbarem Zugriff auf die Kamera, unten die letzten drei Erfassungen.
+- [Backend/routers/dashboard.py] Ergänzt die letzten Erfassungen in der Antwort von `GET /api/dashboard/data`, sodass die Startseite mit einer einzigen Anfrage auskommt.
+
+### Changed
+
+- [Frontend/Routing] Entscheidet beim Start anhand der Bildschirmbreite über die erste Ansicht: unterhalb von 768 Pixeln die kompakte Startseite, darüber die Systemliste. Die Entscheidung fällt einmalig und nicht bei jeder Größenänderung, da ein Wechsel der Ansicht mitten in der Bedienung überraschend wäre; über die Navigation bleiben beide erreichbar.
+- [Frontend/Mobile] Stellt die Trendanzeige über Form und Farbe zugleich dar, damit sie im Hochkontrast-Theme und bei Farbfehlsichtigkeit unterscheidbar bleibt.
+
+---
+
+## [3.9.0] - 2026-07-19
+
+### Changed
+
+- [Frontend/Navigation] Fasst Dashboard und Bericht unter dem neuen Eintrag Auswertungen zusammen. Der Elternpunkt führt auf sein erstes Kind, statt ins Leere zu zeigen; die Unterliste öffnet sich wie beim Zählwerk über den Pfeil.
+- [Frontend/Dashboard] Ersetzt die Schaltflächen zur Breiten- und Höhenänderung an den Kacheln durch einen zentrierten Einrichtungsdialog. Er fasst Art, Größe, Systemzuordnung, Zeitraum und Überschrift zusammen und arbeitet auf einer Arbeitskopie, sodass Abbrechen die Kachel unverändert lässt.
+- [Frontend/app.js] Führt je Elternpunkt einen eigenen Auf- und Zuklappzustand. Mit einer gemeinsamen Angabe hätten sich beide Unterlisten stets zusammen geöffnet und geschlossen.
+
+### Added
+
+- [Frontend/Charts] Ergänzt die Zeitraumwahl je Kachel mit sieben Tagen, dreißig Tagen, neunzig Tagen, laufendem Jahr, zwölf Monaten und Gesamtbestand. Die Einschränkung erfolgt auf der bereits übertragenen Reihe, sodass keine zusätzlichen Abfragen entstehen.
+- [Frontend/Charts] Ergänzt die Überlagerung mehrerer Systeme in einem Verlauf. Die Reihen erhalten eine gemeinsame Zeitachse, unterschiedliche Einheiten eine eigene Werteachse; dargestellt werden höchstens zwei, da weitere Achsen unlesbar würden.
+- [Frontend/Charts] Ergänzt im Kreisdiagramm die absoluten Werte in Beschriftung und Kurzhinweis, zusätzlich zum Anteil und zur erfassten Menge in der jeweiligen Einheit.
+- [Frontend/Charts] Ergänzt die Kacheln Trend und Kostenprognose. Der Trend vergleicht die laufende mit der vorangegangenen Periode gleicher Länge; die Prognose rechnet den Tagesverbrauch auf ein Jahr hoch und bewertet ihn mit dem Effektivpreis aus den Tarifen.
+- [Backend/schemas.py] Ergänzt an der Kachel die Felder `system_ids` und `timeframe` sowie die Kacheltypen `trend` und `cost_forecast`. Das bisherige Feld `system_id` bleibt bestehen und wird als erstes Element geführt, sodass vorhandene Anordnungen unverändert weiterlaufen.
+
+---
+
+## [3.8.1] - 2026-07-19
+
+### Added
+
+- [Frontend/Reports] Ergänzt im Dialog vor dem Export die Auswahl der Datenquellen. Ohne Auswahl fließen alle Quellen ein; bei eingeschränkter Auswahl weist ein Hinweis darauf hin, dass Verbrauch und Kosten aus den verbleibenden Ablesungen berechnet werden und Intervalle dadurch länger ausfallen.
+- [Backend/routers/readings.py] Ergänzt den Parameter `sources` an beiden Berichtsendpunkten sowie an den Rohdaten-Ausleitungen. Unbekannte Angaben werden verworfen; bleibt keine gültige übrig, gilt die Anfrage als ungefiltert.
+- [Backend/routers/admin.py] Weist den Zustand der Texterkennung in der Diagnoseansicht aus, sodass ein unvollständiges Abbild dort erkennbar ist.
+
+### Fixed
+
+- [Build] Ergänzt im `Dockerfile` eine Kennung der Systemabhängigkeiten. Wird sie erhöht, verwirft Docker die zwischengespeicherte Installationsebene. Ohne diesen Griff behält der Supervisor eine vorhandene Ebene bei, solange sich der Befehl selbst nicht ändert – daran scheiterte die Erkennung nach 3.6.0.
+- [Build] Prüft im `Dockerfile` unmittelbar nach der Installation, ob Tesseract samt deutschen Sprachdaten vorliegt, und lädt anschließend OpenCV und die Python-Bindung. Der Build bricht damit an der Ursache ab, statt ein Abbild auszuliefern, das die Kamera erst im Betrieb verweigert.
+
+---
+
 ## [3.8.0] - 2026-07-19
 
 ### Added
@@ -802,7 +849,10 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
-[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.8.0...HEAD
+[Unreleased]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.10.0...HEAD
+[3.10.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.9.0...v3.10.0
+[3.9.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.8.1...v3.9.0
+[3.8.1]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.8.0...v3.8.1
 [3.8.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/leonlange106-lang/energy-tracker/compare/v3.5.1...v3.6.0

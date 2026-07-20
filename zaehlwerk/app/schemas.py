@@ -449,7 +449,11 @@ class BulkDeleteRequest(BaseModel):
 # ---------- Dashboard ----------
 # Die zulässigen Kacheltypen stehen im Schema, nicht nur in der Oberfläche:
 # ein unbekannter Typ würde beim Zeichnen ins Leere laufen.
-WIDGET_TYPES = ("latest_reading", "line_chart", "pie_chart", "cost_summary")
+WIDGET_TYPES = ("latest_reading", "line_chart", "pie_chart", "cost_summary",
+                "trend", "cost_forecast")
+
+# Zeitraum je Kachel. "all" wertet den gesamten Bestand aus.
+TIMEFRAMES = ("7d", "30d", "90d", "ytd", "12m", "all")
 
 # Rastergrenzen. Vier Spalten sind die Vorgabe der Oberfläche; die Höhe ist auf
 # vier Einheiten begrenzt, damit eine einzelne Kachel nicht die ganze Seite
@@ -460,12 +464,19 @@ MAX_TILES = 24
 
 class DashboardTile(BaseModel):
     id: str = Field(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
-    type: str = Field(..., pattern="^(latest_reading|line_chart|pie_chart|cost_summary)$")
+    type: str = Field(
+        ...,
+        pattern="^(latest_reading|line_chart|pie_chart|cost_summary|trend|cost_forecast)$")
     x: int = Field(0, ge=0, le=GRID_COLS - 1)
     y: int = Field(0, ge=0, le=200)
     w: int = Field(1, ge=1, le=GRID_COLS)
     h: int = Field(1, ge=1, le=4)
     system_id: Optional[str] = Field(None, max_length=64)
+    # Mehrere Systeme in einem Diagramm. `system_id` bleibt für die einfache
+    # Zuordnung bestehen und wird als erstes Element behandelt, damit ältere
+    # Layouts unverändert weiterlaufen.
+    system_ids: list[str] = Field(default_factory=list, max_length=6)
+    timeframe: str = Field("12m", pattern="^(7d|30d|90d|ytd|12m|all)$")
     title: Optional[str] = Field(None, max_length=80)
 
     @model_validator(mode="after")

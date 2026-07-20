@@ -4,8 +4,23 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.8.0";
+const APP_VERSION = "3.10.0";
 const APP_CHANGELOG = [
+  { v: "3.10.0", d: "19.07.2026", items: [
+    "Eigene Startseite für Smartphones: drei Kennzahlen, Ablesung, letzte Erfassungen",
+    "Beim Start entscheidet die Bildschirmbreite über die erste Ansicht",
+  ]},
+  { v: "3.9.0", d: "19.07.2026", items: [
+    "Dashboard und Bericht unter „Auswertungen“ zusammengefasst",
+    "Kacheln über einen Dialog einrichten statt über Inline-Schaltflächen",
+    "Zeitraum je Kachel, mehrere Systeme in einem Verlauf",
+    "Kreisdiagramm zeigt absolute Werte, neue Kacheln Trend und Kostenprognose",
+  ]},
+  { v: "3.8.1", d: "19.07.2026", items: [
+    "Bericht und Rohdaten-Export lassen sich auf einzelne Datenquellen einschränken",
+    "Build bricht ab, wenn Tesseract oder die deutschen Sprachdaten fehlen",
+    "Zustand der Texterkennung in der Admin-Diagnose sichtbar",
+  ]},
   { v: "3.8.0", d: "19.07.2026", items: [
     "Änderungsprotokoll für Ablesungen, Systeme, Tarife, Zähler, Konten und Einstellungen",
     "Einträge sind unveränderlich – die Datenbank weist Änderungen selbst ab",
@@ -390,14 +405,21 @@ const SVG = {
   report: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3 3 3-3"/></svg>',
   cog:    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   admin:  '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-2.9 8.2-7 10-4.1-1.8-7-5.6-7-10V6z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>',
   grid: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
   menu:   '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>',
 };
 const NAV_ITEMS = [
-  { key: "dashboard",    label: "Dashboard",    short: "Start",     icon: SVG.grid,   action: "openDashboard",      primary: true },
+  /* "Auswertungen" ist ein reiner Elternpunkt: er navigiert auf sein erstes
+     Kind statt auf eine eigene Seite. Ein Menüpunkt ohne Ziel wäre eine
+     Sackgasse, und M3 verlangt, dass ein Navigationsziel navigiert. */
+  { key: "auswertungen", label: "Auswertungen", short: "Analyse",   icon: SVG.chart,  action: "openDashboard",      primary: true,
+    children: [
+      { key: "dashboard", label: "Dashboard", icon: SVG.grid,   action: "openDashboard" },
+      { key: "bericht",   label: "Bericht",   icon: SVG.report, action: "openCombinedReport", needsExport: true },
+    ] },
   { key: "zaehlwerk",    label: "Zählwerk",     short: "Zählwerk",  icon: SVG.home,   action: "back",               primary: true, expandable: true },
-  { key: "bericht",      label: "Bericht",      short: "Bericht",   icon: SVG.report, action: "openCombinedReport", primary: true, needsSystems: true },
   { key: "einstellungen",label: "Einstellungen",short: "Optionen",  icon: SVG.cog,    action: "openSettings",       primary: true },
   { key: "admin",        label: "Admin-Tools",  short: "Admin",     icon: SVG.admin,  action: "openAdmin",          primary: true, adminOnly: true },
 ];
@@ -597,45 +619,106 @@ const SOURCE_LABELS = {
 const sourceLabel = (s) => SOURCE_LABELS[s] || s;
 
 const WIDGET_TYPES = [
-  { key: "latest_reading", label: "Letzter Stand",  needsSystem: true,  w: 1, h: 1 },
-  { key: "line_chart",     label: "Verlauf",        needsSystem: true,  w: 2, h: 2 },
-  { key: "pie_chart",      label: "Verteilung",     needsSystem: false, w: 1, h: 2 },
-  { key: "cost_summary",   label: "Kosten",         needsSystem: false, w: 1, h: 1 },
+  { key: "latest_reading", label: "Letzter Stand",   needsSystem: true,  multi: false, w: 1, h: 1 },
+  { key: "line_chart",     label: "Verlauf",         needsSystem: true,  multi: true,  w: 2, h: 2 },
+  { key: "pie_chart",      label: "Verteilung",      needsSystem: false, multi: false, w: 1, h: 2 },
+  { key: "cost_summary",   label: "Kosten",          needsSystem: false, multi: false, w: 1, h: 1 },
+  { key: "trend",          label: "Trend",           needsSystem: true,  multi: false, w: 1, h: 1 },
+  { key: "cost_forecast",  label: "Kostenprognose",  needsSystem: true,  multi: false, w: 1, h: 1 },
 ];
+
+/* Zeiträume je Kachel. Die Tagesangaben werden clientseitig auf die vom
+   Server gelieferte Reihe angewandt – ein eigener Abruf je Kachel wäre bei
+   acht Kacheln ein Vielfaches an Anfragen. */
+const TIMEFRAMES = [
+  { key: "7d",  label: "7 Tage",   days: 7 },
+  { key: "30d", label: "30 Tage",  days: 30 },
+  { key: "90d", label: "90 Tage",  days: 90 },
+  { key: "ytd", label: "Lfd. Jahr", days: null },
+  { key: "12m", label: "12 Monate", days: 365 },
+  { key: "all", label: "Gesamt",   days: null },
+];
+
+function sliceSeries(series, timeframe) {
+  if (!series || !series.length || timeframe === "all") return series || [];
+  const now = new Date();
+  let cutoff;
+  if (timeframe === "ytd") cutoff = new Date(now.getFullYear(), 0, 1);
+  else {
+    const def = TIMEFRAMES.find((t) => t.key === timeframe);
+    if (!def || !def.days) return series;
+    cutoff = new Date(now.getTime() - def.days * 86400000);
+  }
+  const iso = cutoff.toISOString().slice(0, 10);
+  return series.filter((p) => p.d >= iso);
+}
 const WIDGET_LABEL = Object.fromEntries(WIDGET_TYPES.map((w) => [w.key, w.label]));
 
 /* Kleines Verlaufsdiagramm. Eigene Komponente statt EnergyChart: die dort
    verbaute Achsen- und Legendenlogik ist für eine Kachel zu schwer, und ein
    zweiter Chart.js-Aufbau je Kachel kostet spürbar Zeit. */
 const WidgetLineChart = {
-  props: ["data"],
+  props: ["data", "series"],
   data: () => ({ chart: null }),
   mounted() { this.draw(); },
   unmounted() { if (this.chart) this.chart.destroy(); },
-  watch: { data: { handler() { this.draw(); }, deep: true } },
+  watch: { series: { handler() { this.draw(); }, deep: true } },
   methods: {
     draw() {
-      if (!this.$refs.cv || !this.data || !this.data.series || !this.data.series.length) return;
+      const sets = (this.series || []).filter((s) => s.points && s.points.length);
+      if (!this.$refs.cv || !sets.length) return;
       if (this.chart) this.chart.destroy();
-      const color = this.data.farbe || cssVar("--md-primary") || "#0e7c86";
+
+      // Gemeinsame Zeitachse über alle Reihen: ohne sie zeichnete Chart.js
+      // die zweite Reihe gegen die Beschriftungen der ersten und verschöbe sie.
+      const labels = [...new Set(sets.flatMap((s) => s.points.map((p) => p.d)))].sort();
+      const multi = sets.length > 1;
+      // Bei mehreren Systemen jede Reihe auf eigener Achse: kWh und m³ haben
+      // keinen gemeinsamen Maßstab, übereinandergelegt wäre eine davon platt.
+      const datasets = sets.map((s, i) => {
+        const byDay = Object.fromEntries(s.points.map((p) => [p.d, p.v]));
+        return {
+          label: `${s.name} (${s.einheit})`,
+          data: labels.map((d) => (d in byDay ? byDay[d] : null)),
+          borderColor: s.farbe || cssVar("--md-primary") || "#0e7c86",
+          borderWidth: 2, tension: 0.25, pointRadius: 0, fill: false, spanGaps: true,
+          yAxisID: multi ? `y${i}` : "y",
+        };
+      });
+      const scales = {
+        x: { display: false },
+      };
+      if (multi) {
+        sets.forEach((s, i) => {
+          scales[`y${i}`] = {
+            position: i === 0 ? "left" : "right",
+            display: i < 2,                    // mehr als zwei Achsen sind unlesbar
+            grid: { drawOnChartArea: i === 0, color: chartColor("grid", "#e2e8ee") },
+            ticks: { maxTicksLimit: 4, color: s.farbe, font: { size: 9 } },
+          };
+        });
+      } else {
+        scales.y = { ticks: { maxTicksLimit: 4, color: chartColor("axis", "#5b6b7b"), font: { size: 9 } },
+                     grid: { color: chartColor("grid", "#e2e8ee") } };
+      }
+
       this.chart = new Chart(this.$refs.cv, {
         type: "line",
-        data: {
-          labels: this.data.series.map((p) => p.d),
-          datasets: [{
-            data: this.data.series.map((p) => p.v),
-            borderColor: color, borderWidth: 2, tension: 0.25,
-            pointRadius: 0, fill: false,
-          }],
-        },
+        data: { labels, datasets },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: { intersect: false, mode: "index" } },
-          scales: {
-            x: { display: false },
-            y: { ticks: { maxTicksLimit: 4, color: chartColor("axis", "#5b6b7b"), font: { size: 9 } },
-                 grid: { color: chartColor("grid", "#e2e8ee") } },
+          interaction: { intersect: false, mode: "index" },
+          plugins: {
+            legend: { display: multi, position: "bottom",
+                      labels: { boxWidth: 10, font: { size: 10 },
+                                color: cssVar("--md-on-surface-variant") } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.parsed.y, 2)}`,
+              },
+            },
           },
+          scales,
         },
       });
     },
@@ -643,7 +726,9 @@ const WidgetLineChart = {
   template: `
     <div class="wg-body wg-chart">
       <canvas ref="cv"></canvas>
-      <div class="wg-empty" v-if="!data || !data.series || !data.series.length">Keine Werte im Zeitraum</div>
+      <div class="wg-empty" v-if="!series || !series.some(s => s.points && s.points.length)">
+        Keine Werte im Zeitraum
+      </div>
     </div>`,
 };
 
@@ -677,9 +762,35 @@ const WidgetPieChart = {
         options: {
           responsive: true, maintainAspectRatio: false, cutout: "58%",
           plugins: {
-            legend: { position: "bottom",
-                      labels: { boxWidth: 10, font: { size: 10 },
-                                color: cssVar("--md-on-surface-variant") } },
+            legend: {
+              position: "bottom",
+              labels: {
+                boxWidth: 10, font: { size: 10 },
+                color: cssVar("--md-on-surface-variant"),
+                // Absolutwert schon in der Legende: der Anteil allein sagt
+                // nichts darüber, worüber man spricht.
+                generateLabels: (chart) => {
+                  const ds = chart.data.datasets[0];
+                  const sum = ds.data.reduce((a, b) => a + b, 0) || 1;
+                  return chart.data.labels.map((label, i) => ({
+                    text: `${label} · ${fmt(ds.data[i])} € (${Math.round(ds.data[i] / sum * 100)} %)`,
+                    fillStyle: ds.backgroundColor[i], strokeStyle: ds.backgroundColor[i],
+                    index: i,
+                  }));
+                },
+              },
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const sum = ctx.dataset.data.reduce((a, b) => a + b, 0) || 1;
+                  const s = this.withCost[ctx.dataIndex];
+                  const menge = s && s.total_consumption
+                    ? ` · ${fmt(s.total_consumption)} ${s.einheit}` : "";
+                  return `${fmt(ctx.parsed)} € (${(ctx.parsed / sum * 100).toFixed(1)} %)${menge}`;
+                },
+              },
+            },
           },
         },
       });
@@ -702,6 +813,66 @@ const WidgetLatestReading = {
     </div>
     <div class="wg-body wg-empty" v-else>Kein System zugeordnet</div>`,
   methods: { fmt, fmtDate },
+};
+
+/* Trend: laufende gegen vorherige Periode gleicher Länge. Aussagekräftiger
+   als ein absoluter Wert, weil Verbrauch stark saisonal schwankt. */
+const WidgetTrend = {
+  props: ["data", "timeframe"],
+  computed: {
+    calc() {
+      const pts = sliceSeries((this.data || {}).series, this.timeframe || "30d");
+      if (!pts.length) return null;
+      const half = Math.floor(pts.length / 2);
+      if (half < 1) return null;
+      const avg = (arr) => arr.reduce((s, p) => s + p.v, 0) / arr.length;
+      const prev = avg(pts.slice(0, half));
+      const curr = avg(pts.slice(half));
+      if (!prev) return null;
+      const pct = (curr - prev) / prev * 100;
+      return { curr, prev, pct,
+               dir: pct > 2 ? "up" : pct < -2 ? "down" : "flat" };
+    },
+  },
+  template: `
+    <div class="wg-body wg-metric" v-if="calc">
+      <div class="wg-val num" :class="'trend-' + calc.dir">
+        {{ calc.pct > 0 ? '▲' : calc.pct < 0 ? '▼' : '▬' }}
+        {{ Math.abs(calc.pct).toFixed(1) }}<span class="wg-unit">%</span>
+      </div>
+      <div class="wg-sub">{{ fmt(calc.curr, 2) }} statt {{ fmt(calc.prev, 2) }} {{ data.einheit }}/Tag</div>
+      <div class="wg-sub">{{ calc.dir === 'down' ? 'weniger als zuvor' : calc.dir === 'up' ? 'mehr als zuvor' : 'unverändert' }}</div>
+    </div>
+    <div class="wg-body wg-empty" v-else>Zu wenige Werte für einen Trend</div>`,
+  methods: { fmt },
+};
+
+/* Kostenprognose: Tagesverbrauch der jüngsten Periode auf zwölf Monate
+   hochgerechnet, bewertet mit dem Effektivpreis aus den Tarifen. */
+const WidgetCostForecast = {
+  props: ["data", "timeframe"],
+  computed: {
+    calc() {
+      const d = this.data;
+      if (!d) return null;
+      const pts = sliceSeries(d.series, this.timeframe || "90d");
+      if (!pts.length) return null;
+      const perDay = pts.reduce((s, p) => s + p.v, 0) / pts.length;
+      // Effektivpreis inklusive Grundgebühr, sonst Ø aus erfassten Kosten.
+      const price = d.total_consumption
+        ? (d.total_cost_tariff || d.total_cost || 0) / d.total_consumption : 0;
+      if (!price) return { perDay, yearly: null };
+      return { perDay, price, yearly: perDay * 365.25 * price };
+    },
+  },
+  template: `
+    <div class="wg-body wg-metric" v-if="calc && calc.yearly">
+      <div class="wg-val num">{{ fmt(calc.yearly) }}<span class="wg-unit">€/Jahr</span></div>
+      <div class="wg-sub">{{ fmt(calc.perDay, 2) }} {{ data.einheit }}/Tag · {{ fmt(calc.price, 4) }} €/{{ data.einheit }}</div>
+      <div class="wg-sub">Hochrechnung, kein Angebot</div>
+    </div>
+    <div class="wg-body wg-empty" v-else>Kein Preis hinterlegt – Tarif ergänzen</div>`,
+  methods: { fmt },
 };
 
 const WidgetCostSummary = {
@@ -2143,7 +2314,8 @@ const SystemDetail = {
    ========================================================================= */
 createApp({
   components: { SystemDetail, HoldButton, WidgetLineChart, WidgetPieChart,
-                WidgetLatestReading, WidgetCostSummary },
+                WidgetLatestReading, WidgetCostSummary, WidgetTrend,
+                WidgetCostForecast },
   provide() { return { notify: this.notify }; },
   data: () => ({
     systems: [],
@@ -2185,7 +2357,12 @@ createApp({
     navExpanded: localStorage.getItem("zw_nav_expanded") === "1",
     navDrawer: false,
     navItems: NAV_ITEMS,
-    navSubOpen: localStorage.getItem("zw_nav_sub") === "1",
+    // Je Elternpunkt ein eigener Zustand – mit einer gemeinsamen Flagge
+    // klappten beide Listen zusammen auf und zu.
+    navSubOpen: (() => {
+      try { return JSON.parse(localStorage.getItem("zw_nav_sub")) || {}; }
+      catch (_) { return {}; }
+    })(),
     showSysSheet: false,
     auth: authStore,
     authForm: { username: "", display_name: "", password: "", password2: "" },
@@ -2194,11 +2371,14 @@ createApp({
     users: [],
     dashTiles: [],
     dashData: [],
+    dashRecent: [],
     dashEdit: false,
     dashDirty: false,
     dashLoading: false,
     dashDragId: null,
     widgetTypes: WIDGET_TYPES,
+    timeframes: TIMEFRAMES,
+    tileCfg: null,
     adminDiag: null,
     adminSchema: [],
     adminLogs: [],
@@ -2222,7 +2402,7 @@ createApp({
     themeContrast() { return themeStore.contrast; },
     /* aktiver Navigationspunkt (Einstellungen als Modal hat Vorrang vor der Ansicht) */
     activeNav() {
-      if (this.view === "dashboard") return "dashboard";
+      if (this.view === "dashboard") return "auswertungen";
       if (this.view === "settings") return "einstellungen";
       if (this.view === "admin") return "admin";
       return "zaehlwerk";
@@ -2230,6 +2410,26 @@ createApp({
     navMenuIcon() { return SVG.menu; },
     chevronIcon() { return SVG.chevron; },
     navHomeIcon() { return SVG.home; },
+    greeting() {
+      const h = new Date().getHours();
+      return h < 5 ? "Gute Nacht" : h < 11 ? "Guten Morgen"
+           : h < 18 ? "Guten Tag" : "Guten Abend";
+    },
+    todayLong() {
+      return new Date().toLocaleDateString("de-DE",
+        { weekday: "long", day: "numeric", month: "long" });
+    },
+    /* Die drei Systeme mit dem höchsten Tagesverbrauch – das sind die, bei
+       denen sich Hinsehen lohnt. Jeweils mit Trend gegen die Vorperiode. */
+    mobileTop() {
+      return this.dashData
+        .map((s) => ({ ...s, trend: this.trendOf(s) }))
+        .sort((a, b) => (b.avg_per_day || 0) - (a.avg_per_day || 0))
+        .slice(0, 3);
+    },
+    tileTypeDef() {
+      return WIDGET_TYPES.find((w) => w.key === (this.tileCfg || {}).type) || WIDGET_TYPES[0];
+    },
     /* Maske nur zeigen, wenn der Status bekannt UND die Anmeldung nötig ist.
        Vor der ersten Antwort würde sie sonst kurz aufblitzen. */
     authNeeded() {
@@ -2270,7 +2470,7 @@ createApp({
         // Palette, Diagrammfarben) ist gerätelokal und betrifft jedes Konto.
         // Nur Sektion A ist administratorenpflichtig und wird dort ausgeblendet.
         if (i.adminOnly && !this.isAdmin) return false;
-        if (i.key === "bericht" && !this.canExport) return false;
+
         return true;
       });
     },
@@ -2282,7 +2482,11 @@ createApp({
     this.applyNavClass();
     window.addEventListener("keydown", this.onNavKey);
     window.addEventListener("resize", this.onNavResize);
-    if (await this.checkAuth()) await this.load();
+    if (await this.checkAuth()) {
+      await this.load();
+      // Auf schmalen Geräten die kompakte Startseite, sonst die Systemliste.
+      if (this.isMobileViewport()) this.openMobileHome();
+    }
   },
   unmounted() {
     window.removeEventListener("keydown", this.onNavKey);
@@ -2306,9 +2510,26 @@ createApp({
       this.applyNavClass();
     },
     closeDrawer() { this.navDrawer = false; },
-    toggleNavSub() {
-      this.navSubOpen = !this.navSubOpen;
-      localStorage.setItem("zw_nav_sub", this.navSubOpen ? "1" : "0");
+    toggleNavSub(key) {
+      this.navSubOpen = { ...this.navSubOpen, [key]: !this.navSubOpen[key] };
+      localStorage.setItem("zw_nav_sub", JSON.stringify(this.navSubOpen));
+    },
+    /* Unterpunkte kommen entweder aus einer festen Liste am Navigationseintrag
+       oder – beim Zählwerk – dynamisch aus den aktiven Systemen. */
+    subItemsFor(item) {
+      if (item.children) {
+        return item.children.filter((c) => !c.needsExport || this.canExport);
+      }
+      return item.expandable ? this.navSubItems : [];
+    },
+    subItemActive(sub) {
+      if (sub.id) return this.view === "detail" && this.selected === sub.id;
+      return sub.key === "dashboard" && this.view === "dashboard";
+    },
+    goSubItem(sub) {
+      this.closeDrawer();
+      if (sub.id) { this.open(sub); return; }
+      this[sub.action]();
     },
     goSystem(s) {
       this.closeDrawer();
@@ -2398,6 +2619,33 @@ createApp({
       if (this.isCompact() && this.navDrawer) this.navDrawer = false;
       if (!this.isCompact() && this.showSysSheet) this.showSysSheet = false;
     },
+    /* Startseite je nach Gerät. Entschieden wird einmal beim Start, nicht bei
+       jeder Größenänderung: ein Wechsel der Ansicht mitten in der Bedienung
+       wäre überraschend. Über die Navigation bleibt beides erreichbar. */
+    isMobileViewport() { return window.innerWidth < 768; },
+    openMobileHome() {
+      this.view = "mobile-home";
+      window.scrollTo(0, 0);
+      if (!this.dashData.length) this.loadDashboard();
+    },
+    openSystemById(id) {
+      const s = this.systems.find((x) => x.id === id);
+      if (s) this.open(s);
+    },
+    async mobileNewReading(withScanner) {
+      // Ohne Systemauswahl kein Dialog: bei genau einem System direkt hinein,
+      // sonst zur Übersicht, wo die Auswahl ohnehin ansteht.
+      const active = this.systems.filter((s) => s.aktiv);
+      if (!active.length) { this.notify("Erst ein System anlegen", "err"); return; }
+      if (active.length > 1) { this.back(); return; }
+      this.open(active[0]);
+      await this.$nextTick();
+      const d = this.$refs.detail;
+      if (!d) return;
+      d.openReading();
+      if (withScanner) { await this.$nextTick(); d.openScanner(); }
+    },
+
     openDashboard() {
       this.view = "dashboard";
       window.scrollTo(0, 0);
@@ -2499,7 +2747,7 @@ createApp({
       this.selected = s.id;
       this.view = "detail";
       // Kontext zeigen: wer in ein System springt, sieht in der Sidebar, wo er ist
-      if (this.navExpanded && !this.navSubOpen) this.toggleNavSub();
+      if (this.navExpanded && !this.navSubOpen.zaehlwerk) this.toggleNavSub("zaehlwerk");
       window.scrollTo(0, 0);
     },
     back() { this.view = "menu"; this.selected = null; this.load(); },
@@ -2536,6 +2784,7 @@ createApp({
         includeChart: true,
         includeTable: true,
         dialect: "de",
+        sources: [],
         includeDerived: true,
         includeMeta: true,
         theme: t,
@@ -2558,6 +2807,11 @@ createApp({
         c.from = `${y}-01-01`; c.to = `${y}-12-31`;
       }
     },
+    expToggleSource(key) {
+      const a = this.expCfg.sources;
+      const i = a.indexOf(key);
+      if (i >= 0) a.splice(i, 1); else a.push(key);
+    },
     expToggleSystem(id) {
       const a = this.expCfg.systemIds;
       const i = a.indexOf(id);
@@ -2579,6 +2833,10 @@ createApp({
         p.set("systems", c.systemIds.join(","));
       }
       if (c.includeInactive) p.set("include_inactive", "true");
+      // Leere Auswahl = alle Quellen; dann bleibt der Parameter weg.
+      if (c.sources.length && c.sources.length < this.expSourceOptions.length) {
+        p.set("sources", c.sources.join(","));
+      }
       if (c.useTheme) Object.entries(c.theme).forEach(([k, v]) => v && p.set(k, v));
       if (c.systemColors) p.set("system_colors", "true");
       if (!c.includeChart) p.set("include_chart", "false");
@@ -2586,6 +2844,11 @@ createApp({
       return p.toString() ? "?" + p.toString() : "";
     },
     expCount() { return this.expCfg ? this.expCfg.systemIds.length : 0; },
+    /* Nur Quellen anbieten, die tatsächlich vorkommen – eine Auswahl, die
+       nichts trifft, führt sonst zu einem leeren Bericht ohne erkennbaren Grund. */
+    expSourceOptions() {
+      return Object.entries(SOURCE_LABELS).map(([key, label]) => ({ key, label }));
+    },
     /* Rohdaten-Export braucht nur Zeitraum und Auswahl - Farben und
        Diagrammoptionen gelten ausschliesslich fuer das PDF. */
     expDataQuery() {
@@ -2598,6 +2861,9 @@ createApp({
         p.set("systems", c.systemIds.join(","));
       }
       if (c.includeInactive) p.set("include_inactive", "true");
+      if (c.sources.length && c.sources.length < this.expSourceOptions.length) {
+        p.set("sources", c.sources.join(","));
+      }
       return p;
     },
     runExport() {
@@ -2649,7 +2915,7 @@ createApp({
       return r !== null && r < 3 ? `Kontrast ${r.toFixed(1)}:1 – auf dieser Fläche schwer erkennbar` : null;
     },
     fabAction() {
-      if (!this.canWrite || ["settings", "admin", "dashboard"].includes(this.view)) return;
+      if (!this.canWrite || ["settings", "admin", "dashboard", "mobile-home"].includes(this.view)) return;
       const d = this.$refs.detail;
       if (this.view === "detail" && d) {
         // Kontextbezogen: im Zähler-Tab legt der FAB einen Zähler an
@@ -2773,16 +3039,34 @@ createApp({
         ]);
         this.dashTiles = layout.tiles;
         this.dashData = data.systems;
+        this.dashRecent = data.recent || [];
         this.dashDirty = false;
         if (layout.recovered) this.notify("Layout war beschädigt – Vorgabe geladen", "err");
       } catch (e) { this.notify(e.message, "err"); }
       finally { this.dashLoading = false; }
     },
+    trendOf(s) {
+      const pts = sliceSeries(s.series, "90d");
+      if (pts.length < 4) return { dir: "flat", text: "zu wenige Werte" };
+      const half = Math.floor(pts.length / 2);
+      const avg = (a) => a.reduce((x, p) => x + p.v, 0) / a.length;
+      const prev = avg(pts.slice(0, half)), curr = avg(pts.slice(half));
+      if (!prev) return { dir: "flat", text: "kein Vergleich möglich" };
+      const pct = (curr - prev) / prev * 100;
+      const dir = pct > 5 ? "up" : pct < -5 ? "down" : "flat";
+      return { dir, pct,
+               text: dir === "flat" ? "stabil gegenüber Vorperiode"
+                   : `${Math.abs(pct).toFixed(0)} % ${dir === "up" ? "mehr" : "weniger"} als zuvor` };
+    },
     dashSystem(tile) {
-      return this.dashData.find((s) => s.id === tile.system_id) || null;
+      const id = (tile.system_ids && tile.system_ids[0]) || tile.system_id;
+      return this.dashData.find((s) => s.id === id) || null;
     },
     dashTitle(tile) {
       if (tile.title) return tile.title;
+      const ids = (tile.system_ids && tile.system_ids.length)
+        ? tile.system_ids : (tile.system_id ? [tile.system_id] : []);
+      if (ids.length > 1) return `${WIDGET_LABEL[tile.type]} · ${ids.length} Systeme`;
       const s = this.dashSystem(tile);
       return s ? `${typeIcon(s.typ)} ${s.name}` : WIDGET_LABEL[tile.type] || tile.type;
     },
@@ -2795,11 +3079,12 @@ createApp({
       // Neue Kachel unten anhängen: freie Lücken im Raster zu suchen wäre
       // aufwendig und das Ergebnis für den Nutzer schwer vorhersehbar.
       const maxY = this.dashTiles.reduce((m, t) => Math.max(m, t.y + t.h), 0);
+      const first = def.needsSystem ? (this.dashData[0] || {}).id || null : null;
       this.dashTiles.push({
         id: "w_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         type, x: 0, y: maxY, w: def.w, h: def.h,
-        system_id: def.needsSystem ? (this.dashData[0] || {}).id || null : null,
-        title: null,
+        system_id: first, system_ids: first ? [first] : [],
+        timeframe: "12m", title: null,
       });
       this.dashDirty = true;
     },
@@ -2807,15 +3092,75 @@ createApp({
       this.dashTiles = this.dashTiles.filter((t) => t.id !== tile.id);
       this.dashDirty = true;
     },
-    /* Größe in Rasterschritten. Die Breite wird auf den rechten Rand begrenzt,
-       damit keine Kachel entsteht, die der Server ohnehin abweisen würde. */
-    resizeTile(tile, dw, dh) {
-      const w = Math.min(4 - tile.x, Math.max(1, tile.w + dw));
-      const h = Math.min(4, Math.max(1, tile.h + dh));
-      tile.w = w; tile.h = h;
-      this.dashDirty = true;
+    /* ---------- Kachel einrichten ---------- */
+    tileNeedsTimeframe(t) {
+      return t && ["line_chart", "trend", "cost_forecast"].includes(t.type);
     },
-    setTileSystem(tile, systemId) { tile.system_id = systemId || null; this.dashDirty = true; },
+    tfLabel(key) {
+      const tf = TIMEFRAMES.find((t) => t.key === (key || "12m"));
+      return tf ? tf.label : key;
+    },
+    /* Reihen einer Kachel: `system_ids` hat Vorrang, `system_id` bleibt als
+       Rückfall für Layouts aus 3.5.0 bestehen. */
+    tileSeries(t) {
+      const ids = (t.system_ids && t.system_ids.length)
+        ? t.system_ids : (t.system_id ? [t.system_id] : []);
+      return ids.map((id) => {
+        const s = this.dashData.find((x) => x.id === id);
+        if (!s) return null;
+        return { ...s, points: sliceSeries(s.series, t.timeframe || "12m") };
+      }).filter(Boolean);
+    },
+    openTileConfig(tile) {
+      // Arbeitskopie: Abbrechen soll die Kachel unverändert lassen.
+      this.tileCfg = {
+        ...tile,
+        timeframe: tile.timeframe || "12m",
+        system_ids: (tile.system_ids && tile.system_ids.length)
+          ? [...tile.system_ids] : (tile.system_id ? [tile.system_id] : []),
+      };
+    },
+    setTileType(key) {
+      const def = WIDGET_TYPES.find((w) => w.key === key);
+      this.tileCfg.type = key;
+      // Beim Wechsel auf einen einwertigen Typ die Mehrfachauswahl kürzen,
+      // sonst bliebe eine unsichtbare Auswahl bestehen.
+      if (!def.multi && this.tileCfg.system_ids.length > 1) {
+        this.tileCfg.system_ids = this.tileCfg.system_ids.slice(0, 1);
+      }
+      if (!def.needsSystem) this.tileCfg.system_ids = [];
+    },
+    toggleTileSystem(id) {
+      const def = this.tileTypeDef;
+      const a = this.tileCfg.system_ids;
+      if (!def.multi) { this.tileCfg.system_ids = a.includes(id) ? [] : [id]; return; }
+      const i = a.indexOf(id);
+      if (i >= 0) a.splice(i, 1); else a.push(id);
+    },
+    applyTileConfig() {
+      const t = this.dashTiles.find((x) => x.id === this.tileCfg.id);
+      if (t) {
+        Object.assign(t, {
+          type: this.tileCfg.type,
+          w: Math.min(4 - t.x, Math.max(1, this.tileCfg.w)),
+          h: Math.min(4, Math.max(1, this.tileCfg.h)),
+          timeframe: this.tileCfg.timeframe,
+          system_ids: [...this.tileCfg.system_ids],
+          // Erstes System zusätzlich in system_id: ältere Fassungen und der
+          // Vorgabe-Aufbau lesen weiterhin dieses Feld.
+          system_id: this.tileCfg.system_ids[0] || null,
+          title: (this.tileCfg.title || "").trim() || null,
+        });
+        this.reflow();
+        this.dashDirty = true;
+      }
+      this.tileCfg = null;
+    },
+    removeTileFromConfig() {
+      const id = this.tileCfg.id;
+      this.tileCfg = null;
+      this.removeTile({ id });
+    },
 
     onTileDragStart(tile, ev) {
       if (!this.dashEdit) return;
@@ -2856,7 +3201,8 @@ createApp({
           method: "PUT",
           body: JSON.stringify({ tiles: this.dashTiles.map((t) => ({
             id: t.id, type: t.type, x: t.x, y: t.y, w: t.w, h: t.h,
-            system_id: t.system_id || null, title: t.title || null,
+            system_id: t.system_id || null, system_ids: t.system_ids || [],
+            timeframe: t.timeframe || "12m", title: t.title || null,
           })) }),
         });
         this.dashTiles = res.tiles;
@@ -2999,7 +3345,7 @@ createApp({
               v-html="navMenuIcon"></button>
       <div class="brand">
         <span class="logo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19a9 9 0 1 1 14 0"/><path d="M12 5v2"/><path d="M5.6 8.5l1.5 1.2"/><path d="M18.4 8.5l-1.5 1.2"/><path d="M12 15l3.5-4.5"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg></span>
-        <h1>{{ view==='dashboard' ? 'Dashboard' : view==='admin' ? 'Admin-Tools' : view==='settings' ? 'Einstellungen' : (view==='detail' && selectedSystem ? selectedSystem.name : 'Zählwerk') }}</h1>
+        <h1>{{ view==='mobile-home' ? 'Zählwerk' : view==='dashboard' ? 'Dashboard' : view==='admin' ? 'Admin-Tools' : view==='settings' ? 'Einstellungen' : (view==='detail' && selectedSystem ? selectedSystem.name : 'Zählwerk') }}</h1>
       </div>
       <div class="spacer"></div>
     </div>
@@ -3024,21 +3370,22 @@ createApp({
         <!-- Getrennte Schaltfläche: der Pfeil klappt auf, der Eintrag navigiert.
              M3 trennt diese beiden Aktionen bewusst - ein Klick auf den Eintrag
              darf nie nur ein Menü öffnen, wenn er auch ein Ziel hat. -->
-        <button v-if="it.expandable && navExpanded && navSubItems.length"
+        <button v-if="navExpanded && subItemsFor(it).length"
                 class="nav-expander" :class="{ open: navSubOpen }"
                 :aria-expanded="String(navSubOpen)" :aria-controls="'zw-sub-' + it.key"
                 :title="navSubOpen ? 'Systeme einklappen' : 'Systeme aufklappen'"
-                @click.stop="toggleNavSub" v-html="chevronIcon"></button>
+                @click.stop="toggleNavSub(it.key)" v-html="chevronIcon"></button>
       </div>
 
-      <div v-if="it.expandable && navExpanded && navSubOpen" class="nav-sub"
+      <div v-if="navExpanded && navSubOpen[it.key] && subItemsFor(it).length" class="nav-sub"
            :id="'zw-sub-' + it.key" role="group" :aria-label="it.label + ' – Systeme'">
-        <button v-for="s in navSubItems" :key="s.id"
-                class="nav-subitem" :class="{ active: view==='detail' && selected===s.id }"
-                :title="s.name" @click="goSystem(s)">
-          <span class="dot" :style="{background: s.farbe}"></span>
-          <span class="ns-label">{{ s.name }}</span>
-          <span class="ns-unit">{{ s.einheit }}</span>
+        <button v-for="s in subItemsFor(it)" :key="s.id || s.key"
+                class="nav-subitem" :class="{ active: subItemActive(s) }"
+                :title="s.name || s.label" @click="goSubItem(s)">
+          <span v-if="s.icon" class="ns-icon" v-html="s.icon"></span>
+          <span v-else class="dot" :style="{background: s.farbe}"></span>
+          <span class="ns-label">{{ s.name || s.label }}</span>
+          <span class="ns-unit" v-if="s.einheit">{{ s.einheit }}</span>
         </button>
       </div>
     </template>
@@ -3128,6 +3475,62 @@ createApp({
       </div>
     </template>
 
+    <!-- MOBILE STARTSEITE -->
+    <template v-else-if="view==='mobile-home'">
+      <div v-if="dashLoading" class="center-load"><span class="spin"></span></div>
+      <template v-else>
+        <div class="mh-greet">
+          <div class="mh-hello">{{ greeting }}<span v-if="currentUser">, {{ currentUser.display_name.split(' ')[0] }}</span></div>
+          <div class="mh-date">{{ todayLong }}</div>
+        </div>
+
+        <!-- Oben: die drei wichtigsten Stände -->
+        <div class="mh-cards">
+          <button v-for="s in mobileTop" :key="s.id" class="card mh-card" @click="openSystemById(s.id)">
+            <div class="mh-head">
+              <span class="dot" :style="{background: s.farbe}"></span>
+              <span class="mh-name">{{ typeIcon(s.typ) }} {{ s.name }}</span>
+              <!-- Ampel über Form UND Farbe: allein farbig wäre sie im
+                   Hochkontrast-Theme und bei Farbfehlsichtigkeit wertlos. -->
+              <span class="mh-trend" :class="'tr-' + s.trend.dir" :title="s.trend.text">
+                {{ s.trend.dir === 'up' ? '▲' : s.trend.dir === 'down' ? '▼' : '▬' }}
+              </span>
+            </div>
+            <div class="mh-val num">{{ s.latest === null ? '–' : fmt(s.latest, 1) }}<span class="mh-unit">{{ s.einheit }}</span></div>
+            <div class="mh-sub">{{ s.trend.text }}</div>
+          </button>
+          <div class="hint" v-if="!mobileTop.length">Noch keine Systeme angelegt.</div>
+        </div>
+
+        <!-- Mitte: Haupthandlung -->
+        <div class="mh-actions" v-if="canWrite">
+          <button class="btn btn-primary mh-primary" @click="mobileNewReading(false)">
+            ＋ Neue Ablesung
+          </button>
+          <button class="btn mh-scan" @click="mobileNewReading(true)" title="Zählerstand fotografieren">
+            📷
+          </button>
+        </div>
+
+        <!-- Unten: letzte Erfassungen -->
+        <div class="card mh-log" v-if="dashRecent.length">
+          <div class="hw-head">Zuletzt erfasst</div>
+          <button v-for="r in dashRecent.slice(0,3)" :key="r.id" class="mh-log-row"
+                  @click="openSystemById(r.system_id)">
+            <span class="dot" :style="{background: r.farbe}"></span>
+            <span class="ml-sys">{{ r.system }}</span>
+            <span class="ml-val num">{{ fmt(r.value, 1) }} {{ r.einheit }}</span>
+            <span class="ml-date">{{ fmtDate(r.datum) }}</span>
+            <span v-if="r.source !== 'manual'" class="chip" :class="'chip-' + r.source">{{ sourceLabel(r.source) }}</span>
+          </button>
+        </div>
+
+        <div class="mh-foot">
+          <button class="crumb" @click="openDashboard">Vollständiges Dashboard →</button>
+        </div>
+      </template>
+    </template>
+
     <!-- DASHBOARD -->
     <template v-else-if="view==='dashboard'">
       <div class="dash-head">
@@ -3159,7 +3562,8 @@ createApp({
                :draggable="dashEdit"
                @dragstart="onTileDragStart(t, $event)"
                @dragover.prevent
-               @drop.prevent="onTileDrop(t)">
+               @drop.prevent="onTileDrop(t)"
+               @click="dashEdit && openTileConfig(t)">
             <div class="wg-head">
               <span class="wg-title">{{ dashTitle(t) }}</span>
               <span class="wg-type" v-if="dashEdit">{{ widgetTypes.find(w => w.key === t.type).label }}</span>
@@ -3167,23 +3571,15 @@ createApp({
             </div>
 
             <widget-latest-reading v-if="t.type==='latest_reading'" :data="dashSystem(t)" />
-            <widget-line-chart     v-else-if="t.type==='line_chart'"  :data="dashSystem(t)" />
+            <widget-line-chart     v-else-if="t.type==='line_chart'"  :series="tileSeries(t)" />
             <widget-pie-chart      v-else-if="t.type==='pie_chart'"   :systems="dashData" />
             <widget-cost-summary   v-else-if="t.type==='cost_summary'" :systems="dashData" />
+            <widget-trend          v-else-if="t.type==='trend'"        :data="dashSystem(t)" :timeframe="t.timeframe" />
+            <widget-cost-forecast  v-else-if="t.type==='cost_forecast'" :data="dashSystem(t)" :timeframe="t.timeframe" />
 
             <div class="wg-tools" v-if="dashEdit">
-              <select v-if="t.type==='latest_reading' || t.type==='line_chart'"
-                      class="select wg-sel" :value="t.system_id"
-                      @change="setTileSystem(t, $event.target.value)">
-                <option :value="null">System wählen …</option>
-                <option v-for="s in dashData" :key="s.id" :value="s.id">{{ s.name }}</option>
-              </select>
-              <div class="wg-size">
-                <button class="crumb" @click="resizeTile(t,-1,0)" :disabled="t.w<=1">−B</button>
-                <button class="crumb" @click="resizeTile(t,1,0)" :disabled="t.x + t.w >= 4">+B</button>
-                <button class="crumb" @click="resizeTile(t,0,-1)" :disabled="t.h<=1">−H</button>
-                <button class="crumb" @click="resizeTile(t,0,1)" :disabled="t.h>=4">+H</button>
-              </div>
+              <button class="btn btn-sm wg-cfg" @click.stop="openTileConfig(t)">⚙ Einrichten</button>
+              <span class="wg-meta">{{ t.w }}×{{ t.h }}<span v-if="tileNeedsTimeframe(t)"> · {{ tfLabel(t.timeframe) }}</span></span>
             </div>
           </div>
         </div>
@@ -3194,6 +3590,79 @@ createApp({
         </div>
       </template>
     </template>
+
+    <!-- MODAL: Kachel einrichten -->
+    <div class="overlay" v-if="tileCfg" @click.self="tileCfg = null">
+      <div class="modal">
+        <div class="modal-head"><h3>Kachel einrichten</h3></div>
+        <div class="modal-body">
+          <div class="field">
+            <label>Art</label>
+            <div class="seg exp-seg tile-types">
+              <button v-for="w in widgetTypes" :key="w.key"
+                      :class="{active: tileCfg.type === w.key}" @click="setTileType(w.key)">
+                {{ w.label }}
+              </button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Größe</label>
+            <div class="tile-size">
+              <div class="ts-grid">
+                <button v-for="c in [1,2,3,4]" :key="'w'+c" class="crumb"
+                        :class="{sel: tileCfg.w === c}" :disabled="tileCfg.x + c > 4"
+                        @click="tileCfg.w = c">{{ c }}</button>
+                <span class="hint">Spalten</span>
+              </div>
+              <div class="ts-grid">
+                <button v-for="c in [1,2,3,4]" :key="'h'+c" class="crumb"
+                        :class="{sel: tileCfg.h === c}" @click="tileCfg.h = c">{{ c }}</button>
+                <span class="hint">Zeilen</span>
+              </div>
+            </div>
+            <div class="hint">Auf Mobilgeräten wird jede Kachel einspaltig dargestellt.</div>
+          </div>
+
+          <div class="field" v-if="tileTypeDef.needsSystem">
+            <label>{{ tileTypeDef.multi ? 'Systeme (mehrere möglich)' : 'System' }}</label>
+            <div class="tile-systems">
+              <label v-for="s in dashData" :key="s.id" class="check tile-sys"
+                     :class="{sel: tileCfg.system_ids.includes(s.id)}">
+                <input type="checkbox" :checked="tileCfg.system_ids.includes(s.id)"
+                       @change="toggleTileSystem(s.id)" />
+                <span class="dot" :style="{background: s.farbe}"></span>
+                <span>{{ s.name }}</span>
+              </label>
+            </div>
+            <div class="hint" v-if="tileTypeDef.multi">
+              Mehrere Systeme werden übereinandergelegt. Unterschiedliche Einheiten
+              bekommen eine eigene Achse – dargestellt werden höchstens zwei.
+            </div>
+          </div>
+
+          <div class="field" v-if="tileNeedsTimeframe(tileCfg)">
+            <label>Zeitraum</label>
+            <div class="seg exp-seg">
+              <button v-for="tf in timeframes" :key="tf.key"
+                      :class="{active: tileCfg.timeframe === tf.key}"
+                      @click="tileCfg.timeframe = tf.key">{{ tf.label }}</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Überschrift (optional)</label>
+            <input class="input" v-model="tileCfg.title" :placeholder="dashTitle(tileCfg)" />
+          </div>
+        </div>
+        <div class="modal-foot has-danger">
+          <hold-button :small="true" @held="removeTileFromConfig">✕ Entfernen (halten)</hold-button>
+          <span class="foot-spacer"></span>
+          <button class="btn" @click="tileCfg = null">Abbrechen</button>
+          <button class="btn btn-primary" @click="applyTileConfig">Übernehmen</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ADMIN-TOOLS -->
     <template v-else-if="view==='admin'">
@@ -3954,6 +4423,26 @@ createApp({
               <span class="exp-name">{{ typeIcon(s.typ) }} {{ s.name }}</span>
               <small v-if="!s.aktiv">archiviert</small>
             </label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Datenquellen</label>
+          <div class="exp-sources">
+            <label v-for="s in expSourceOptions" :key="s.key" class="check exp-src"
+                   :class="{sel: expCfg.sources.includes(s.key)}">
+              <input type="checkbox" :checked="expCfg.sources.includes(s.key)"
+                     @change="expToggleSource(s.key)" />
+              <span>{{ s.label }}</span>
+            </label>
+          </div>
+          <div class="hint" v-if="!expCfg.sources.length">
+            Keine Auswahl bedeutet <strong>alle Quellen</strong>.
+          </div>
+          <div class="hint ks-note" v-else-if="expCfg.sources.length < expSourceOptions.length">
+            Der Bericht enthält nur die gewählten Quellen. Verbrauch und Kosten werden
+            aus den verbleibenden Ablesungen berechnet – bei Lücken fallen die Intervalle
+            entsprechend länger aus.
           </div>
         </div>
 

@@ -58,6 +58,9 @@ DEFAULTS: dict[str, object] = {
     "mqtt_interval": "daily",
     # Rolle für neu übernommene Home-Assistant-Konten.
     "default_role": "writer",
+    # Aufbewahrung des Änderungsprotokolls. Untergrenze 30 Tage, weil der
+    # Trigger jüngere Einträge ohnehin schützt.
+    "audit_keep_days": 365,
 }
 
 _BOOL = lambda v: str(v).lower() in {"1", "true", "ja", "yes"}  # noqa: E731
@@ -81,6 +84,7 @@ _CASTS = {
     "mqtt_tasmota_discovery": _BOOL,
     "mqtt_interval": str,
     "default_role": str,
+    "audit_keep_days": int,
 }
 
 # Diese Schluessel verlassen den Server NIE im Klartext. Die Leseantwort meldet

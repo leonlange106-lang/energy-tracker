@@ -36,7 +36,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
-from .. import backup as backup_mod, mqtt_client, outbound
+from .. import backup as backup_mod, mqtt_client, ocr as ocr_mod, outbound
 from ..config import settings as runtime_settings
 from ..database import engine, get_session
 from ..migrations import schema_version
@@ -277,6 +277,7 @@ def diagnostics(session: Session = Depends(get_session)):
             "last_error": mqtt_client._state.get("last_error"),
             "subscriptions": mqtt_client._state.get("subscriptions"),
         },
+        "ocr": dict(zip(("available", "missing"), ocr_mod.deps_available())),
         "backup": {
             "directory": str(backup_mod.backup_dir()),
             "supervisor_dir": backup_mod.backup_dir() == backup_mod.PRIMARY_DIR,

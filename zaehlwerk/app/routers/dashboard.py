@@ -150,4 +150,24 @@ def dashboard_data(months: int = 24, session: Session = Depends(get_session)):
                         "v": round(e["consumption_per_day"], 4)}
                        for e in points[-120:]],
         })
-    return {"systems": out, "months": months}
+    # Letzte Erfassungen über alle Systeme. Für die mobile Startseite und als
+    # Grundlage der Trend-Kachel; bewusst hier und nicht als eigener Aufruf,
+    # damit die Startseite mit einer einzigen Anfrage auskommt.
+    from ..models import Reading
+    recent_rows = session.exec(
+        select(Reading).order_by(Reading.datum.desc(), Reading.id.desc()).limit(10)
+    ).all()
+    names = {s.id: s.name for s in systems}
+    colors = {s.id: s.farbe for s in systems}
+    units = {s.id: s.einheit for s in systems}
+    recent = [{
+        "id": r.id, "system_id": r.system_id,
+        "system": names.get(r.system_id, "—"),
+        "farbe": colors.get(r.system_id),
+        "einheit": units.get(r.system_id, ""),
+        "datum": r.datum.isoformat() if r.datum else None,
+        "value": r.value,
+        "source": getattr(r, "source", None) or "manual",
+    } for r in recent_rows if r.system_id in names]
+
+    return {"systems": out, "months": months, "recent": recent[:6]}
