@@ -9,6 +9,25 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.16.0] - 2026-07-20
+
+### Added
+
+- [Backend/schemas.py, routers/dashboard.py] Dashboard-Kacheln vom Typ Verlauf, Trend und Kostenprognose akzeptieren jetzt `timeframe: "custom"` mit `range_from`/`range_to`: ein frei wählbarer Zeitraum zusätzlich zu den bisherigen Voreinstellungen (7 Tage … Gesamt).
+- [Frontend/app.js] Kachel-Editor: neue Schaltfläche „Benutzerdefiniert“ im Zeitraum-Auswahlfeld blendet zwei Datumsfelder (Von/Bis) ein. „Übernehmen“ bleibt gesperrt, bis ein gültiger Zeitraum (Start ≤ Ende, beide gesetzt) eingetragen ist – Validierung serverseitig zusätzlich abgesichert.
+- [Frontend/app.js] Das für Kachel-Daten angefragte Zeitfenster (`GET /api/dashboard/data?months=…`) richtet sich jetzt nach dem am weitesten zurückliegenden benutzerdefinierten Zeitraum unter den eigenen Kacheln, statt starr bei 24 Monaten zu kappen.
+
+### Fixed
+
+- **[Frontend/app.js]** Seltener, aber reproduzierbarer Absturz der Dashboard-Diagramme (`Cannot read properties of null (reading 'save')`, aus Chart.js' internem Animator): trat auf, wenn eine Kachel kurz nach ihrer Erstellung bearbeitet, das Dashboard schnell nacheinander gespeichert/neu geladen, oder der Bearbeitungsmodus innerhalb der rund einsekündigen Eintrittsanimation eines Diagramms ausgelöst wurde – ein Resize während laufender Animation ließ Chart.js intern auf eine bereits zerstörte Instanz zugreifen, das Diagramm blieb dann leer. Betraf `WidgetLineChart` und `WidgetPieChart` gleichermaßen. Behoben, indem beide Kachel-Diagramme ohne Eintrittsanimation zeichnen (`animation: false`) und vor jedem `destroy()` zusätzlich `stop()` aufrufen.
+- **[Backend/routers/dashboard.py]** `PUT /api/user/dashboard` schlug mit `TypeError: Object of type date is not JSON serializable` fehl, sobald eine Kachel einen benutzerdefinierten Zeitraum enthielt – `DashboardTile.model_dump()` lieferte `range_from`/`range_to` als Python-`date`-Objekte statt als Zeichenketten. Behoben durch `model_dump(mode="json")`.
+
+### Hinweis
+
+- Die übrigen Ticket-Punkte waren beim Nachsehen bereits vorhanden: die Zusammenführung von Dashboard und Bericht unter „Auswertungen“ stammt aus v3.9.0, der Pop-up-Editor für Kacheln ebenfalls aus v3.9.0, und das Übereinanderlegen mehrerer Systeme in einem Verlaufsdiagramm (`system_ids`, Mehrfachauswahl) existiert seit v3.5.0/v3.9.0 unverändert fort. Neu ist ausschließlich der benutzerdefinierte Zeitraum.
+
+---
+
 ## [3.15.0] - 2026-07-20
 
 ### Fixed

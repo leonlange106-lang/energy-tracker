@@ -468,8 +468,9 @@ class BulkDeleteRequest(BaseModel):
 WIDGET_TYPES = ("latest_reading", "line_chart", "pie_chart", "cost_summary",
                 "trend", "cost_forecast")
 
-# Zeitraum je Kachel. "all" wertet den gesamten Bestand aus.
-TIMEFRAMES = ("7d", "30d", "90d", "ytd", "12m", "all")
+# Zeitraum je Kachel. "all" wertet den gesamten Bestand aus, "custom" einen
+# frei gewählten Zeitraum (range_from/range_to).
+TIMEFRAMES = ("7d", "30d", "90d", "ytd", "12m", "all", "custom")
 
 # Rastergrenzen. Vier Spalten sind die Vorgabe der Oberfläche; die Höhe ist auf
 # vier Einheiten begrenzt, damit eine einzelne Kachel nicht die ganze Seite
@@ -492,8 +493,11 @@ class DashboardTile(BaseModel):
     # Zuordnung bestehen und wird als erstes Element behandelt, damit ältere
     # Layouts unverändert weiterlaufen.
     system_ids: list[str] = Field(default_factory=list, max_length=6)
-    timeframe: str = Field("12m", pattern="^(7d|30d|90d|ytd|12m|all)$")
+    timeframe: str = Field("12m", pattern="^(7d|30d|90d|ytd|12m|all|custom)$")
     title: Optional[str] = Field(None, max_length=80)
+    # Nur bei timeframe == "custom" ausgewertet.
+    range_from: Optional[date] = None
+    range_to: Optional[date] = None
 
     @model_validator(mode="after")
     def _fit_grid(self):
@@ -501,6 +505,11 @@ class DashboardTile(BaseModel):
         # im Raster nicht darstellbar und rutschte in der Anzeige weg.
         if self.x + self.w > GRID_COLS:
             raise ValueError(f"Kachel {self.id} ragt über {GRID_COLS} Spalten hinaus")
+        if self.timeframe == "custom":
+            if not self.range_from or not self.range_to:
+                raise ValueError(f"Kachel {self.id}: benutzerdefinierter Zeitraum braucht Start und Ende")
+            if self.range_from > self.range_to:
+                raise ValueError(f"Kachel {self.id}: Start liegt nach dem Ende")
         return self
 
 

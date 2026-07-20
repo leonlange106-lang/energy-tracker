@@ -95,7 +95,9 @@ def put_dashboard(payload: DashboardLayout,
         # entfernt statt die Kachel zu verwerfen – der Nutzer sieht dann eine
         # Kachel ohne Zuordnung und kann sie neu belegen.
         system_id = tile.system_id if tile.system_id in known else None
-        cleaned.append({**tile.model_dump(), "system_id": system_id})
+        # mode="json": range_from/range_to sind date-Objekte, die json.dumps
+        # weiter unten ohne diese Umwandlung nicht serialisieren könnte.
+        cleaned.append({**tile.model_dump(mode="json"), "system_id": system_id})
 
     user.dashboard_layout = json.dumps(cleaned, ensure_ascii=False)
     session.add(user)
