@@ -5,7 +5,7 @@ WORKDIR /app
 # zwischengespeicherten apt-Schritt und installiert neu. Ohne diesen Griff
 # behaelt der Supervisor eine alte Ebene bei, solange sich der Befehl selbst
 # nicht aendert - und genau daran scheiterte die Erkennung nach 3.6.0.
-ARG DEPS_VERSION=2
+ARG DEPS_VERSION=3
 
 # Tesseract samt deutschen Sprachdaten und die von OpenCV benoetigten
 # Systembibliotheken. libgl1 und libglib2.0-0 fehlen im slim-Abbild und sind

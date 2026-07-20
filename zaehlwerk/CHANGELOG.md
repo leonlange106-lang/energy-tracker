@@ -7,8 +7,14 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+---
+
+## [3.10.1] - 2026-07-20
+
 ### Fixed
 
+- [Build/requirements.txt] Verpinnt sämtliche Python-Abhängigkeiten auf feste Versionen statt reiner Untergrenzen (`>=`). Eine Untergrenze ohne Obergrenze zieht bei jedem Build die jeweils neueste Version – zuletzt sprang `opencv-python-headless` dabei unbemerkt auf eine neue Hauptversion (5.x) und machte den Build nicht mehr reproduzierbar. Geprüft gegen einen sauberen Build (App-Start inkl. `/api/health`, OCR-Vorverarbeitung, PDF-Erzeugung).
+- [Build/Dockerfile] Erhöht `DEPS_VERSION` auf 3, damit eine zwischengespeicherte `apt`-Ebene mit den alten Abhängigkeiten verworfen wird.
 - [Docs/README.md] Korrigiert den Datenmodell-Abschnitt: DB liegt unter `/config/zaehlwerk.db`, nicht unter `/share/zaehlwerk/zaehlwerk.db`.
 - [Docs/MIGRATION.md] Korrigiert den Backup-Pfad von `/data/zaehlwerk.db` auf `/config/zaehlwerk.db`.
 
