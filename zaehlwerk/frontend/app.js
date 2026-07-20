@@ -4,8 +4,11 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.10.0";
+const APP_VERSION = "3.10.1";
 const APP_CHANGELOG = [
+  { v: "3.10.1", d: "20.07.2026", items: [
+    "Build-Pipeline stabilisiert: Abhängigkeiten fest verpinnt statt Untergrenzen",
+  ]},
   { v: "3.10.0", d: "19.07.2026", items: [
     "Eigene Startseite für Smartphones: drei Kennzahlen, Ablesung, letzte Erfassungen",
     "Beim Start entscheidet die Bildschirmbreite über die erste Ansicht",
