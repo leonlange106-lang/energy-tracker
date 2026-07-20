@@ -4,8 +4,11 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.13.0";
+const APP_VERSION = "3.14.0";
 const APP_CHANGELOG = [
+  { v: "3.14.0", d: "20.07.2026", items: [
+    "Änderungsprotokoll: einzelne Einträge lassen sich per „Rückgängig“ direkt zurücknehmen (Anlegen, Ändern, Löschen)",
+  ]},
   { v: "3.13.0", d: "20.07.2026", items: [
     "Behebt einen Bug, durch den die Herkunft (Quelle) jeder Ablesung unabhängig vom tatsächlichen Ursprung immer als „manuell“ gespeichert wurde",
     "MQTT Auto-Discovery: unbeteiligte Geräte lassen sich dauerhaft ausblenden (Ignorieren-Button, wieder einblendbar)",
@@ -2409,6 +2412,7 @@ createApp({
     adminLogs: [],
     adminTab: "system",
     auditEntries: [],
+    auditUndoBusy: null,
     auditFacets: { actions: [], tables: [], users: [] },
     auditFilter: { action: null, target_table: null, user_id: null, from: "", to: "" },
     auditPage: 1, auditPages: 1, auditTotal: 0, auditLoading: false,
@@ -2780,6 +2784,24 @@ createApp({
       return Object.entries(src)
         .filter(([k]) => !["id", "system_id", "erstellt_am"].includes(k))
         .slice(0, 4).map(([k, v]) => `${k}: ${v}`).join(", ");
+    },
+    /* Sammelvorgänge (CSV-Import, Bulk-Delete) haben keine Einzeldaten im
+       Protokoll und lassen sich serverseitig deshalb nicht rückgängig machen -
+       der Knopf bleibt dafür verborgen statt jedes Mal fehlzuschlagen. */
+    auditCanRollback(e) {
+      return !!e.target_id && !(e.new_value && e.new_value.bulk);
+    },
+    async undoAuditEntry(e) {
+      if (!confirm(`Diese Änderung rückgängig machen?\n\n${this.auditSummary(e)}\n\n`
+        + "Wurde der Datensatz seither erneut geändert, geht diese neuere Änderung dabei verloren.")) return;
+      this.auditUndoBusy = e.id;
+      try {
+        await api(`/api/admin/audit/rollback/${e.id}`, { method: "POST" });
+        this.notify("Rückgängig gemacht", "ok");
+        await this.loadAudit(this.auditPage);
+      } catch (err) {
+        this.notify("Rückgängig machen fehlgeschlagen: " + err.message, "err");
+      } finally { this.auditUndoBusy = null; }
     },
 
     async loadAdminLogs() {
@@ -4244,7 +4266,7 @@ createApp({
             <div class="sql-scroll">
               <table class="sql-table audit-table">
                 <thead>
-                  <tr><th>Zeit</th><th>Konto</th><th>Aktion</th><th>Tabelle</th><th>Datensatz</th><th>Änderung</th></tr>
+                  <tr><th>Zeit</th><th>Konto</th><th>Aktion</th><th>Tabelle</th><th>Datensatz</th><th>Änderung</th><th></th></tr>
                 </thead>
                 <tbody>
                   <tr v-for="e in auditEntries" :key="e.id">
@@ -4254,6 +4276,11 @@ createApp({
                     <td>{{ e.target_table }}</td>
                     <td class="au-id">{{ e.target_id || '–' }}</td>
                     <td class="au-diff">{{ auditSummary(e) }}</td>
+                    <td>
+                      <button v-if="auditCanRollback(e)" class="btn btn-sm" :disabled="auditUndoBusy === e.id"
+                              @click="undoAuditEntry(e)" title="Diese Änderung rückgängig machen">
+                        {{ auditUndoBusy === e.id ? '…' : '↺ Rückgängig' }}</button>
+                    </td>
                   </tr>
                 </tbody>
               </table>

@@ -9,6 +9,23 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.14.0] - 2026-07-20
+
+### Added
+
+- [Backend/audit.py] `POST /api/admin/audit/rollback/{log_id}` macht einen einzelnen Protokolleintrag rückgängig: `UPDATE` schreibt die alten Feldwerte zurück, `DELETE` legt den Datensatz aus der vollständigen Momentaufnahme neu an, `INSERT` entfernt den seinerzeit angelegten Datensatz wieder. Läuft über das ORM statt über rohes SQL, damit der Rückgängig-Vorgang selbst automatisch als neuer Protokolleintrag erscheint – ohne zusätzlichen Code. Sammelvorgänge (CSV-Import, Bulk-Löschung) lassen sich nicht rückgängig machen, da dafür keine Einzeldaten protokolliert wurden.
+- [Frontend/Admin] „↺ Rückgängig“-Schaltfläche direkt in den Zeilen der Änderungsprotokoll-Tabelle, mit Bestätigungsdialog.
+
+### Fixed
+
+- [Backend/audit.py] Verschachtelte Werte (z. B. `System.zusatzfelder`) landeten im Protokoll bisher als Python-Repr-Text statt als echtes JSON und waren weder sauber lesbar noch aus dem Protokoll rekonstruierbar – eine Voraussetzung für die Wiederherstellung aus einer `DELETE`-Momentaufnahme. Jetzt bleiben Objekte und Listen als JSON erhalten.
+
+### Hinweis
+
+- Ein Rückgängig prüft nicht, ob der Datensatz nach dem gewählten Eintrag noch einmal geändert wurde – in dem Fall überschreibt es die zwischenzeitliche Änderung. Das ist ein bewusster Kompromiss ohne vollständige Versionierung, kein Versehen.
+
+---
+
 ## [3.13.0] - 2026-07-20
 
 ### Fixed

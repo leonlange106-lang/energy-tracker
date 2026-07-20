@@ -73,7 +73,10 @@ def _jsonable(value: Any) -> Any:
         return value.isoformat(timespec="seconds")
     if hasattr(value, "isoformat"):
         return value.isoformat()
-    if isinstance(value, (str, int, float, bool, type(None))):
+    # dict/list (z. B. System.zusatzfelder) sind bereits JSON-fähig - als
+    # Python-Repr-Text zu speichern (frühere Fassung) machte sie weder lesbar
+    # noch aus dem Protokoll rekonstruierbar.
+    if isinstance(value, (str, int, float, bool, dict, list, type(None))):
         return value
     return str(value)
 
@@ -233,6 +236,121 @@ def install() -> None:
 # Damit lässt sich Bestand altern, aber kein frischer Eintrag beseitigen –
 # genau die Eigenschaft, auf die es bei einem Änderungsprotokoll ankommt.
 MIN_RETENTION_DAYS = 30
+
+
+class RollbackError(Exception):
+    """Ein Protokolleintrag lässt sich nicht rückgängig machen."""
+
+
+# Tabellenname -> SQLModel-Klasse. Nur die auch protokollierten Tabellen -
+# für alles andere existiert ohnehin kein alter Zustand im Protokoll.
+def _table_models() -> dict:
+    from .models import AppSetting, Meter, Reading, System, Tariff, User
+    return {"readings": Reading, "systems": System, "tariffs": Tariff,
+            "meters": Meter, "users": User, "app_settings": AppSetting}
+
+
+def _restore_kwargs(model, snapshot: dict) -> dict:
+    """Zeichenketten aus der JSON-Momentaufnahme in die vom Modell erwarteten
+    Python-Typen zurückwandeln. SQLModel validiert bei der Konstruktion über
+    Schlüsselwortargumente nicht wie bei einer Anfrage über die API - ein
+    ISO-Datum bliebe sonst eine Zeichenkette und die Einfügung schlüge an der
+    SQLite-Spalte fehl."""
+    from datetime import date, datetime
+
+    out = {}
+    fields = model.model_fields
+    for key, value in snapshot.items():
+        info = fields.get(key)
+        if isinstance(value, str) and info is not None:
+            args = getattr(info.annotation, "__args__", None)
+            base = next((a for a in args if a is not type(None)), info.annotation) if args else info.annotation
+            try:
+                if base is datetime:
+                    value = datetime.fromisoformat(value)
+                elif base is date:
+                    value = date.fromisoformat(value)
+            except ValueError:
+                pass
+        out[key] = value
+    return out
+
+
+def rollback(session: Session, log) -> dict:
+    """Macht einen einzelnen Protokolleintrag rückgängig.
+
+    Die drei Aktionen brauchen je einen eigenen Weg zurück:
+    * ``UPDATE``  schreibt die im Eintrag vermerkten alten Feldwerte zurück.
+    * ``DELETE``  legt den Datensatz aus der vollständigen Momentaufnahme neu an.
+    * ``INSERT``  entfernt den seinerzeit angelegten Datensatz wieder.
+
+    Der Rückweg läuft bewusst über das ORM (``session.add``/``session.delete``
+    auf einer echten Modellinstanz) und nicht über rohes SQL: die
+    Änderungsprotokollierung aus diesem Modul hängt an denselben
+    Sitzungsereignissen und erfasst den Rückgängig-Vorgang dadurch von selbst
+    als neuen Eintrag - ohne das müsste diese Funktion ihr eigenes Protokoll
+    von Hand nachführen.
+
+    Was diese Funktion NICHT prüft: ob der Datensatz nach diesem Eintrag noch
+    einmal geändert wurde. Ein Rollback überschreibt in dem Fall die
+    zwischenzeitliche Änderung - das ist bei einem Protokoll-Rückgängig ohne
+    vollständige Versionierung ein bewusst hingenommener Kompromiss, keine
+    Kleinigkeit für ein Nebenbei-Feature.
+    """
+    models = _table_models()
+    model = models.get(log.target_table)
+    if model is None:
+        raise RollbackError(f"Tabelle „{log.target_table}“ wird nicht unterstützt")
+
+    def parse(raw):
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+
+    old, new = parse(log.old_value), parse(log.new_value)
+    if isinstance(new, dict) and new.get("bulk"):
+        raise RollbackError(
+            "Sammelvorgänge lassen sich nicht rückgängig machen - "
+            "dafür wurden keine Einzeldaten protokolliert")
+    if not log.target_id:
+        raise RollbackError("Kein Datensatzbezug im Eintrag vorhanden")
+
+    if log.action == "UPDATE":
+        if not old:
+            raise RollbackError("Keine alten Werte im Eintrag vorhanden")
+        obj = session.get(model, log.target_id)
+        if obj is None:
+            raise RollbackError("Datensatz existiert nicht mehr")
+        for field, value in old.items():
+            setattr(obj, field, value)
+        session.add(obj)
+    elif log.action == "DELETE":
+        if not old:
+            raise RollbackError("Keine Momentaufnahme im Eintrag vorhanden")
+        if session.get(model, log.target_id) is not None:
+            raise RollbackError("Ein Datensatz mit dieser Kennung besteht bereits wieder")
+        try:
+            obj = model(**_restore_kwargs(model, old))
+        except (TypeError, ValueError) as exc:
+            raise RollbackError(f"Momentaufnahme nicht rekonstruierbar: {exc}") from exc
+        session.add(obj)
+    elif log.action == "INSERT":
+        obj = session.get(model, log.target_id)
+        if obj is None:
+            raise RollbackError("Datensatz ist bereits entfernt")
+        session.delete(obj)
+    else:
+        raise RollbackError(f"Unbekannte Aktion „{log.action}“")
+
+    try:
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise RollbackError(f"Rückgängig machen fehlgeschlagen: {exc}") from exc
+    return {"table": log.target_table, "target_id": log.target_id, "action": log.action}
 
 
 def prune(session, keep_days: int) -> int:

@@ -36,6 +36,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
+from .. import audit
 from .. import backup as backup_mod, mqtt_client, ocr as ocr_mod, outbound
 from ..config import settings as runtime_settings
 from ..database import engine, get_session
@@ -349,6 +350,23 @@ def audit_logs(
         "total": total, "page": page, "per_page": per_page,
         "pages": max(1, (total + per_page - 1) // per_page),
     }
+
+
+@router.post("/audit/rollback/{log_id}")
+def audit_rollback(log_id: int, session: Session = Depends(get_session)):
+    """Macht einen einzelnen Protokolleintrag rückgängig.
+
+    Nur genau diesen Eintrag - ohne Prüfung, ob der Datensatz seither erneut
+    geändert wurde (siehe audit.rollback). Der Vorgang selbst erscheint
+    danach als neuer Eintrag im Protokoll.
+    """
+    log = session.get(AuditLog, log_id)
+    if log is None:
+        raise HTTPException(404, "Eintrag nicht gefunden")
+    try:
+        return audit.rollback(session, log)
+    except audit.RollbackError as exc:
+        raise HTTPException(422, str(exc))
 
 
 @router.get("/audit/facets")
