@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 from .. import mqtt_client
 from ..database import get_session
 from ..models import System
-from ..schemas import MqttAssign, MqttPath
+from ..schemas import MqttAssign, MqttDevice, MqttPath
 from .settings import read_settings
 
 router = APIRouter(prefix="/api/mqtt", tags=["mqtt"])
@@ -61,6 +61,18 @@ def intervals():
 @router.post("/devices/forget")
 def forget():
     return {"cleared": mqtt_client.forget_devices()}
+
+
+@router.post("/devices/ignore")
+def ignore(payload: MqttDevice):
+    """Blendet ein unbeteiligtes Discovery-Gerät dauerhaft aus – z. B. einen
+    Nachbar-Sensor, der über dieselbe Broker-Adresse mitgehört wird."""
+    return {"ignored": mqtt_client.ignore_device(payload.device)}
+
+
+@router.post("/devices/unignore")
+def unignore(payload: MqttDevice):
+    return {"ignored": mqtt_client.unignore_device(payload.device)}
 
 
 @router.post("/assign")

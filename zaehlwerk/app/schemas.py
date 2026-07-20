@@ -128,6 +128,8 @@ class AppSettingsRead(BaseModel):
     mqtt_base_topic: str = "tele"
     mqtt_tasmota_discovery: bool = False
     mqtt_interval: str = "daily"
+    mqtt_watchdog_enabled: bool = True
+    mqtt_watchdog_hours: int = 48
     default_role: str = "writer"
     audit_keep_days: int = 365
     # Kein Passwortfeld: der Server gibt nur bekannt, ob eines hinterlegt ist.
@@ -170,6 +172,10 @@ class AppSettingsUpdate(BaseModel):
     mqtt_tasmota_discovery: Optional[bool] = None
     mqtt_interval: Optional[str] = Field(
         None, pattern="^(daily|weekly|monthly|quarterly|yearly)$")
+    mqtt_watchdog_enabled: Optional[bool] = None
+    # Untergrenze 1 h waere praktisch dauerbeschaeftigt, Obergrenze 14 Tage
+    # macht die Meldung nutzlos verspaetet.
+    mqtt_watchdog_hours: Optional[int] = Field(None, ge=1, le=336)
     default_role: Optional[str] = Field(None, pattern="^(guest|viewer|writer|admin)$")
     # Untergrenze entspricht der Schutzfrist der Trigger – ein kleinerer Wert
     # würde von der Datenbank ohnehin nicht durchgesetzt.
@@ -397,6 +403,11 @@ class MqttPath(BaseModel):
     """Fester JSON-Pfad zum Zählerstand, z. B. "MT631.Total_in"."""
     system_id: str
     path: Optional[str] = Field(None, max_length=200)
+
+
+class MqttDevice(BaseModel):
+    """Gerätename aus der Discovery-Liste, zum Ignorieren/Wieder-Anzeigen."""
+    device: str = Field(..., max_length=200)
 
 
 # ---------- Authentifizierung ----------

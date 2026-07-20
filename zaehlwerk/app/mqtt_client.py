@@ -47,6 +47,14 @@ EVENTS: deque = deque(maxlen=60)
 # binnen eines Telemetrie-Intervalls (Standard 300 s) von selbst wieder auf.
 DISCOVERED: dict[str, dict] = {}
 
+# Ignorierte Geräte: dauerhaft in der Datenbank, sonst wäre "Ignorieren" nach
+# jedem Neustart hinfällig - die Discovery-Liste selbst baut sich ja bewusst
+# von selbst wieder auf (siehe oben). Im Arbeitsspeicher gecacht, weil
+# _on_message() bei jeder eingehenden Nachricht danach fragt und ein
+# Datenbankzugriff je Nachricht unnötig wäre.
+_ignored_devices: set[str] = set()
+IGNORED_SETTING_KEY = "mqtt_ignored_devices"
+
 _client = None
 _lock = threading.Lock()
 # --------------------------------------------------------------------------
@@ -339,8 +347,10 @@ def _remember_device(topic: str, payload: str) -> None:
     match = TASMOTA_SENSOR_RE.match(topic)
     if not match:
         return
-    parsed = parse_tasmota(payload)
     device = match.group("device")
+    if device in _ignored_devices:
+        return
+    parsed = parse_tasmota(payload)
     entry = DISCOVERED.setdefault(device, {"device": device, "topic": topic,
                                            "online": None, "assigned": False})
     raw = payload if len(payload) <= RAW_LIMIT else payload[:RAW_LIMIT] + " …[gekürzt]"
@@ -385,6 +395,8 @@ def _remember_lwt(topic: str, payload: str) -> None:
     if not match:
         return
     device = match.group("device")
+    if device in _ignored_devices:
+        return
     entry = DISCOVERED.setdefault(device, {"device": device,
                                            "topic": f"{match.group('prefix')}/{device}/SENSOR",
                                            "usable": False, "assigned": False})
@@ -722,13 +734,56 @@ def status() -> dict:
     devices = sorted(DISCOVERED.values(),
                      key=lambda d: (not d.get("usable"), d.get("device", "")))
     return {**_state, "available": _paho_available(),
-            "events": list(EVENTS)[:25], "devices": devices}
+            "events": list(EVENTS)[:25], "devices": devices,
+            "ignored": sorted(_ignored_devices)}
 
 
 def forget_devices() -> int:
     n = len(DISCOVERED)
     DISCOVERED.clear()
     return n
+
+
+# --------------------------------------------------------------------------
+# Ignorierte Geräte
+# --------------------------------------------------------------------------
+def _load_ignored() -> set[str]:
+    """Direkter Zugriff auf AppSetting statt über read_settings()/get_setting():
+    jene sind bewusst auf die dort registrierten Skalarwerte beschränkt (siehe
+    routers/settings.py) und würden diesen Schlüssel sonst stillschweigend
+    ignorieren, weil er nicht in DEFAULTS steht - keine Geräteliste soll aber
+    auch nicht als gewöhnliche Einstellung über PUT /api/settings überschreibbar sein."""
+    from .models import AppSetting
+    with Session(engine) as session:
+        row = session.get(AppSetting, IGNORED_SETTING_KEY)
+    if not row:
+        return set()
+    try:
+        return set(json.loads(row.value))
+    except (TypeError, ValueError):
+        return set()
+
+
+def _save_ignored(devices: set[str]) -> None:
+    from .models import AppSetting
+    with Session(engine) as session:
+        session.merge(AppSetting(key=IGNORED_SETTING_KEY, value=json.dumps(sorted(devices))))
+        session.commit()
+
+
+def ignore_device(device: str) -> list[str]:
+    """Gerät dauerhaft aus der Discovery-Liste ausblenden. Wirkt sofort auf
+    die aktuelle Liste UND auf künftige Nachrichten desselben Geräts."""
+    _ignored_devices.add(device)
+    _save_ignored(_ignored_devices)
+    DISCOVERED.pop(device, None)
+    return sorted(_ignored_devices)
+
+
+def unignore_device(device: str) -> list[str]:
+    _ignored_devices.discard(device)
+    _save_ignored(_ignored_devices)
+    return sorted(_ignored_devices)
 
 
 def _paho_available() -> bool:
@@ -741,6 +796,11 @@ def _paho_available() -> bool:
 
 def boot() -> None:
     """Beim Start aufrufen. Läuft still weiter, wenn MQTT nicht aktiv ist."""
+    global _ignored_devices
+    try:
+        _ignored_devices = _load_ignored()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Ignorierliste nicht ladbar: %s", exc)
     try:
         from .routers.settings import read_settings
         with Session(engine) as session:
