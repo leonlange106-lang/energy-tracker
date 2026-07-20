@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.16.0";
+const APP_VERSION = "3.17.0";
 const APP_CHANGELOG = [
+  { v: "3.17.0", d: "20.07.2026", items: [
+    "Mobile Startseite: je Zähler eine eigene Karte mit großem „＋ Wert erfassen“-Knopf – ein Tipp führt direkt in die Ablesung des jeweiligen Zählers, ohne Umweg über die Auswahl",
+    "Kamera-Schnellzugriff je Zähler direkt auf der Startseite",
+    "Zum Startbildschirm hinzugefügt startet die App jetzt im Vollbild (app-artig)",
+  ]},
   { v: "3.16.0", d: "20.07.2026", items: [
     "Dashboard-Kacheln vom Typ Verlauf/Trend/Kostenprognose: benutzerdefinierter Zeitraum mit freier Wahl von Start- und Enddatum",
     "Behebt einen seltenen Absturz von Dashboard-Diagrammen, wenn eine Kachel kurz nach dem Anlegen bearbeitet oder das Dashboard schnell hintereinander gespeichert und neu geladen wurde",
@@ -2503,6 +2508,15 @@ createApp({
         .sort((a, b) => (b.avg_per_day || 0) - (a.avg_per_day || 0))
         .slice(0, 3);
     },
+    /* Alle aktiven Zähler für die Schnellerfassung, meistgenutzte (höchster
+       Tagesverbrauch) zuerst – der am häufigsten abgelesene Zähler steht damit
+       ohne Scrollen oben. Anders als mobileTop nicht auf drei begrenzt: die
+       Schnellerfassung braucht jeden Zähler, nicht nur die Spitzenreiter. */
+    mobileMeters() {
+      return this.dashData
+        .map((s) => ({ ...s, trend: this.trendOf(s) }))
+        .sort((a, b) => (b.avg_per_day || 0) - (a.avg_per_day || 0));
+    },
     tileTypeDef() {
       return WIDGET_TYPES.find((w) => w.key === (this.tileCfg || {}).type) || WIDGET_TYPES[0];
     },
@@ -2715,6 +2729,19 @@ createApp({
       if (!active.length) { this.notify("Erst ein System anlegen", "err"); return; }
       if (active.length > 1) { this.back(); return; }
       this.open(active[0]);
+      await this.$nextTick();
+      const d = this.$refs.detail;
+      if (!d) return;
+      d.openReading();
+      if (withScanner) { await this.$nextTick(); d.openScanner(); }
+    },
+    /* Schnellerfassung je Zähler: öffnet direkt den Ablesedialog des gewählten
+       Systems – ohne den Umweg über die Übersicht und die Systemauswahl. Genau
+       das war der Reibungspunkt beim Ablesen „im Vorbeigehen“. */
+    async mobileQuickRead(systemId, withScanner) {
+      const s = this.systems.find((x) => x.id === systemId);
+      if (!s) { this.notify("System nicht gefunden", "err"); return; }
+      this.open(s);
       await this.$nextTick();
       const d = this.$refs.detail;
       if (!d) return;
@@ -3676,32 +3703,34 @@ createApp({
           <div class="mh-date">{{ todayLong }}</div>
         </div>
 
-        <!-- Oben: die drei wichtigsten Stände -->
+        <!-- Je Zähler eine Karte: Status oben (antippen öffnet die Details),
+             darunter die Schnellerfassung mit großen Touch-Zielen. -->
         <div class="mh-cards">
-          <button v-for="s in mobileTop" :key="s.id" class="card mh-card" @click="openSystemById(s.id)">
-            <div class="mh-head">
-              <span class="dot" :style="{background: s.farbe}"></span>
-              <span class="mh-name">{{ typeIcon(s.typ) }} {{ s.name }}</span>
-              <!-- Ampel über Form UND Farbe: allein farbig wäre sie im
-                   Hochkontrast-Theme und bei Farbfehlsichtigkeit wertlos. -->
-              <span class="mh-trend" :class="'tr-' + s.trend.dir" :title="s.trend.text">
-                {{ s.trend.dir === 'up' ? '▲' : s.trend.dir === 'down' ? '▼' : '▬' }}
-              </span>
+          <div v-for="s in mobileMeters" :key="s.id" class="card mh-card">
+            <button class="mh-card-status" @click="openSystemById(s.id)">
+              <div class="mh-head">
+                <span class="dot" :style="{background: s.farbe}"></span>
+                <span class="mh-name">{{ typeIcon(s.typ) }} {{ s.name }}</span>
+                <!-- Ampel über Form UND Farbe: allein farbig wäre sie im
+                     Hochkontrast-Theme und bei Farbfehlsichtigkeit wertlos. -->
+                <span class="mh-trend" :class="'tr-' + s.trend.dir" :title="s.trend.text">
+                  {{ s.trend.dir === 'up' ? '▲' : s.trend.dir === 'down' ? '▼' : '▬' }}
+                </span>
+              </div>
+              <div class="mh-val num">{{ s.latest === null ? '–' : fmt(s.latest, 1) }}<span class="mh-unit">{{ s.einheit }}</span></div>
+              <div class="mh-sub">{{ s.trend.text }}</div>
+            </button>
+            <div class="mh-quick" v-if="canWrite">
+              <button class="btn btn-primary mh-quick-add" @click="mobileQuickRead(s.id, false)">
+                ＋ Wert erfassen
+              </button>
+              <button class="btn mh-quick-cam" @click="mobileQuickRead(s.id, true)"
+                      :aria-label="'Zählerstand für ' + s.name + ' fotografieren'">
+                📷
+              </button>
             </div>
-            <div class="mh-val num">{{ s.latest === null ? '–' : fmt(s.latest, 1) }}<span class="mh-unit">{{ s.einheit }}</span></div>
-            <div class="mh-sub">{{ s.trend.text }}</div>
-          </button>
-          <div class="hint" v-if="!mobileTop.length">Noch keine Systeme angelegt.</div>
-        </div>
-
-        <!-- Mitte: Haupthandlung -->
-        <div class="mh-actions" v-if="canWrite">
-          <button class="btn btn-primary mh-primary" @click="mobileNewReading(false)">
-            ＋ Neue Ablesung
-          </button>
-          <button class="btn mh-scan" @click="mobileNewReading(true)" title="Zählerstand fotografieren">
-            📷
-          </button>
+          </div>
+          <div class="hint" v-if="!mobileMeters.length">Noch keine Systeme angelegt.</div>
         </div>
 
         <!-- Unten: letzte Erfassungen -->
