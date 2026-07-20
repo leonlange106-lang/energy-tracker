@@ -9,6 +9,25 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.11.0] - 2026-07-20
+
+### Added
+
+- [Backend/routers/backups.py] Ergänzt `POST /api/backup/restore/{filename}` zur Wiederherstellung aus einer bereits vorhandenen eigenen Sicherung sowie `POST /api/backup/import` zur Wiederherstellung aus einer hochgeladenen `.gz`-Sicherung.
+- [Backend/backup.py] `restore_from_file` prüft Integrität (`PRAGMA integrity_check`) und Grundstruktur (erforderliche Tabellen) der Kandidatendatei, BEVOR sie live geschaltet wird. Vor jedem Austausch wird der aktuelle Bestand automatisch als Sicherheitskopie weggesichert; schlägt das fehl, bricht die Wiederherstellung ab, statt einen unwiederbringlichen Zustand zu riskieren. Ein Prozesslock verhindert gleichzeitige Wiederherstellungen.
+- [Backend/backup.py] Der Dateitausch läuft am ORM vorbei und wird deshalb manuell im Änderungsprotokoll vermerkt (Aktion `RESTORE`).
+- [Frontend/Admin] Neuer Menüpunkt „Datenmanagement" in den Admin-Tools: Sicherungsliste mit Download UND Wiederherstellung je Eintrag, Datei-Upload für externe Sicherungen, Bestätigungsdialog vor jeder Wiederherstellung.
+
+### Changed
+
+- [Frontend/UI] Sicherung erstellen, als ZIP/Rohdaten exportieren und die Sicherungsliste sind aus den Einstellungen in die Admin-Tools (Datenmanagement) umgezogen. Der Zeitplan (aktiv/Uhrzeit/Aufbewahrung) bleibt in den Einstellungen, da er eine Systemkonfiguration und keine Aktion ist.
+
+### Hinweis
+
+- Die im Vorfeld vermutete Redundanz unter den bestehenden Export-Endpunkten (`export.csv`, `export.zip`, `export/data.csv`, `export/data.json`) hat sich bei der Durchsicht nicht bestätigt – die vier decken unterschiedliche, dokumentierte Zwecke ab (Re-Import je System, Voll-Sicherung, externe Auswertung flach/strukturiert) und wurden unverändert belassen.
+
+---
+
 ## [3.10.1] - 2026-07-20
 
 ### Fixed

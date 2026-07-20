@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.10.1";
+const APP_VERSION = "3.11.0";
 const APP_CHANGELOG = [
+  { v: "3.11.0", d: "20.07.2026", items: [
+    "Neuer Menüpunkt „Datenmanagement“ in den Admin-Tools: Sicherungen erstellen, herunterladen und wiederherstellen an einem Ort",
+    "Wiederherstellung per Upload einer .gz-Sicherung oder aus einer bestehenden eigenen Sicherung",
+    "Vor jeder Wiederherstellung wird der aktuelle Stand automatisch als Sicherheitskopie weggesichert",
+  ]},
   { v: "3.10.1", d: "20.07.2026", items: [
     "Build-Pipeline stabilisiert: Abhängigkeiten fest verpinnt statt Untergrenzen",
   ]},
@@ -2347,6 +2352,8 @@ createApp({
     extStatus: null,
     backupStatus: null,
     backupBusy: false,
+    restoreBusy: null,       // Dateiname der laufenden Wiederherstellung, sonst null
+    restoreFile: null,       // hochgeladene Datei, noch nicht bestätigt
     mqttStatus: null,
     mqttPassword: "",
     assignTarget: {},
@@ -2668,6 +2675,54 @@ createApp({
         this.adminSchema = s.tables;
       } catch (e) { this.notify(e.message, "err"); }
       this.loadAdminLogs();
+    },
+    async loadBackupStatus() {
+      try { this.backupStatus = await api("/api/backup"); }
+      catch (e) { this.notify(e.message, "err"); }
+    },
+    /* Wiederherstellung ist destruktiv: der aktuelle Bestand wird zwar vorher
+       automatisch weggesichert, alles seit der gewählten Sicherung geht aber
+       verloren. Ohne Rückfrage wäre ein Fehlklick nicht wiedergutzumachen. */
+    async restoreBackup(filename) {
+      if (!confirm(`Datenbank aus „${filename}“ wiederherstellen?\n\n`
+        + "Der aktuelle Stand wird vorher automatisch gesichert, aber alle "
+        + "Änderungen seit dieser Sicherung gehen verloren.")) return;
+      this.restoreBusy = filename;
+      try {
+        const r = await api(`/api/backup/restore/${encodeURIComponent(filename)}`, { method: "POST" });
+        this.notify(`Wiederhergestellt aus ${r.restored_from}`
+          + (r.safety_backup ? ` · Sicherheitskopie: ${r.safety_backup}` : ""), "ok");
+        await this.loadBackupStatus();
+        await this.load();          // Systeme/Ablesungen: Datenbestand hat sich geändert
+      } catch (e) { this.notify("Wiederherstellung fehlgeschlagen: " + e.message, "err"); }
+      finally { this.restoreBusy = null; }
+    },
+    onRestoreFile(e) { this.restoreFile = e.target.files[0] || null; },
+    async importRestore() {
+      if (!this.restoreFile) return;
+      if (!confirm(`Datenbank aus „${this.restoreFile.name}“ wiederherstellen?\n\n`
+        + "Der aktuelle Stand wird vorher automatisch gesichert, aber alle "
+        + "Änderungen seit dieser Datei gehen verloren.")) return;
+      this.restoreBusy = this.restoreFile.name;
+      try {
+        const fd = new FormData();
+        fd.append("file", this.restoreFile);
+        // Kein Content-Type setzen – der Browser ergänzt die Trennmarke selbst.
+        const res = await fetch("api/backup/import", {
+          method: "POST", body: fd, credentials: "same-origin",
+        });
+        if (!res.ok) {
+          let d; try { d = await res.json(); } catch (_) {}
+          throw new Error((d && d.detail) || res.statusText);
+        }
+        const r = await res.json();
+        this.notify(`Wiederhergestellt aus ${r.restored_from}`
+          + (r.safety_backup ? ` · Sicherheitskopie: ${r.safety_backup}` : ""), "ok");
+        this.restoreFile = null;
+        await this.loadBackupStatus();
+        await this.load();
+      } catch (e) { this.notify("Wiederherstellung fehlgeschlagen: " + e.message, "err"); }
+      finally { this.restoreBusy = null; }
     },
     async loadAudit(page = 1) {
       this.auditLoading = true;
@@ -3675,6 +3730,7 @@ createApp({
         <button :class="{active: adminTab==='sql'}"   @click="adminTab='sql'">Abfrage</button>
         <button :class="{active: adminTab==='logs'}"  @click="adminTab='logs'; loadAdminLogs()">Protokoll</button>
         <button :class="{active: adminTab==='audit'}" @click="adminTab='audit'; loadAudit()">Änderungen</button>
+        <button :class="{active: adminTab==='daten'}" @click="adminTab='daten'; loadBackupStatus()">Datenmanagement</button>
       </div>
 
       <!-- Diagnose -->
@@ -3818,8 +3874,58 @@ createApp({
         </div>
       </template>
 
+      <!-- Datenmanagement -->
+      <template v-else-if="adminTab==='daten'">
+        <div class="card set-card">
+          <h3>Sicherungen</h3>
+          <p class="hint">Automatische tägliche Sicherung nach
+            <code>{{ backupStatus ? backupStatus.directory : '/backup' }}</code>.
+            Home Assistant nimmt dieses Verzeichnis in seine eigenen Voll-Sicherungen auf.
+            Zeitplan und Aufbewahrung: Einstellungen → System.</p>
+
+          <div class="hint ks-note" v-if="backupStatus && !backupStatus.supervisor_backup_dir">
+            <code>/backup</code> ist nicht gemappt – es wird nach <code>/share</code> gesichert.
+            Diese Dateien landen NICHT im Home-Assistant-Backup. Ergänze
+            <code>backup:rw</code> unter <code>map:</code> in der <code>config.yaml</code>.
+          </div>
+
+          <div class="settings-actions">
+            <button class="btn btn-primary" :disabled="backupBusy" @click="runBackup">
+              {{ backupBusy ? 'Sichere …' : '⇩ Jetzt sichern' }}</button>
+            <button class="btn" @click="exportAll">⇩ Sicherung (ZIP)</button>
+            <button class="btn" @click="openExportConfig">⇩ Rohdaten (CSV / JSON) …</button>
+          </div>
+
+          <table class="info-table" v-if="backupStatus && backupStatus.entries.length">
+            <tr v-for="b in backupStatus.entries" :key="b.file">
+              <td>{{ fmtDate(b.created.slice(0,10)) }}<small class="bk-age"> · {{ b.age_days }} T</small></td>
+              <td class="num">
+                {{ fmtBytes(b.size_bytes) }}
+                <a class="crumb" :href="'api/backup/' + b.file" download title="Herunterladen">⇩</a>
+                <button class="btn btn-sm" :disabled="!!restoreBusy"
+                        @click="restoreBackup(b.file)" title="Aus dieser Sicherung wiederherstellen">
+                  {{ restoreBusy === b.file ? '…' : '↺ Wiederherstellen' }}</button>
+              </td>
+            </tr>
+          </table>
+          <div class="hint" v-else-if="backupStatus">Noch keine Sicherung vorhanden.</div>
+        </div>
+
+        <div class="card set-card">
+          <h3>Sicherung importieren</h3>
+          <p class="hint">Stellt die Datenbank aus einer hochgeladenen <code>.gz</code>-Sicherung
+            wieder her – z. B. nach einem Umzug oder einer Wiederherstellung aus einem
+            Home-Assistant-Backup. Der aktuelle Bestand wird vorher automatisch gesichert.</p>
+          <div class="settings-actions">
+            <input class="input" type="file" accept=".gz" @change="onRestoreFile" />
+            <button class="btn btn-primary" :disabled="!restoreFile || !!restoreBusy" @click="importRestore">
+              {{ restoreBusy && restoreBusy === (restoreFile && restoreFile.name) ? 'Stelle wieder her …' : '⇧ Hochladen & wiederherstellen' }}</button>
+          </div>
+        </div>
+      </template>
+
       <!-- Protokoll -->
-      <template v-else>
+      <template v-else-if="adminTab==='logs'">
         <div class="card set-card">
           <h3>Anwendungsprotokoll</h3>
           <div class="settings-actions">
@@ -4140,7 +4246,9 @@ createApp({
           <h3>Automatische Sicherung</h3>
           <p class="hint">Legt eine konsistente Kopie der Datenbank in
             <code>{{ backupStatus ? backupStatus.directory : '/backup' }}</code> ab.
-            Home Assistant nimmt dieses Verzeichnis in seine eigenen Voll-Sicherungen auf.</p>
+            Home Assistant nimmt dieses Verzeichnis in seine eigenen Voll-Sicherungen auf.
+            Manuelle Sicherung, Liste, Download und Wiederherstellung:
+            Admin-Tools → Datenmanagement.</p>
 
           <div class="hint ks-note" v-if="backupStatus && !backupStatus.supervisor_backup_dir">
             <code>/backup</code> ist nicht gemappt – es wird nach <code>/share</code> gesichert.
@@ -4166,24 +4274,6 @@ createApp({
               <div class="hint" v-else>Die drei neuesten bleiben immer erhalten.</div>
             </div>
           </div>
-
-          <div class="settings-actions">
-            <button class="btn btn-primary" :disabled="backupBusy" @click="runBackup">
-              {{ backupBusy ? 'Sichere …' : '⇩ Jetzt sichern' }}</button>
-            <button class="btn" @click="exportAll">⇩ Sicherung (ZIP)</button>
-            <button class="btn" @click="openExportConfig">⇩ Rohdaten (CSV / JSON) …</button>
-          </div>
-
-          <table class="info-table" v-if="backupStatus && backupStatus.entries.length">
-            <tr v-for="b in backupStatus.entries" :key="b.file">
-              <td>{{ fmtDate(b.created.slice(0,10)) }}<small class="bk-age"> · {{ b.age_days }} T</small></td>
-              <td class="num">
-                {{ fmtBytes(b.size_bytes) }}
-                <a class="crumb" :href="'api/backup/' + b.file" download>⇩</a>
-              </td>
-            </tr>
-          </table>
-          <div class="hint" v-else-if="backupStatus">Noch keine Sicherung vorhanden.</div>
         </div>
 
         <!-- Speichern gilt für ALLE Felder der Sektion A, nicht nur für die

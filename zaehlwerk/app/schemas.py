@@ -324,6 +324,11 @@ class BackupStatus(BaseModel):
     total_bytes: int
 
 
+class RestoreResult(BaseModel):
+    restored_from: str
+    safety_backup: Optional[str] = None
+
+
 # ---------- Tarifperioden ----------
 class TariffStats(BaseModel):
     """Tarifkennzahlen, werden der Statistik beigemischt."""
