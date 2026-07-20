@@ -11,6 +11,10 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [3.11.0] - 2026-07-20
 
+### Fixed
+
+- [Build/requirements.txt] **Behebt eine mit 3.10.1 eingeführte Regression:** Das dortige Pinnen auf `opencv-python-headless==5.0.0.93` zog transitiv `numpy>=2.3`, dessen offizielle Wheels mit der CPU-Baseline `x86-64-v2` (SSE4.2/POPCNT) gebaut sind. Auf x86-Hosts ohne diese Befehlssatzerweiterung (ältere/stromsparende CPUs, wie in einem konkreten Nutzer-Setup beobachtet) brach der Image-Build am Laufzeit-Import-Test mit `RuntimeError: NumPy was built with baseline optimizations (X86_V2) but your machine doesn't support` ab – der Fehler zeigte sich in Home Assistant nur als generisches „unknown error occurred while trying to build the image". `opencv-python-headless` deshalb auf `4.10.0.84` zurückgestuft und `numpy` explizit auf `1.26.4` gepinnt (Baseline nur SSE/SSE2/SSE3, breite Kompatibilität). `DEPS_VERSION` im Dockerfile erneut erhöht.
+
 ### Added
 
 - [Backend/routers/backups.py] Ergänzt `POST /api/backup/restore/{filename}` zur Wiederherstellung aus einer bereits vorhandenen eigenen Sicherung sowie `POST /api/backup/import` zur Wiederherstellung aus einer hochgeladenen `.gz`-Sicherung.

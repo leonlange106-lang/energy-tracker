@@ -7,6 +7,7 @@ const { createApp, reactive } = Vue;
 const APP_VERSION = "3.11.0";
 const APP_CHANGELOG = [
   { v: "3.11.0", d: "20.07.2026", items: [
+    "Behebt einen mit 3.10.1 eingeführten Build-Fehler auf CPUs ohne SSE4.2 (opencv/numpy zurückgestuft)",
     "Neuer Menüpunkt „Datenmanagement“ in den Admin-Tools: Sicherungen erstellen, herunterladen und wiederherstellen an einem Ort",
     "Wiederherstellung per Upload einer .gz-Sicherung oder aus einer bestehenden eigenen Sicherung",
     "Vor jeder Wiederherstellung wird der aktuelle Stand automatisch als Sicherheitskopie weggesichert",
