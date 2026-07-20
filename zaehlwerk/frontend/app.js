@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.11.1";
+const APP_VERSION = "3.12.0";
 const APP_CHANGELOG = [
+  { v: "3.12.0", d: "20.07.2026", items: [
+    "Admin-Tools zum Tab-Dashboard erweitert: System, Netzwerk, Zugriff, Datenmanagement, Diagnose, Abfrage, Protokoll, Änderungen",
+    "Kill-Switch, Anwendungsparameter, MQTT-Einrichtung, Konten & Rollen und der Sicherungs-Zeitplan sind aus den Einstellungen in die Admin-Tools umgezogen",
+    "Einstellungen zeigen jetzt für alle Konten Darstellung, Diagrammfarben und das eigene Konto (vorher nur für Administratoren erreichbar)",
+  ]},
   { v: "3.11.1", d: "20.07.2026", items: [
     "Wiederherstellung verlangt jetzt die Bestätigung durch Eingabe des Wortes RESTORE statt eines einfachen Ja/Nein-Dialogs",
   ]},
@@ -2363,7 +2368,6 @@ createApp({
     mqttStatus: null,
     mqttPassword: "",
     assignTarget: {},
-    settingsTab: "app",
     /* Pre-Export-Dialog */
     showExportCfg: false,
     expCfg: null,
@@ -2398,7 +2402,7 @@ createApp({
     adminDiag: null,
     adminSchema: [],
     adminLogs: [],
-    adminTab: "diag",
+    adminTab: "system",
     auditEntries: [],
     auditFacets: { actions: [], tables: [], users: [] },
     auditFilter: { action: null, target_table: null, user_id: null, from: "", to: "" },
@@ -2671,6 +2675,7 @@ createApp({
       this.view = "admin";
       window.scrollTo(0, 0);
       this.loadAdmin();
+      this.loadSettings();     // Systemparameter, Netzwerk, Zugriff, Zeitplan haengen alle davon ab
     },
     async loadAdmin() {
       try {
@@ -2793,7 +2798,6 @@ createApp({
     openSettings() {
       this.view = "settings";
       window.scrollTo(0, 0);
-      this.loadSettings();
     },
     goNav(item) {
       if (item.disabled || !item.action) return;
@@ -3005,10 +3009,10 @@ createApp({
         await this.load();
       } catch (e) { this.notify(e.message, "err"); }
     },
-    /* ---------- Sektion A: Anwendungsparameter ---------- */
+    /* ---------- Admin-Tools: Anwendungsparameter ---------- */
     async loadSettings() {
       try {
-        if (!this.isAdmin) { this.settingsTab = "ui"; return; }
+        if (!this.isAdmin) return;
         const [s, i, x, b] = await Promise.all([
           api("/api/settings"), api("/api/system/info"), api("/api/external/status"),
           api("/api/backup"),
@@ -3734,238 +3738,18 @@ createApp({
     <template v-else-if="view==='admin'">
       <div class="eyebrow">Admin-Tools</div>
       <div class="seg settings-seg">
-        <button :class="{active: adminTab==='diag'}"  @click="adminTab='diag'">Diagnose</button>
-        <button :class="{active: adminTab==='sql'}"   @click="adminTab='sql'">Abfrage</button>
-        <button :class="{active: adminTab==='logs'}"  @click="adminTab='logs'; loadAdminLogs()">Protokoll</button>
-        <button :class="{active: adminTab==='audit'}" @click="adminTab='audit'; loadAudit()">Änderungen</button>
-        <button :class="{active: adminTab==='daten'}" @click="adminTab='daten'; loadBackupStatus()">Datenmanagement</button>
+        <button :class="{active: adminTab==='system'}"   @click="adminTab='system'">System</button>
+        <button :class="{active: adminTab==='netzwerk'}" @click="adminTab='netzwerk'">Netzwerk</button>
+        <button :class="{active: adminTab==='zugriff'}"  @click="adminTab='zugriff'">Zugriff</button>
+        <button :class="{active: adminTab==='daten'}"    @click="adminTab='daten'; loadBackupStatus()">Datenmanagement</button>
+        <button :class="{active: adminTab==='diag'}"     @click="adminTab='diag'">Diagnose</button>
+        <button :class="{active: adminTab==='sql'}"      @click="adminTab='sql'">Abfrage</button>
+        <button :class="{active: adminTab==='logs'}"     @click="adminTab='logs'; loadAdminLogs()">Protokoll</button>
+        <button :class="{active: adminTab==='audit'}"    @click="adminTab='audit'; loadAudit()">Änderungen</button>
       </div>
 
-      <!-- Diagnose -->
-      <template v-if="adminTab==='diag'">
-        <div class="card set-card" v-if="adminDiag">
-          <h3>Datenbank</h3>
-          <table class="info-table">
-            <tr><td>Pfad</td><td class="num">{{ adminDiag.database.path }}</td></tr>
-            <tr><td>Version / Schema</td><td class="num">{{ adminDiag.app_version }} · Schema {{ adminDiag.schema_version }}</td></tr>
-            <tr><td>Integritätsprüfung</td>
-                <td :class="adminDiag.database.integrity_check === 'ok' ? '' : 'sb-err'">
-                  {{ adminDiag.database.integrity_check }}</td></tr>
-            <tr><td>Fremdschlüsselfehler</td>
-                <td :class="adminDiag.database.foreign_key_errors ? 'sb-err' : ''">
-                  {{ adminDiag.database.foreign_key_errors }}</td></tr>
-            <tr><td>Journal</td><td class="num">{{ adminDiag.database.journal_mode }}</td></tr>
-            <tr><td>Größe</td><td class="num">
-              {{ fmtBytes(adminDiag.database.sizes_bytes.db) }}
-              <small class="bk-age"> + WAL {{ fmtBytes(adminDiag.database.sizes_bytes.wal) }}</small></td></tr>
-            <tr><td>Fragmentierung</td><td class="num">{{ adminDiag.database.fragmentation_pct }} %
-              <small class="bk-age" v-if="adminDiag.database.fragmentation_pct > 25"> · VACUUM sinnvoll</small></td></tr>
-          </table>
-        </div>
-        <div class="card set-card" v-if="adminDiag">
-          <h3>Dienste</h3>
-          <table class="info-table">
-            <tr><td>Offline-Modus</td><td>{{ adminDiag.outbound.offline_mode ? 'aktiv' : 'aus' }}</td></tr>
-            <tr><td>Socket-Sperre</td><td>{{ adminDiag.outbound.socket_guard ? 'installiert' : 'nicht aktiv' }}</td></tr>
-            <tr><td>MQTT</td><td class="num">
-              {{ adminDiag.mqtt.connected ? 'verbunden' : 'getrennt' }}
-              <span v-if="adminDiag.mqtt.broker"> · {{ adminDiag.mqtt.broker }}</span></td></tr>
-            <tr v-if="adminDiag.mqtt.last_error"><td>MQTT-Fehler</td><td class="sb-err">{{ adminDiag.mqtt.last_error }}</td></tr>
-            <tr><td>Nachrichten</td><td class="num">{{ adminDiag.mqtt.messages }} empfangen · {{ adminDiag.mqtt.written }} geschrieben</td></tr>
-            <tr><td>Sicherungen</td><td class="num">{{ adminDiag.backup.entries }} in {{ adminDiag.backup.directory }}</td></tr>
-          </table>
-          <div class="settings-actions"><button class="btn btn-sm" @click="loadAdmin">↻ Aktualisieren</button></div>
-        </div>
-      </template>
-
-      <!-- Abfrage -->
-      <template v-else-if="adminTab==='sql'">
-        <div class="card set-card">
-          <h3>Datenbankabfrage</h3>
-          <p class="hint">Nur lesend. Die Verbindung wird schreibgeschützt geöffnet,
-            zugelassen sind ausschließlich <code>SELECT</code> und <code>WITH</code>,
-            höchstens 500 Zeilen je Abfrage. Jede Abfrage wird mit Konto protokolliert.</p>
-          <textarea class="input sql-input" rows="4" v-model="sqlText"
-                    spellcheck="false" @keydown.ctrl.enter="runQuery"></textarea>
-          <div class="settings-actions">
-            <button class="btn btn-primary" :disabled="sqlBusy" @click="runQuery">
-              {{ sqlBusy ? 'Läuft …' : 'Ausführen' }}</button>
-            <span class="hint sql-hint">Strg + Eingabe</span>
-          </div>
-          <div class="err-inline" v-if="sqlError">{{ sqlError }}</div>
-
-          <div class="sql-samples">
-            <button class="crumb" @click="useSample('SELECT name, typ, einheit FROM systems ORDER BY name')">Systeme</button>
-            <button class="crumb" @click="useSample('SELECT s.name, COUNT(r.id) AS werte, MAX(r.datum) AS letzte FROM systems s LEFT JOIN readings r ON r.system_id = s.id GROUP BY s.name')">Werte je System</button>
-            <button class="crumb" @click="useSample('SELECT datum, value, note FROM readings ORDER BY datum DESC LIMIT 20')">Letzte Ablesungen</button>
-            <button class="crumb" @click="useSample('SELECT username, role, aktiv, letzter_login FROM users')">Konten</button>
-          </div>
-        </div>
-
-        <div class="card set-card" v-if="sqlResult">
-          <h3>{{ sqlResult.row_count }} Zeile{{ sqlResult.row_count===1 ? '' : 'n' }}
-            <small class="bk-age">· {{ sqlResult.duration_ms }} ms{{ sqlResult.truncated ? ' · gekürzt auf 500' : '' }}</small></h3>
-          <div class="sql-scroll">
-            <table class="sql-table">
-              <thead><tr><th v-for="c in sqlResult.columns" :key="c">{{ c }}</th></tr></thead>
-              <tbody>
-                <tr v-for="(row,i) in sqlResult.rows" :key="i">
-                  <td v-for="(v,j) in row" :key="j">{{ v === null ? '—' : v }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="card set-card" v-if="adminSchema.length">
-          <h3>Tabellen</h3>
-          <div v-for="t in adminSchema" :key="t.table" class="sql-schema">
-            <button class="crumb" @click="useSample('SELECT * FROM ' + t.table + ' LIMIT 20')">{{ t.table }}</button>
-            <small>{{ t.rows }} Zeilen · {{ t.columns.map(c => c.name).join(', ') }}</small>
-          </div>
-        </div>
-      </template>
-
-      <!-- Änderungsprotokoll -->
-      <template v-else-if="adminTab==='audit'">
-        <div class="card set-card">
-          <h3>Änderungsprotokoll</h3>
-          <p class="hint">Schreibgeschützt. Einträge lassen sich weder ändern noch
-            innerhalb der ersten 30 Tage löschen – das setzt die Datenbank selbst durch.</p>
-
-          <div class="audit-filters">
-            <select class="select" v-model="auditFilter.action" @change="loadAudit(1)">
-              <option :value="null">Alle Aktionen</option>
-              <option v-for="a in auditFacets.actions" :key="a" :value="a">{{ a }}</option>
-            </select>
-            <select class="select" v-model="auditFilter.target_table" @change="loadAudit(1)">
-              <option :value="null">Alle Tabellen</option>
-              <option v-for="t in auditFacets.tables" :key="t" :value="t">{{ t }}</option>
-            </select>
-            <select class="select" v-model="auditFilter.user_id" @change="loadAudit(1)">
-              <option :value="null">Alle Konten</option>
-              <option v-for="u in auditFacets.users" :key="u.id || 'sys'" :value="u.id">{{ u.username }}</option>
-            </select>
-            <input class="input" type="date" v-model="auditFilter.from" @change="loadAudit(1)" title="von" />
-            <input class="input" type="date" v-model="auditFilter.to" @change="loadAudit(1)" title="bis" />
-            <button class="btn btn-sm" @click="resetAuditFilter">↺</button>
-          </div>
-
-          <div v-if="auditLoading" class="center-load"><span class="spin"></span></div>
-          <div class="hint" v-else-if="!auditEntries.length">Keine Einträge für diese Auswahl.</div>
-
-          <template v-else>
-            <div class="sql-scroll">
-              <table class="sql-table audit-table">
-                <thead>
-                  <tr><th>Zeit</th><th>Konto</th><th>Aktion</th><th>Tabelle</th><th>Datensatz</th><th>Änderung</th></tr>
-                </thead>
-                <tbody>
-                  <tr v-for="e in auditEntries" :key="e.id">
-                    <td>{{ e.ts.replace('T', ' ').slice(0, 19) }}</td>
-                    <td>{{ e.username }}</td>
-                    <td><span class="chip" :class="'chip-act-' + e.action.toLowerCase()">{{ e.action }}</span></td>
-                    <td>{{ e.target_table }}</td>
-                    <td class="au-id">{{ e.target_id || '–' }}</td>
-                    <td class="au-diff">{{ auditSummary(e) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div class="pager audit-pager">
-              <button class="btn btn-sm" :disabled="auditPage<=1" @click="loadAudit(auditPage-1)">‹ Zurück</button>
-              <span>Seite {{ auditPage }} / {{ auditPages }} · {{ auditTotal }} Einträge</span>
-              <button class="btn btn-sm" :disabled="auditPage>=auditPages" @click="loadAudit(auditPage+1)">Weiter ›</button>
-            </div>
-          </template>
-        </div>
-      </template>
-
-      <!-- Datenmanagement -->
-      <template v-else-if="adminTab==='daten'">
-        <div class="card set-card">
-          <h3>Sicherungen</h3>
-          <p class="hint">Automatische tägliche Sicherung nach
-            <code>{{ backupStatus ? backupStatus.directory : '/backup' }}</code>.
-            Home Assistant nimmt dieses Verzeichnis in seine eigenen Voll-Sicherungen auf.
-            Zeitplan und Aufbewahrung: Einstellungen → System.</p>
-
-          <div class="hint ks-note" v-if="backupStatus && !backupStatus.supervisor_backup_dir">
-            <code>/backup</code> ist nicht gemappt – es wird nach <code>/share</code> gesichert.
-            Diese Dateien landen NICHT im Home-Assistant-Backup. Ergänze
-            <code>backup:rw</code> unter <code>map:</code> in der <code>config.yaml</code>.
-          </div>
-
-          <div class="settings-actions">
-            <button class="btn btn-primary" :disabled="backupBusy" @click="runBackup">
-              {{ backupBusy ? 'Sichere …' : '⇩ Jetzt sichern' }}</button>
-            <button class="btn" @click="exportAll">⇩ Sicherung (ZIP)</button>
-            <button class="btn" @click="openExportConfig">⇩ Rohdaten (CSV / JSON) …</button>
-          </div>
-
-          <table class="info-table" v-if="backupStatus && backupStatus.entries.length">
-            <tr v-for="b in backupStatus.entries" :key="b.file">
-              <td>{{ fmtDate(b.created.slice(0,10)) }}<small class="bk-age"> · {{ b.age_days }} T</small></td>
-              <td class="num">
-                {{ fmtBytes(b.size_bytes) }}
-                <a class="crumb" :href="'api/backup/' + b.file" download title="Herunterladen">⇩</a>
-                <button class="btn btn-sm" :disabled="!!restoreBusy"
-                        @click="restoreBackup(b.file)" title="Aus dieser Sicherung wiederherstellen">
-                  {{ restoreBusy === b.file ? '…' : '↺ Wiederherstellen' }}</button>
-              </td>
-            </tr>
-          </table>
-          <div class="hint" v-else-if="backupStatus">Noch keine Sicherung vorhanden.</div>
-        </div>
-
-        <div class="card set-card">
-          <h3>Sicherung importieren</h3>
-          <p class="hint">Stellt die Datenbank aus einer hochgeladenen <code>.gz</code>-Sicherung
-            wieder her – z. B. nach einem Umzug oder einer Wiederherstellung aus einem
-            Home-Assistant-Backup. Der aktuelle Bestand wird vorher automatisch gesichert.</p>
-          <div class="settings-actions">
-            <input class="input" type="file" accept=".gz" @change="onRestoreFile" />
-            <button class="btn btn-primary" :disabled="!restoreFile || !!restoreBusy" @click="importRestore">
-              {{ restoreBusy && restoreBusy === (restoreFile && restoreFile.name) ? 'Stelle wieder her …' : '⇧ Hochladen & wiederherstellen' }}</button>
-          </div>
-        </div>
-      </template>
-
-      <!-- Protokoll -->
-      <template v-else-if="adminTab==='logs'">
-        <div class="card set-card">
-          <h3>Anwendungsprotokoll</h3>
-          <div class="settings-actions">
-            <div class="seg">
-              <button v-for="l in ['INFO','WARNING','ERROR']" :key="l"
-                      :class="{active: logLevel===l}" @click="logLevel=l; loadAdminLogs()">{{ l }}</button>
-            </div>
-            <button class="btn btn-sm" @click="loadAdminLogs">↻ Aktualisieren</button>
-          </div>
-          <div class="mqtt-log" v-if="adminLogs.length">
-            <div v-for="(e,i) in adminLogs" :key="i" class="mq-row"
-                 :class="{ warn: e.level === 'WARNING' || e.level === 'ERROR' }">
-              <span class="mq-ts">{{ e.ts.slice(11,19) }}</span>
-              <span class="log-src">{{ e.logger.replace('zaehlwerk.','') }}</span>
-              <span>{{ e.message }}</span>
-            </div>
-          </div>
-          <div class="hint" v-else>Keine Meldungen auf dieser Stufe.</div>
-        </div>
-      </template>
-    </template>
-
-    <!-- EINSTELLUNGEN -->
-    <template v-else-if="view==='settings'">
-      <div class="eyebrow">Einstellungen</div>
-      <div class="seg settings-seg">
-        <button v-if="isAdmin" :class="{active: settingsTab==='app'}" @click="settingsTab='app'">A · System</button>
-        <button :class="{active: settingsTab==='ui'}"  @click="settingsTab='ui'">B · Web-App</button>
-      </div>
-
-      <!-- ================= SEKTION A: System ================= -->
-      <template v-if="settingsTab==='app'">
+      <!-- System -->
+      <template v-if="adminTab==='system'">
         <div class="card set-card killswitch" :class="{armed: appSettingsDraft && appSettingsDraft.offline_mode}">
           <h3>Internetzugriff</h3>
           <p class="hint">Zählwerk funktioniert vollständig ohne Internet. Externe Abrufe sind
@@ -4030,71 +3814,29 @@ createApp({
             <div class="err-inline" v-if="settingsErrors.outlier_sigma">{{ settingsErrors.outlier_sigma }}</div>
             <div class="hint" v-else>Ø + n·σ gilt als Ausreißer. Kleiner = empfindlicher. Standard 2,0.</div>
           </div>
-
         </div>
 
-        <div class="card set-card" v-if="currentUser">
-          <h3>Konto</h3>
-          <table class="info-table">
-            <tr><td>Angemeldet als</td><td>{{ currentUser.display_name }}</td></tr>
-            <tr><td>Benutzername</td><td class="num">{{ currentUser.username }}</td></tr>
-            <tr><td>Herkunft</td><td>{{ currentUser.source === 'homeassistant'
-              ? 'Home Assistant (Ingress)' : 'lokales Konto' }}</td></tr>
-          </table>
-          <p class="hint" v-if="currentUser.source === 'homeassistant'">
-            Die Anmeldung erfolgt bereits in Home Assistant. Zählwerk übernimmt sie und
-            speichert kein Passwort.
-          </p>
-          <div class="settings-actions" v-else>
-            <button class="btn" @click="doLogout">Abmelden</button>
+        <div class="save-bar" :class="{ dirty: settingsDirty(), invalid: settingsErrorCount() > 0 }"
+             v-if="appSettingsDraft">
+          <div class="sb-info">
+            <span v-if="settingsSaving">Speichert …</span>
+            <span v-else-if="settingsErrorCount()" class="sb-err">
+              ⚠ {{ settingsErrorCount() }} {{ settingsErrorCount()===1 ? 'Feld' : 'Felder' }} prüfen
+            </span>
+            <span v-else-if="settingsDirty()">
+              {{ settingsChangeCount() }} ungespeicherte Änderung{{ settingsChangeCount()===1 ? '' : 'en' }}
+            </span>
+            <span v-else class="sb-clean">✓ Alles gespeichert</span>
           </div>
+          <button class="btn" :disabled="!settingsDirty() || settingsSaving" @click="revertSettings">Verwerfen</button>
+          <button class="btn btn-primary"
+                  :disabled="settingsSaving || !settingsDirty() || settingsErrorCount() > 0"
+                  @click="saveSettings">Speichern</button>
         </div>
+      </template>
 
-        <div class="card set-card" v-if="isAdmin">
-          <h3>Konten &amp; Rollen</h3>
-          <p class="hint">Änderungen greifen beim nächsten Aufruf des jeweiligen Kontos.
-            Die Rechte werden serverseitig durchgesetzt, das Ausblenden in der Oberfläche
-            ist nur Beiwerk.</p>
-          <div class="field">
-            <label>Rolle für neu übernommene Home-Assistant-Konten</label>
-            <select class="select" v-model="appSettingsDraft.default_role" @change="validateSettings">
-              <option v-for="r in authRoles" :key="r.key" :value="r.key">{{ r.label }} – {{ r.hint }}</option>
-            </select>
-          </div>
-          <table class="info-table" v-if="users.length">
-            <tr v-for="u in users" :key="u.id">
-              <td>
-                {{ u.display_name }}
-                <small class="bk-age"> · {{ u.username }}{{ u.source === 'homeassistant' ? ' · HA' : '' }}</small>
-              </td>
-              <td class="num">
-                <select class="select role-select" :value="u.role" @change="setUserRole(u, $event.target.value)">
-                  <option v-for="r in authRoles" :key="r.key" :value="r.key">{{ r.label }}</option>
-                </select>
-              </td>
-            </tr>
-          </table>
-          <div class="hint" v-else>Konten erscheinen, sobald sie sich erstmals angemeldet haben.</div>
-        </div>
-
-        <div class="card set-card" v-if="sysInfo">
-          <h3>Laufzeit &amp; Datenbank</h3>
-          <p class="hint">Read-only. Container, Port und DB-Pfad gehören dem Supervisor und werden über
-            <code>config.yaml</code> bzw. das Add-on-Panel gesteuert, nicht hier.</p>
-          <table class="info-table">
-            <tr><td>Betriebsart</td><td>{{ sysInfo.runtime }}</td></tr>
-            <tr><td>App-Version</td><td class="num">{{ appVersion }}</td></tr>
-            <tr><td>Schema-Version</td><td class="num">{{ sysInfo.schema_version }}</td></tr>
-            <tr><td>Python</td><td class="num">{{ sysInfo.python_version }} · {{ sysInfo.platform }}</td></tr>
-            <tr><td>Supervisor-API</td><td>{{ sysInfo.supervisor_available ? 'verbunden' : 'nicht verfügbar' }}</td></tr>
-            <tr><td>DB-Pfad</td><td class="num">{{ sysInfo.db_path }}</td></tr>
-            <tr><td>DB-Größe</td><td class="num">{{ fmtBytes(sysInfo.db_size_bytes) }}</td></tr>
-            <tr><td>Journal-Modus</td><td class="num">{{ sysInfo.journal_mode }}</td></tr>
-            <tr><td>Foreign Keys</td><td>{{ sysInfo.foreign_keys ? 'aktiv' : 'inaktiv' }}</td></tr>
-            <tr><td>Datenbestand</td><td class="num">{{ sysInfo.system_count }} Systeme · {{ sysInfo.reading_count }} Ablesungen</td></tr>
-          </table>
-        </div>
-
+      <!-- Netzwerk (MQTT/HA) -->
+      <template v-else-if="adminTab==='netzwerk'">
         <div class="card set-card" v-if="appSettingsDraft">
           <h3>MQTT-Ingestion</h3>
           <p class="hint">Übernimmt Zählerstände aus Broker-Nachrichten. Je System und Tag
@@ -4250,13 +3992,235 @@ createApp({
           </template>
         </div>
 
+        <div class="save-bar" :class="{ dirty: settingsDirty(), invalid: settingsErrorCount() > 0 }"
+             v-if="appSettingsDraft">
+          <div class="sb-info">
+            <span v-if="settingsSaving">Speichert …</span>
+            <span v-else-if="settingsErrorCount()" class="sb-err">
+              ⚠ {{ settingsErrorCount() }} {{ settingsErrorCount()===1 ? 'Feld' : 'Felder' }} prüfen
+            </span>
+            <span v-else-if="settingsDirty()">
+              {{ settingsChangeCount() }} ungespeicherte Änderung{{ settingsChangeCount()===1 ? '' : 'en' }}
+            </span>
+            <span v-else class="sb-clean">✓ Alles gespeichert</span>
+          </div>
+          <button class="btn" :disabled="!settingsDirty() || settingsSaving" @click="revertSettings">Verwerfen</button>
+          <button class="btn btn-primary"
+                  :disabled="settingsSaving || !settingsDirty() || settingsErrorCount() > 0"
+                  @click="saveSettings">Speichern</button>
+        </div>
+      </template>
+
+      <!-- Zugriff (RBAC) -->
+      <template v-else-if="adminTab==='zugriff'">
+        <div class="card set-card">
+          <h3>Konten &amp; Rollen</h3>
+          <p class="hint">Änderungen greifen beim nächsten Aufruf des jeweiligen Kontos.
+            Die Rechte werden serverseitig durchgesetzt, das Ausblenden in der Oberfläche
+            ist nur Beiwerk.</p>
+          <div class="field" v-if="appSettingsDraft">
+            <label>Rolle für neu übernommene Home-Assistant-Konten</label>
+            <select class="select" v-model="appSettingsDraft.default_role" @change="validateSettings">
+              <option v-for="r in authRoles" :key="r.key" :value="r.key">{{ r.label }} – {{ r.hint }}</option>
+            </select>
+          </div>
+          <table class="info-table" v-if="users.length">
+            <tr v-for="u in users" :key="u.id">
+              <td>
+                {{ u.display_name }}
+                <small class="bk-age"> · {{ u.username }}{{ u.source === 'homeassistant' ? ' · HA' : '' }}</small>
+              </td>
+              <td class="num">
+                <select class="select role-select" :value="u.role" @change="setUserRole(u, $event.target.value)">
+                  <option v-for="r in authRoles" :key="r.key" :value="r.key">{{ r.label }}</option>
+                </select>
+              </td>
+            </tr>
+          </table>
+          <div class="hint" v-else>Konten erscheinen, sobald sie sich erstmals angemeldet haben.</div>
+        </div>
+
+        <div class="save-bar" :class="{ dirty: settingsDirty(), invalid: settingsErrorCount() > 0 }"
+             v-if="appSettingsDraft">
+          <div class="sb-info">
+            <span v-if="settingsSaving">Speichert …</span>
+            <span v-else-if="settingsDirty()">
+              {{ settingsChangeCount() }} ungespeicherte Änderung{{ settingsChangeCount()===1 ? '' : 'en' }}
+            </span>
+            <span v-else class="sb-clean">✓ Alles gespeichert</span>
+          </div>
+          <button class="btn" :disabled="!settingsDirty() || settingsSaving" @click="revertSettings">Verwerfen</button>
+          <button class="btn btn-primary"
+                  :disabled="settingsSaving || !settingsDirty() || settingsErrorCount() > 0"
+                  @click="saveSettings">Speichern</button>
+        </div>
+      </template>
+
+      <!-- Diagnose -->
+      <template v-else-if="adminTab==='diag'">
+        <div class="card set-card" v-if="adminDiag">
+          <h3>Datenbank</h3>
+          <table class="info-table">
+            <tr><td>Pfad</td><td class="num">{{ adminDiag.database.path }}</td></tr>
+            <tr><td>Version / Schema</td><td class="num">{{ adminDiag.app_version }} · Schema {{ adminDiag.schema_version }}</td></tr>
+            <tr><td>Integritätsprüfung</td>
+                <td :class="adminDiag.database.integrity_check === 'ok' ? '' : 'sb-err'">
+                  {{ adminDiag.database.integrity_check }}</td></tr>
+            <tr><td>Fremdschlüsselfehler</td>
+                <td :class="adminDiag.database.foreign_key_errors ? 'sb-err' : ''">
+                  {{ adminDiag.database.foreign_key_errors }}</td></tr>
+            <tr><td>Journal</td><td class="num">{{ adminDiag.database.journal_mode }}</td></tr>
+            <tr><td>Größe</td><td class="num">
+              {{ fmtBytes(adminDiag.database.sizes_bytes.db) }}
+              <small class="bk-age"> + WAL {{ fmtBytes(adminDiag.database.sizes_bytes.wal) }}</small></td></tr>
+            <tr><td>Fragmentierung</td><td class="num">{{ adminDiag.database.fragmentation_pct }} %
+              <small class="bk-age" v-if="adminDiag.database.fragmentation_pct > 25"> · VACUUM sinnvoll</small></td></tr>
+          </table>
+        </div>
+        <div class="card set-card" v-if="adminDiag">
+          <h3>Dienste</h3>
+          <table class="info-table">
+            <tr><td>Offline-Modus</td><td>{{ adminDiag.outbound.offline_mode ? 'aktiv' : 'aus' }}</td></tr>
+            <tr><td>Socket-Sperre</td><td>{{ adminDiag.outbound.socket_guard ? 'installiert' : 'nicht aktiv' }}</td></tr>
+            <tr><td>MQTT</td><td class="num">
+              {{ adminDiag.mqtt.connected ? 'verbunden' : 'getrennt' }}
+              <span v-if="adminDiag.mqtt.broker"> · {{ adminDiag.mqtt.broker }}</span></td></tr>
+            <tr v-if="adminDiag.mqtt.last_error"><td>MQTT-Fehler</td><td class="sb-err">{{ adminDiag.mqtt.last_error }}</td></tr>
+            <tr><td>Nachrichten</td><td class="num">{{ adminDiag.mqtt.messages }} empfangen · {{ adminDiag.mqtt.written }} geschrieben</td></tr>
+            <tr><td>Sicherungen</td><td class="num">{{ adminDiag.backup.entries }} in {{ adminDiag.backup.directory }}</td></tr>
+          </table>
+          <div class="settings-actions"><button class="btn btn-sm" @click="loadAdmin">↻ Aktualisieren</button></div>
+        </div>
+        <div class="card set-card" v-if="sysInfo">
+          <h3>Laufzeit &amp; Datenbank</h3>
+          <p class="hint">Read-only. Container, Port und DB-Pfad gehören dem Supervisor und werden über
+            <code>config.yaml</code> bzw. das Add-on-Panel gesteuert, nicht hier.</p>
+          <table class="info-table">
+            <tr><td>Betriebsart</td><td>{{ sysInfo.runtime }}</td></tr>
+            <tr><td>App-Version</td><td class="num">{{ appVersion }}</td></tr>
+            <tr><td>Schema-Version</td><td class="num">{{ sysInfo.schema_version }}</td></tr>
+            <tr><td>Python</td><td class="num">{{ sysInfo.python_version }} · {{ sysInfo.platform }}</td></tr>
+            <tr><td>Supervisor-API</td><td>{{ sysInfo.supervisor_available ? 'verbunden' : 'nicht verfügbar' }}</td></tr>
+            <tr><td>DB-Pfad</td><td class="num">{{ sysInfo.db_path }}</td></tr>
+            <tr><td>DB-Größe</td><td class="num">{{ fmtBytes(sysInfo.db_size_bytes) }}</td></tr>
+            <tr><td>Journal-Modus</td><td class="num">{{ sysInfo.journal_mode }}</td></tr>
+            <tr><td>Foreign Keys</td><td>{{ sysInfo.foreign_keys ? 'aktiv' : 'inaktiv' }}</td></tr>
+            <tr><td>Datenbestand</td><td class="num">{{ sysInfo.system_count }} Systeme · {{ sysInfo.reading_count }} Ablesungen</td></tr>
+          </table>
+        </div>
+      </template>
+
+      <!-- Abfrage -->
+      <template v-else-if="adminTab==='sql'">
+        <div class="card set-card">
+          <h3>Datenbankabfrage</h3>
+          <p class="hint">Nur lesend. Die Verbindung wird schreibgeschützt geöffnet,
+            zugelassen sind ausschließlich <code>SELECT</code> und <code>WITH</code>,
+            höchstens 500 Zeilen je Abfrage. Jede Abfrage wird mit Konto protokolliert.</p>
+          <textarea class="input sql-input" rows="4" v-model="sqlText"
+                    spellcheck="false" @keydown.ctrl.enter="runQuery"></textarea>
+          <div class="settings-actions">
+            <button class="btn btn-primary" :disabled="sqlBusy" @click="runQuery">
+              {{ sqlBusy ? 'Läuft …' : 'Ausführen' }}</button>
+            <span class="hint sql-hint">Strg + Eingabe</span>
+          </div>
+          <div class="err-inline" v-if="sqlError">{{ sqlError }}</div>
+
+          <div class="sql-samples">
+            <button class="crumb" @click="useSample('SELECT name, typ, einheit FROM systems ORDER BY name')">Systeme</button>
+            <button class="crumb" @click="useSample('SELECT s.name, COUNT(r.id) AS werte, MAX(r.datum) AS letzte FROM systems s LEFT JOIN readings r ON r.system_id = s.id GROUP BY s.name')">Werte je System</button>
+            <button class="crumb" @click="useSample('SELECT datum, value, note FROM readings ORDER BY datum DESC LIMIT 20')">Letzte Ablesungen</button>
+            <button class="crumb" @click="useSample('SELECT username, role, aktiv, letzter_login FROM users')">Konten</button>
+          </div>
+        </div>
+
+        <div class="card set-card" v-if="sqlResult">
+          <h3>{{ sqlResult.row_count }} Zeile{{ sqlResult.row_count===1 ? '' : 'n' }}
+            <small class="bk-age">· {{ sqlResult.duration_ms }} ms{{ sqlResult.truncated ? ' · gekürzt auf 500' : '' }}</small></h3>
+          <div class="sql-scroll">
+            <table class="sql-table">
+              <thead><tr><th v-for="c in sqlResult.columns" :key="c">{{ c }}</th></tr></thead>
+              <tbody>
+                <tr v-for="(row,i) in sqlResult.rows" :key="i">
+                  <td v-for="(v,j) in row" :key="j">{{ v === null ? '—' : v }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card set-card" v-if="adminSchema.length">
+          <h3>Tabellen</h3>
+          <div v-for="t in adminSchema" :key="t.table" class="sql-schema">
+            <button class="crumb" @click="useSample('SELECT * FROM ' + t.table + ' LIMIT 20')">{{ t.table }}</button>
+            <small>{{ t.rows }} Zeilen · {{ t.columns.map(c => c.name).join(', ') }}</small>
+          </div>
+        </div>
+      </template>
+
+      <!-- Änderungsprotokoll -->
+      <template v-else-if="adminTab==='audit'">
+        <div class="card set-card">
+          <h3>Änderungsprotokoll</h3>
+          <p class="hint">Schreibgeschützt. Einträge lassen sich weder ändern noch
+            innerhalb der ersten 30 Tage löschen – das setzt die Datenbank selbst durch.</p>
+
+          <div class="audit-filters">
+            <select class="select" v-model="auditFilter.action" @change="loadAudit(1)">
+              <option :value="null">Alle Aktionen</option>
+              <option v-for="a in auditFacets.actions" :key="a" :value="a">{{ a }}</option>
+            </select>
+            <select class="select" v-model="auditFilter.target_table" @change="loadAudit(1)">
+              <option :value="null">Alle Tabellen</option>
+              <option v-for="t in auditFacets.tables" :key="t" :value="t">{{ t }}</option>
+            </select>
+            <select class="select" v-model="auditFilter.user_id" @change="loadAudit(1)">
+              <option :value="null">Alle Konten</option>
+              <option v-for="u in auditFacets.users" :key="u.id || 'sys'" :value="u.id">{{ u.username }}</option>
+            </select>
+            <input class="input" type="date" v-model="auditFilter.from" @change="loadAudit(1)" title="von" />
+            <input class="input" type="date" v-model="auditFilter.to" @change="loadAudit(1)" title="bis" />
+            <button class="btn btn-sm" @click="resetAuditFilter">↺</button>
+          </div>
+
+          <div v-if="auditLoading" class="center-load"><span class="spin"></span></div>
+          <div class="hint" v-else-if="!auditEntries.length">Keine Einträge für diese Auswahl.</div>
+
+          <template v-else>
+            <div class="sql-scroll">
+              <table class="sql-table audit-table">
+                <thead>
+                  <tr><th>Zeit</th><th>Konto</th><th>Aktion</th><th>Tabelle</th><th>Datensatz</th><th>Änderung</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="e in auditEntries" :key="e.id">
+                    <td>{{ e.ts.replace('T', ' ').slice(0, 19) }}</td>
+                    <td>{{ e.username }}</td>
+                    <td><span class="chip" :class="'chip-act-' + e.action.toLowerCase()">{{ e.action }}</span></td>
+                    <td>{{ e.target_table }}</td>
+                    <td class="au-id">{{ e.target_id || '–' }}</td>
+                    <td class="au-diff">{{ auditSummary(e) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="pager audit-pager">
+              <button class="btn btn-sm" :disabled="auditPage<=1" @click="loadAudit(auditPage-1)">‹ Zurück</button>
+              <span>Seite {{ auditPage }} / {{ auditPages }} · {{ auditTotal }} Einträge</span>
+              <button class="btn btn-sm" :disabled="auditPage>=auditPages" @click="loadAudit(auditPage+1)">Weiter ›</button>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- Datenmanagement -->
+      <template v-else-if="adminTab==='daten'">
         <div class="card set-card" v-if="appSettingsDraft">
-          <h3>Automatische Sicherung</h3>
+          <h3>Zeitplan</h3>
           <p class="hint">Legt eine konsistente Kopie der Datenbank in
             <code>{{ backupStatus ? backupStatus.directory : '/backup' }}</code> ab.
-            Home Assistant nimmt dieses Verzeichnis in seine eigenen Voll-Sicherungen auf.
-            Manuelle Sicherung, Liste, Download und Wiederherstellung:
-            Admin-Tools → Datenmanagement.</p>
+            Home Assistant nimmt dieses Verzeichnis in seine eigenen Voll-Sicherungen auf.</p>
 
           <div class="hint ks-note" v-if="backupStatus && !backupStatus.supervisor_backup_dir">
             <code>/backup</code> ist nicht gemappt – es wird nach <code>/share</code> gesichert.
@@ -4284,9 +4248,6 @@ createApp({
           </div>
         </div>
 
-        <!-- Speichern gilt für ALLE Felder der Sektion A, nicht nur für die
-             Karte, in der der Button bisher stand. Deshalb eigene Leiste am
-             Ende, die beim Scrollen am unteren Rand haften bleibt. -->
         <div class="save-bar" :class="{ dirty: settingsDirty(), invalid: settingsErrorCount() > 0 }"
              v-if="appSettingsDraft">
           <div class="sb-info">
@@ -4304,10 +4265,89 @@ createApp({
                   :disabled="settingsSaving || !settingsDirty() || settingsErrorCount() > 0"
                   @click="saveSettings">Speichern</button>
         </div>
+
+        <div class="card set-card">
+          <h3>Sicherungen</h3>
+          <div class="settings-actions">
+            <button class="btn btn-primary" :disabled="backupBusy" @click="runBackup">
+              {{ backupBusy ? 'Sichere …' : '⇩ Jetzt sichern' }}</button>
+            <button class="btn" @click="exportAll">⇩ Sicherung (ZIP)</button>
+            <button class="btn" @click="openExportConfig">⇩ Rohdaten (CSV / JSON) …</button>
+          </div>
+
+          <table class="info-table" v-if="backupStatus && backupStatus.entries.length">
+            <tr v-for="b in backupStatus.entries" :key="b.file">
+              <td>{{ fmtDate(b.created.slice(0,10)) }}<small class="bk-age"> · {{ b.age_days }} T</small></td>
+              <td class="num">
+                {{ fmtBytes(b.size_bytes) }}
+                <a class="crumb" :href="'api/backup/' + b.file" download title="Herunterladen">⇩</a>
+                <button class="btn btn-sm" :disabled="!!restoreBusy"
+                        @click="restoreBackup(b.file)" title="Aus dieser Sicherung wiederherstellen">
+                  {{ restoreBusy === b.file ? '…' : '↺ Wiederherstellen' }}</button>
+              </td>
+            </tr>
+          </table>
+          <div class="hint" v-else-if="backupStatus">Noch keine Sicherung vorhanden.</div>
+        </div>
+
+        <div class="card set-card">
+          <h3>Sicherung importieren</h3>
+          <p class="hint">Stellt die Datenbank aus einer hochgeladenen <code>.gz</code>-Sicherung
+            wieder her – z. B. nach einem Umzug oder einer Wiederherstellung aus einem
+            Home-Assistant-Backup. Der aktuelle Bestand wird vorher automatisch gesichert.</p>
+          <div class="settings-actions">
+            <input class="input" type="file" accept=".gz" @change="onRestoreFile" />
+            <button class="btn btn-primary" :disabled="!restoreFile || !!restoreBusy" @click="importRestore">
+              {{ restoreBusy && restoreBusy === (restoreFile && restoreFile.name) ? 'Stelle wieder her …' : '⇧ Hochladen & wiederherstellen' }}</button>
+          </div>
+        </div>
       </template>
 
-      <!-- ================= SEKTION B: Web-App ================= -->
-      <template v-else>
+      <!-- Protokoll -->
+      <template v-else-if="adminTab==='logs'">
+        <div class="card set-card">
+          <h3>Anwendungsprotokoll</h3>
+          <div class="settings-actions">
+            <div class="seg">
+              <button v-for="l in ['INFO','WARNING','ERROR']" :key="l"
+                      :class="{active: logLevel===l}" @click="logLevel=l; loadAdminLogs()">{{ l }}</button>
+            </div>
+            <button class="btn btn-sm" @click="loadAdminLogs">↻ Aktualisieren</button>
+          </div>
+          <div class="mqtt-log" v-if="adminLogs.length">
+            <div v-for="(e,i) in adminLogs" :key="i" class="mq-row"
+                 :class="{ warn: e.level === 'WARNING' || e.level === 'ERROR' }">
+              <span class="mq-ts">{{ e.ts.slice(11,19) }}</span>
+              <span class="log-src">{{ e.logger.replace('zaehlwerk.','') }}</span>
+              <span>{{ e.message }}</span>
+            </div>
+          </div>
+          <div class="hint" v-else>Keine Meldungen auf dieser Stufe.</div>
+        </div>
+      </template>
+    </template>
+
+    <!-- EINSTELLUNGEN -->
+    <template v-else-if="view==='settings'">
+      <div class="eyebrow">Einstellungen</div>
+
+        <div class="card set-card" v-if="currentUser">
+          <h3>Konto</h3>
+          <table class="info-table">
+            <tr><td>Angemeldet als</td><td>{{ currentUser.display_name }}</td></tr>
+            <tr><td>Benutzername</td><td class="num">{{ currentUser.username }}</td></tr>
+            <tr><td>Herkunft</td><td>{{ currentUser.source === 'homeassistant'
+              ? 'Home Assistant (Ingress)' : 'lokales Konto' }}</td></tr>
+          </table>
+          <p class="hint" v-if="currentUser.source === 'homeassistant'">
+            Die Anmeldung erfolgt bereits in Home Assistant. Zählwerk übernimmt sie und
+            speichert kein Passwort.
+          </p>
+          <div class="settings-actions" v-else>
+            <button class="btn" @click="doLogout">Abmelden</button>
+          </div>
+        </div>
+
         <div class="card set-card">
           <h3>Darstellung</h3>
           <p class="hint">Gerätelokal in diesem Browser gespeichert, kein Serverzugriff.</p>
@@ -4367,7 +4407,6 @@ createApp({
             <button class="btn" @click="showChangelog=true">Zählwerk v{{ appVersion }} · Versionsverlauf</button>
           </div>
         </div>
-      </template>
     </template>
 
     <!-- DETAIL -->
