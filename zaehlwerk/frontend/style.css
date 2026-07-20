@@ -873,8 +873,19 @@ html { scrollbar-gutter: stable; }
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
 
-/* ---------- Einstellungsseite (Sektion A/B) ---------- */
-.settings-seg { margin: 4px 0 18px; }
+/* ---------- Admin-Tools Reiterleiste ---------- */
+/* Acht Reiter passen auf schmalen Bildschirmen nicht mehr gleichmäßig
+   verteilt in eine Zeile - die von .seg geerbte Spaltenaufteilung
+   (grid-auto-columns: minmax(0,1fr)) würde die Beschriftung
+   unleserlich zusammenquetschen. Eigene Breite je Knopf plus
+   horizontales Scrollen behält die Lesbarkeit, statt sie zu opfern. */
+.settings-seg {
+  margin: 4px 0 18px;
+  grid-auto-columns: max-content;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
 .set-card { padding: 20px; margin-bottom: 16px; }
 .set-card h3 { margin: 0 0 4px; font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: .15px; }
 .set-card > .hint:first-of-type { margin-top: 0; }

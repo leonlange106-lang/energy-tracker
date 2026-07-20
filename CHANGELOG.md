@@ -9,6 +9,20 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.12.0] - 2026-07-20
+
+### Changed
+
+- [Frontend/Admin] Admin-Tools zum vollständigen Tab-Dashboard erweitert: **System** (Kill-Switch, Anwendungsparameter), **Netzwerk** (MQTT-Einrichtung), **Zugriff** (Konten & Rollen), **Datenmanagement** (jetzt inkl. Sicherungs-Zeitplan), **Diagnose** (jetzt inkl. Laufzeit & Datenbank), sowie unverändert Abfrage, Protokoll und Änderungen.
+- [Frontend/Einstellungen] Die bisherige Sektion A ("A · System") entfällt vollständig – ihr Inhalt ist in die Admin-Tools umgezogen. Einstellungen zeigt jetzt für **alle** Konten (nicht nur Administratoren) Darstellung, Diagrammfarben, Versionsverlauf und die eigene Kontokarte inkl. Abmelden-Button. Vorher konnten Nicht-Administratoren sich in der Oberfläche nicht abmelden, weil die Konto-Karte in der admin-exklusiven Sektion A steckte – das ist mit diesem Umzug nebenbei behoben.
+- [Frontend/CSS] Die Reiterleiste der Admin-Tools quetschte bei acht Reitern die Beschriftung auf schmalen Bildschirmen unleserlich zusammen (geerbte Spaltenaufteilung `minmax(0,1fr)`). Reiter behalten jetzt ihre natürliche Breite; die Leiste scrollt bei Bedarf horizontal statt sich zu verzerren.
+
+### Hinweis
+
+- Datenumfang und Berechtigungen sind unverändert – der Zugriff auf `/api/settings`, `/api/backup` usw. bleibt serverseitig auf die Rolle `admin` beschränkt; es hat sich nur die Oberfläche neu sortiert.
+
+---
+
 ## [3.11.1] - 2026-07-20
 
 ### Changed
