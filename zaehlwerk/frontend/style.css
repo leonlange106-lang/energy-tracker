@@ -1553,8 +1553,10 @@ input[type="number"] { height: var(--tap-min); min-height: 0; padding: 0 14px; }
 .mh-date { font-size: 13px; color: var(--md-on-surface-variant); margin-top: 2px; }
 
 .mh-cards { display: flex; flex-direction: column; gap: 10px; }
-.mh-card { display: block; width: 100%; text-align: left; padding: 16px 18px;
-  border: none; cursor: pointer; font-family: var(--sans); color: inherit; }
+.mh-card { padding: 16px 18px; }
+/* Statusbereich der Karte: antippen öffnet die Systemdetails. */
+.mh-card-status { display: block; width: 100%; text-align: left; padding: 0;
+  border: none; background: none; cursor: pointer; font-family: var(--sans); color: inherit; }
 .mh-head { display: flex; align-items: center; gap: 8px; }
 .mh-head .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
 .mh-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 500;
@@ -1568,7 +1570,13 @@ input[type="number"] { height: var(--tap-min); min-height: 0; padding: 0 14px; }
 .mh-unit { font-size: 14px; margin-left: 5px; color: var(--md-on-surface-variant); }
 .mh-sub { font-size: 12px; color: var(--md-on-surface-variant); margin-top: 2px; }
 
-/* Haupthandlung bewusst groß und in Daumenreichweite. */
+/* Schnellerfassung je Zähler: große Touch-Ziele, einhändig bedienbar. Der
+   „Wert erfassen“-Knopf nimmt die volle Breite, das Kamera-Ziel bleibt quadratisch. */
+.mh-quick { display: flex; gap: 8px; margin-top: 14px; }
+.mh-quick-add { flex: 1; min-height: 52px; font-size: 16px; font-weight: 500; justify-content: center; }
+.mh-quick-cam { width: 52px; min-height: 52px; font-size: 21px; padding: 0; flex: 0 0 auto; }
+
+/* Beibehalten für die globale Schnellablesung (mobileNewReading), falls noch verwendet. */
 .mh-actions { display: flex; gap: 10px; margin: 20px 0; }
 .mh-primary { flex: 1; min-height: 56px; font-size: 16px; justify-content: center; }
 .mh-scan { width: 56px; min-height: 56px; font-size: 22px; padding: 0; flex: 0 0 auto; }

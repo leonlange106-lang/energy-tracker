@@ -9,6 +9,20 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.17.0] - 2026-07-20
+
+### Added
+
+- [Frontend/app.js] Mobile Startseite: jeder aktive Zähler bekommt eine eigene Karte mit Status (aktueller Stand + Trend) und darunter einen großen, touch-optimierten „＋ Wert erfassen“-Knopf. Ein Tipp öffnet direkt den Ablesedialog des jeweiligen Zählers – ohne den bisherigen Umweg über die Übersicht und die Systemauswahl. Das war der Reibungspunkt beim Ablesen „im Vorbeigehen“ (z. B. im Keller). Neue Methode `mobileQuickRead(systemId, withScanner)`; die Karten sind nach Tagesverbrauch sortiert, der meistgenutzte Zähler steht oben.
+- [Frontend/app.js] Kamera-Schnellzugriff je Zähler direkt auf der Startseite: der Kamera-Knopf öffnet Ablesedialog samt Foto-Erfassung für genau diesen Zähler.
+- [Frontend/index.html] „Zum Startbildschirm hinzufügen“ startet die App jetzt im Vollbild ohne Browser-Leiste (`mobile-web-app-capable`, `apple-mobile-web-app-*`). Bewusst ohne Web-App-Manifest/Service-Worker: unter dem HA-Ingress liegt die App hinter einem dynamischen Basispfad, ein festes `start_url` würde fehlleiten.
+
+### Hinweis
+
+- Die dedizierte mobile Startseite selbst existiert bereits seit v3.10.0; neu in dieser Version ist die Schnellerfassung pro Zähler. Die frühere globale „Neue Ablesung“-Schaltfläche (`mobileNewReading`) entfällt in der Oberfläche, da jede Zählerkarte ihre eigene, direktere Aktion trägt; die Methode bleibt für einen möglichen Direktaufruf erhalten. Touch-Ziele sind mindestens 52 px hoch.
+
+---
+
 ## [3.16.0] - 2026-07-20
 
 ### Added
