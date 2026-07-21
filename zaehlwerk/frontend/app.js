@@ -4,8 +4,11 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.22.2";
+const APP_VERSION = "3.22.3";
 const APP_CHANGELOG = [
+  { v: "3.22.3", d: "21.07.2026", items: [
+    "Umbenannt in „Zählwerk - Legacy“ (Add-on-Name und Seitenleisten-Eintrag in Home Assistant), um dieses Add-on während des Parallelbetriebs eindeutig von der neuen dezentralen Zählwerk-Instanz zu unterscheiden. Funktion und Daten bleiben unverändert",
+  ]},
   { v: "3.22.2", d: "21.07.2026", items: [
     "Mobil: die Bericht-Markierung in der unteren Navigationsleiste bleibt nicht mehr hängen, wenn der Berichtsdialog geschlossen oder ein Bericht erstellt wird",
     "Mobil: die Tab-Leiste in der Detailansicht schneidet lange Beschriftungen (z. B. „Auswertung“) nicht mehr ab, sondern scrollt bei Bedarf horizontal",

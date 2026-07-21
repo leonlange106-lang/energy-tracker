@@ -9,6 +9,18 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.22.3] - 2026-07-21
+
+### Changed
+
+- **[config.yaml] Add-on umbenannt in „Zählwerk - Legacy":** `name` und `panel_title` heißen jetzt „Zählwerk - Legacy". Damit ist dieses Home-Assistant-Add-on während des Parallelbetriebs eindeutig von der neuen dezentralen Zählwerk-Instanz (eigenes Repo `zaehlwerk`, HA-Custom-Integration) zu unterscheiden. Slug, Datenpfad, Funktion und Daten bleiben unverändert – es ist ausschließlich die Anzeige-Kennung im Add-on-Store und in der Seitenleiste betroffen.
+
+### Hinweis
+
+- Absicherung des Umzugs Add-on → dezentral: Das Legacy-Add-on bleibt als Rückfallebene bestehen, bis der dezentrale Betrieb erwiesen stabil ist.
+
+---
+
 ## [3.22.2] - 2026-07-21
 
 ### Fixed
