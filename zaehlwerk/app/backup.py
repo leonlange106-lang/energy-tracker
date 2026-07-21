@@ -283,22 +283,85 @@ def prune(keep_days: int = 7, keep_min: int = 3) -> list[str]:
     return removed
 
 
-def run_once(keep_days: int = 7, audit_keep_days: int = 365) -> dict:
-    info = create_backup()
-    info["pruned"] = prune(keep_days)
-    # Änderungsprotokoll im selben Lauf beschneiden: es wächst mit jeder
-    # Änderung und braucht sonst einen zweiten Zeitplan.
+def apply_telemetry_retention(session, keep_days: int) -> int:
+    """Verdünnt hochfrequente MQTT-Telemetrie, die älter als `keep_days` ist,
+    auf einen Datensatz je Kalendermonat und System. Gibt die Zahl der
+    gelöschten Datensätze zurück.
+
+    Sicherheiten:
+      - Nur `source == 'mqtt'` wird angefasst. Von Hand erfasste, importierte
+        oder aus Home Assistant übernommene Werte sind bewusste Aufzeichnungen
+        und bleiben immer erhalten.
+      - Behalten wird je (System, Jahr-Monat) der ÄLTESTE Datensatz. Genau so
+        bleibt der allererste Zählerstand (die Basislinie) erhalten und der
+        Gesamtverbrauch exakt: bei kumulativen Ständen ist er Endstand minus
+        Anfangsstand, und beide bleiben stehen. Nur die zeitliche Auflösung
+        alter Telemetrie sinkt (Monats- statt Tagespunkte). Behielte man
+        stattdessen den jüngsten je Monat, ginge der Anfangsstand des ersten
+        Monats verloren und der Gesamtverbrauch fiele zu niedrig aus.
+      - keep_days <= 0 schaltet die Reduktion vollständig ab.
+      - Die aktuellen `keep_days` Tage bleiben in voller Auflösung.
+    """
+    if not keep_days or keep_days <= 0:
+        return 0
+    from datetime import date, datetime as _dt
+    from sqlmodel import select
+    from .models import Reading
+
+    cutoff = date.today() - timedelta(days=int(keep_days))
+    cutoff_dt = _dt(cutoff.year, cutoff.month, cutoff.day)
+    rows = session.exec(
+        select(Reading).where(Reading.source == "mqtt", Reading.datum < cutoff_dt)
+    ).all()
+
+    # Je (System, Jahr, Monat) den ÄLTESTEN Datensatz behalten – so überlebt
+    # der Anfangsstand jeder Reihe und der Gesamtverbrauch bleibt exakt.
+    keep_id: dict[tuple, tuple] = {}
+    for r in rows:
+        key = (r.system_id, r.datum.year, r.datum.month)
+        cur = keep_id.get(key)
+        if cur is None or r.datum < cur[1] or (r.datum == cur[1] and r.id < cur[0]):
+            keep_id[key] = (r.id, r.datum)
+    keep = {v[0] for v in keep_id.values()}
+
+    removed = 0
+    for r in rows:
+        if r.id not in keep:
+            session.delete(r)      # über das ORM -> im Protokoll als Sammeleintrag
+            removed += 1
+    if removed:
+        session.commit()
+    return removed
+
+
+def run_housekeeping(audit_keep_days: int = 365, telemetry_keep_days: int = 0) -> dict:
+    """Tägliche Datenpflege, unabhängig von der Sicherung: Protokoll beschneiden
+    und alte Telemetrie verdünnen. Läuft auch, wenn die automatische Sicherung
+    abgeschaltet ist – die Datenbank soll trotzdem nicht unbegrenzt wachsen."""
+    info = {"audit_pruned": 0, "telemetry_reduced": 0}
     try:
         from sqlmodel import Session
         from . import audit
         from .database import engine
         with Session(engine) as session:
-            removed = audit.prune(session, audit_keep_days)
+            info["audit_pruned"] = audit.prune(session, audit_keep_days)
             session.commit()
-        info["audit_pruned"] = removed
+            info["telemetry_reduced"] = apply_telemetry_retention(session, telemetry_keep_days)
+        if info["telemetry_reduced"]:
+            log.info("Telemetrie-Retention: %s alte MQTT-Datensätze auf Monatswerte reduziert",
+                     info["telemetry_reduced"])
     except Exception as exc:  # noqa: BLE001
-        log.warning("Protokoll-Bereinigung übersprungen: %s", exc)
-        info["audit_pruned"] = 0
+        log.warning("Datenpflege übersprungen: %s", exc)
+    return info
+
+
+def run_once(keep_days: int = 7, audit_keep_days: int = 365,
+             telemetry_keep_days: int = 0) -> dict:
+    info = create_backup()
+    info["pruned"] = prune(keep_days)
+    # Änderungsprotokoll + Telemetrie im selben Lauf pflegen: beide wachsen
+    # laufend und brauchen sonst einen zweiten Zeitplan.
+    info.update(run_housekeeping(audit_keep_days, telemetry_keep_days))
     return info
 
 
@@ -333,8 +396,9 @@ async def scheduler() -> None:
             at = await asyncio.to_thread(get_setting, "backup_time", "03:30")
             keep = int(await asyncio.to_thread(get_setting, "backup_keep_days", 7))
             audit_keep = int(await asyncio.to_thread(get_setting, "audit_keep_days", 365))
+            telemetry_keep = int(await asyncio.to_thread(get_setting, "telemetry_keep_days", 0))
         except Exception:  # noqa: BLE001
-            enabled, at, keep, audit_keep = True, "03:30", 7, 365
+            enabled, at, keep, audit_keep, telemetry_keep = True, "03:30", 7, 365, 0
 
         wait = _seconds_until(at)
         # Nicht länger als eine Stunde am Stück schlafen: sonst würde eine
@@ -342,10 +406,13 @@ async def scheduler() -> None:
         await asyncio.sleep(min(wait, 3600))
         if wait > 3600:
             continue
-        if not enabled:
-            continue
         try:
-            await asyncio.to_thread(run_once, keep, audit_keep)
+            if enabled:
+                await asyncio.to_thread(run_once, keep, audit_keep, telemetry_keep)
+            else:
+                # Sicherung aus, Datenpflege trotzdem: Protokoll und Telemetrie
+                # sollen nicht unbegrenzt wachsen, nur weil kein Backup läuft.
+                await asyncio.to_thread(run_housekeeping, audit_keep, telemetry_keep)
         except Exception as exc:  # noqa: BLE001
-            log.error("Automatische Sicherung fehlgeschlagen: %s", exc)
+            log.error("Tägliche Datenpflege/Sicherung fehlgeschlagen: %s", exc)
         await asyncio.sleep(90)   # Doppelauslösung innerhalb derselben Minute vermeiden

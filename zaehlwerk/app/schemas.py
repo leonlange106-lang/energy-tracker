@@ -146,6 +146,7 @@ class AppSettingsRead(BaseModel):
     mqtt_watchdog_hours: int = 48
     default_role: str = "writer"
     audit_keep_days: int = 365
+    telemetry_keep_days: int = 0
     # Kein Passwortfeld: der Server gibt nur bekannt, ob eines hinterlegt ist.
     mqtt_password_set: bool = False
     notify_enabled: bool
@@ -194,6 +195,9 @@ class AppSettingsUpdate(BaseModel):
     # Untergrenze entspricht der Schutzfrist der Trigger – ein kleinerer Wert
     # würde von der Datenbank ohnehin nicht durchgesetzt.
     audit_keep_days: Optional[int] = Field(None, ge=30, le=3650)
+    # 0 = unbegrenzt. Obergrenze 100 Jahre als Tippfehlerbremse. Untergrenze 0,
+    # damit sich die Reduktion vollständig abschalten lässt.
+    telemetry_keep_days: Optional[int] = Field(None, ge=0, le=36500)
 
     @field_validator("outlier_sigma")
     @classmethod

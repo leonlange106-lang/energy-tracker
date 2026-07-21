@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.19.0";
+const APP_VERSION = "3.20.0";
 const APP_CHANGELOG = [
+  { v: "3.20.0", d: "20.07.2026", items: [
+    "Aufbewahrungsregel für MQTT-Telemetrie: ältere Werte lassen sich automatisch auf einen Datensatz je Monat verdünnen (einstellbar unter Admin-Tools → Datenmanagement, Standard: unbegrenzt)",
+    "Von Hand erfasste, importierte und aus HA übernommene Werte bleiben immer vollständig erhalten; Gesamtverbräuche ändern sich durch die Verdünnung nicht",
+    "Tägliche Datenpflege läuft jetzt auch, wenn die automatische Sicherung ausgeschaltet ist",
+  ]},
   { v: "3.19.0", d: "20.07.2026", items: [
     "Automatisierte Vertragstests für alle wichtigen API-Endpunkte – schlagen Alarm, sobald ein Feld fehlt, auf das die Oberfläche angewiesen ist",
     "Interaktive API-Dokumentation unter /docs (Swagger) und /redoc, Schema unter /openapi.json",
@@ -3216,6 +3221,8 @@ createApp({
       }
       const bk = num(d.backup_keep_days);
       if (!Number.isInteger(bk) || bk < 1 || bk > 365) err.backup_keep_days = "1 bis 365 Tage";
+      const tk = num(d.telemetry_keep_days);
+      if (!Number.isInteger(tk) || tk < 0 || tk > 36500) err.telemetry_keep_days = "0 (unbegrenzt) bis 36500 Tage";
       const wd = num(d.mqtt_watchdog_hours);
       if (!Number.isInteger(wd) || wd < 1 || wd > 336) err.mqtt_watchdog_hours = "1 bis 336 Stunden (14 Tage)";
       this.settingsErrors = err;
@@ -3249,6 +3256,7 @@ createApp({
             backup_enabled: !!d.backup_enabled,
             backup_time: d.backup_time,
             backup_keep_days: Number(d.backup_keep_days),
+            telemetry_keep_days: Number(d.telemetry_keep_days || 0),
             mqtt_enabled: !!d.mqtt_enabled,
             mqtt_use_supervisor: !!d.mqtt_use_supervisor,
             mqtt_host: d.mqtt_host || "",
@@ -4514,6 +4522,14 @@ createApp({
               <div class="err-inline" v-if="settingsErrors.backup_keep_days">{{ settingsErrors.backup_keep_days }}</div>
               <div class="hint" v-else>Die drei neuesten bleiben immer erhalten.</div>
             </div>
+          </div>
+          <div class="field">
+            <label>Telemetrie in voller Auflösung behalten (Tage, 0 = unbegrenzt)</label>
+            <input class="input" type="number" min="0" max="36500" step="1"
+                   v-model="appSettingsDraft.telemetry_keep_days"
+                   :class="{invalid: settingsErrors.telemetry_keep_days}" @input="validateSettings" />
+            <div class="err-inline" v-if="settingsErrors.telemetry_keep_days">{{ settingsErrors.telemetry_keep_days }}</div>
+            <div class="hint" v-else>Ältere MQTT-Werte werden auf einen Datensatz je Monat verdünnt. Von Hand erfasste, importierte und aus HA übernommene Werte bleiben immer vollständig erhalten; Gesamtverbräuche ändern sich nicht.</div>
           </div>
         </div>
 
