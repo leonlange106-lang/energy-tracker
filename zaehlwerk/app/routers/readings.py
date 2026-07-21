@@ -232,6 +232,20 @@ def get_stats(
     return stats
 
 
+def _chart_arrays(points: list[dict]) -> dict:
+    """Baut die parallelen Diagramm-Arrays aus einer (ggf. bereits verdichteten)
+    Punktliste. Eine Quelle für beide Chart-Endpunkte, damit sie nicht
+    auseinanderlaufen."""
+    return {
+        "labels": [e["datum"].date().isoformat() for e in points],
+        "values": [e["value"] for e in points],
+        "consumption": [e.get("consumption") for e in points],
+        "consumption_per_day": [e.get("consumption_per_day") for e in points],
+        "outliers": [bool(e.get("is_outlier")) for e in points],
+        "meter_replaced": [bool(e.get("meter_replaced")) for e in points],
+    }
+
+
 @router.get("/api/systems/{system_id}/chart-data", response_model=ChartData)
 def get_chart_data(
     system_id: str,
@@ -241,17 +255,12 @@ def get_chart_data(
 ):
     system = _require_system(system_id, session)
     enriched = _enriched(session, system, from_, to)
+    # Lange Historien werden fürs Diagramm verdichtet – sonst überträgt und
+    # zeichnet die Oberfläche tausende Punkte, die kein Bildschirm auflöst.
+    points = logic.downsample_enriched(enriched)
     return ChartData(
-        system_id=system_id,
-        name=system.name,
-        unit=system.einheit,
-        color=system.farbe,
-        labels=[e["datum"].date().isoformat() for e in enriched],
-        values=[e["value"] for e in enriched],
-        consumption=[e["consumption"] for e in enriched],
-        consumption_per_day=[e["consumption_per_day"] for e in enriched],
-        outliers=[e["is_outlier"] for e in enriched],
-        meter_replaced=[bool(e.get("meter_replaced")) for e in enriched],
+        system_id=system_id, name=system.name, unit=system.einheit,
+        color=system.farbe, **_chart_arrays(points),
     )
 
 
@@ -267,15 +276,14 @@ def get_dashboard(
     enriched = _enriched(session, system, from_, to)
     stats = logic.compute_stats(enriched, _sigma(session))
     stats.update(logic.tariff_summary(enriched))
+    # Diagramm verdichtet (schnelle Anzeige), Tabelle unverändert vollständig.
+    chart_points = logic.downsample_enriched(enriched)
     chart = {
         "system_id": system_id, "name": system.name, "unit": system.einheit,
         "color": system.farbe,
-        "labels": [e["datum"].date().isoformat() for e in enriched],
-        "values": [e["value"] for e in enriched],
-        "consumption": [e["consumption"] for e in enriched],
-        "consumption_per_day": [e["consumption_per_day"] for e in enriched],
-        "outliers": [e["is_outlier"] for e in enriched],
-        "meter_replaced": [bool(e.get("meter_replaced")) for e in enriched],
+        "downsampled": len(chart_points) < len(enriched),
+        "points_total": len(enriched),
+        **_chart_arrays(chart_points),
     }
     readings = [{**e, "datum": e["datum"].isoformat()} for e in enriched]
 

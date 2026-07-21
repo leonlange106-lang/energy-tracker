@@ -200,3 +200,38 @@ def test_stats_totals_and_outlier_threshold():
     assert stats["total_consumption"] == 200
     assert stats["reading_count"] == 3
     assert stats["avg_per_day"] == pytest.approx(10.0)
+
+
+# ==========================================================================
+# Downsampling (v3.22.0): lange Reihen fürs Diagramm verdichten
+# ==========================================================================
+def test_downsample_reduces_and_preserves_total():
+    # saubere, monoton steigende Tagesreihe über ~5,5 Jahre
+    from datetime import timedelta
+    base = datetime(2019, 1, 1)
+    series = [{"datum": base + timedelta(days=i), "value": float(i * 10)} for i in range(2000)]
+    enr = logic.compute_intervals(series)
+    total_before = sum(e["consumption"] for e in enr if e["consumption"] is not None)
+
+    ds = logic.downsample_enriched(enr, 600)
+    assert len(ds) <= 600 < len(enr)
+    total_after = sum(e["consumption"] for e in ds if e["consumption"] is not None)
+    assert abs(total_before - total_after) < 1e-6      # Fläche bleibt erhalten
+    # Endstand bleibt der letzte echte Wert
+    assert ds[-1]["value"] == enr[-1]["value"]
+
+
+def test_downsample_noop_for_short_series():
+    enr = logic.compute_intervals([R(2025, 1, 1, 0), R(2025, 1, 2, 10)])
+    assert logic.downsample_enriched(enr, 600) is enr
+
+
+def test_downsample_keeps_markers():
+    from datetime import timedelta
+    base = datetime(2020, 1, 1)
+    series = [{"datum": base + timedelta(days=i), "value": float(i * 10)} for i in range(1000)]
+    series[500]["meter_replaced"] = True
+    series[500]["meter_start"] = float(500 * 10)   # kein Sprung -> Verbrauch bleibt gültig
+    enr = logic.compute_intervals(series)
+    ds = logic.downsample_enriched(enr, 100)
+    assert any(p["meter_replaced"] for p in ds)     # Tausch-Marker überlebt

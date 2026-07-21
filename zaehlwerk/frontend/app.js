@@ -4,8 +4,11 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.21.0";
+const APP_VERSION = "3.22.0";
 const APP_CHANGELOG = [
+  { v: "3.22.0", d: "20.07.2026", items: [
+    "Diagramme mit sehr langer Historie werden für die Anzeige automatisch verdichtet – schnellere Darstellung ohne Verlust von Verlauf oder Summe. Die Werte-Tabelle bleibt vollständig",
+  ]},
   { v: "3.21.0", d: "20.07.2026", items: [
     "Umfangreiche Testabdeckung der Verbrauchs- und Abrechnungslogik: Zählertausch bei Tarifwechsel, Preissenkungen mitten im Zeitraum, Lücken ohne Ablesung, Prognose-Randfälle",
     "Tests laufen automatisch bei jedem Push und Pull Request (Absicherung gegen Regressionen)",
