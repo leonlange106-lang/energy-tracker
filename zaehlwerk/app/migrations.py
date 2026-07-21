@@ -224,6 +224,29 @@ def _m008_audit(conn: Connection) -> None:
     """))
 
 
+# --------------------------------------------------------------------------
+# Migration 9: Startstand des neuen Zaehlers beim Zaehlertausch
+# --------------------------------------------------------------------------
+def _m009_meter_start(conn: Connection) -> None:
+    if "meter_start" not in _columns(conn, "readings"):
+        conn.execute(text("ALTER TABLE readings ADD COLUMN meter_start FLOAT"))
+    # Kein Backfill: NULL bedeutet "neuer Zaehler startet bei 0" - genau das
+    # Verhalten, das bisher fuer jeden Tausch galt. Bestandsdaten bleiben also
+    # unveraendert korrekt.
+
+
+# --------------------------------------------------------------------------
+# Migration 10: Grundpreis von Monats- auf Jahresbetrag umstellen
+# --------------------------------------------------------------------------
+def _m010_grundpreis_yearly(conn: Connection) -> None:
+    """Bis v3.17.x war tariffs.grundpreis ein MONATSbetrag, ab v3.18.0 ein
+    JAHRESbetrag. Damit der tatsaechlich vom Nutzer gemeinte Euro-Betrag
+    erhalten bleibt, werden die Bestandswerte einmalig mit 12 multipliziert.
+    Laeuft genau einmal (durch user_version abgesichert)."""
+    conn.execute(text(
+        "UPDATE tariffs SET grundpreis = grundpreis * 12 WHERE grundpreis IS NOT NULL"))
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
     (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
@@ -233,6 +256,8 @@ MIGRATIONS: list[tuple[int, str, callable]] = [
     (6, "dashboard_layout an users ergaenzen", _m006_dashboard),
     (7, "source-Spalte an readings ergaenzen", _m007_reading_source),
     (8, "audit_logs-Tabelle samt Unveraenderlichkeit anlegen", _m008_audit),
+    (9, "meter_start-Spalte an readings ergaenzen", _m009_meter_start),
+    (10, "grundpreis von Monats- auf Jahresbetrag umstellen", _m010_grundpreis_yearly),
 ]
 
 

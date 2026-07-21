@@ -34,7 +34,9 @@ def _reading_dict(r: Reading) -> dict:
     return {
         "id": r.id, "system_id": r.system_id, "datum": r.datum,
         "value": r.value, "cost": r.cost,
-        "meter_replaced": r.meter_replaced, "note": r.note,
+        "meter_replaced": r.meter_replaced,
+        "meter_start": getattr(r, "meter_start", None),
+        "note": r.note,
         "source": getattr(r, "source", None) or "manual",
     }
 
@@ -111,6 +113,38 @@ def _latest(session: Session, system_id: str) -> Optional[Reading]:
     ).first()
 
 
+def _abschlag_cfg(system: System) -> tuple[Optional[float], Optional[int]]:
+    """Monatlicher Abschlag und Startmonat des Abrechnungsjahres aus den
+    System-Zusatzfeldern. Ungültige/leere Angaben ergeben None (Kalenderjahr,
+    keine Abschlagsprüfung)."""
+    zf = system.zusatzfelder or {}
+    def _f(v):
+        try:
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+    def _i(v):
+        try:
+            n = int(v)
+            return n if 1 <= n <= 12 else None
+        except (TypeError, ValueError):
+            return None
+    return _f(zf.get("abschlag")), _i(zf.get("abrechnungsmonat"))
+
+
+def system_prognosis(session: Session, system: System,
+                     enriched: Optional[list[dict]] = None) -> Optional[dict]:
+    """Prognose fürs nächste Abrechnungsjahr (5-Jahres-Rolling-Average). Nutzt
+    die volle Historie – rolling_prognosis begrenzt selbst auf das Fenster."""
+    if enriched is None:
+        enriched = _enriched(session, system)
+    abschlag, abr_month = _abschlag_cfg(system)
+    return logic.rolling_prognosis(
+        enriched, _tariffs(session, system.id),
+        abschlag=abschlag, billing_start_month=abr_month,
+    )
+
+
 # ---------- Ablesungen ----------
 @router.get("/api/systems/{system_id}/readings", response_model=list[ReadingRead])
 def list_readings(
@@ -148,6 +182,8 @@ def create_reading(system_id: str, payload: ReadingCreate, session: Session = De
         source=payload.source,
         cost=payload.cost,
         meter_replaced=payload.meter_replaced,
+        # Startstand nur bei Tausch übernehmen (Schema erzwingt das bereits).
+        meter_start=payload.meter_start if payload.meter_replaced else None,
         note=payload.note,
     )
     session.add(r)
@@ -165,6 +201,7 @@ def update_reading(reading_id: str, payload: ReadingCreate, session: Session = D
     r.value = payload.value
     r.cost = payload.cost
     r.meter_replaced = payload.meter_replaced
+    r.meter_start = payload.meter_start if payload.meter_replaced else None
     r.note = payload.note
     session.add(r)
     session.commit()
@@ -254,7 +291,13 @@ def get_dashboard(
             select(func.count()).select_from(Tariff)
             .where(Tariff.system_id == system_id)).one(),
     }
-    return {"readings": readings, "stats": stats, "chart": chart, "counts": counts}
+    # Prognose immer aus der vollen Historie, unabhängig vom angezeigten
+    # Zeitraum – ein auf drei Monate gefiltertes Dashboard soll trotzdem eine
+    # tragfähige Jahresprognose zeigen.
+    prog_source = enriched if (from_ is None and to is None) else _enriched(session, system)
+    prognosis = system_prognosis(session, system, prog_source)
+    return {"readings": readings, "stats": stats, "chart": chart,
+            "counts": counts, "prognosis": prognosis}
 
 
 @router.get("/api/overview")

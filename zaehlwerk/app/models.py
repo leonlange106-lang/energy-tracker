@@ -42,6 +42,11 @@ class Reading(SQLModel, table=True):
     value: float
     cost: Optional[float] = None
     meter_replaced: bool = False
+    # Startstand des NEUEN Zählers beim Zählertausch. Nur relevant, wenn
+    # meter_replaced=True. Der Verbrauch des Tausch-Intervalls ist dann
+    # value - meter_start statt (wie bisher) value - 0. Bleibt das Feld leer,
+    # gilt weiter die 0-Annahme (neuer Zähler startet bei 0). Seit Migration 9.
+    meter_start: Optional[float] = None
     note: Optional[str] = None
     # Herkunft: manual | mqtt | ha_api | import. Spalte existiert seit
     # Migration 7 (source-Spalte an readings ergänzen); hier bisher nicht
@@ -142,7 +147,11 @@ class Tariff(SQLModel, table=True):
     gueltig_bis: Optional[date] = Field(default=None, index=True)   # None = offen
 
     arbeitspreis: float                        # € je Einheit (kWh, m³ …), brutto
-    grundpreis: float = 0.0                    # € je Monat, brutto
+    # € je JAHR, brutto (seit v3.18.0 / Migration 10). Zuvor ein Monatsbetrag;
+    # die Migration hat Bestandswerte einmalig mit 12 multipliziert, damit der
+    # tatsächliche Euro-Betrag erhalten bleibt. Tagesgenaue Abrechnung:
+    # grundpreis / Tage-des-Jahres je Verbrauchstag (siehe logic.apply_tariffs).
+    grundpreis: float = 0.0
     notiz: Optional[str] = None
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
 
