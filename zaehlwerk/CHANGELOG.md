@@ -9,6 +9,18 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.22.0] - 2026-07-21
+
+### Added
+
+- **[Backend/logic.py] Downsampling-Aggregation für die Diagramme.** `downsample_enriched()` verdichtet lange Ablesereihen für die Diagrammausgabe auf höchstens 600 Punkte (gleich große Index-Eimer). Je Eimer entsteht ein Punkt: Zählerstand am Eimer-Ende, Verbrauch als Eimersumme, Tagesverbrauch mengengewichtet – Verlauf UND Gesamtsumme bleiben exakt erhalten, Ausreißer- und Zählertausch-Marker gehen nicht verloren. Betroffen sind `GET /api/systems/{id}/chart-data` und der `chart`-Block von `GET /api/systems/{id}/dashboard` (letzterer meldet `downsampled` und `points_total`). Die **Werte-Tabelle bleibt unverändert vollständig** – verdichtet wird ausschließlich die Diagramm-Reihe.
+
+### Hinweis
+
+- Dies ist die umgesetzte, tragfähige Hälfte des ursprünglich als v4.0.0 geplanten Architektur-Splits: der Ticket-Punkt „Downsampling-Aggregation, um die UI-Performance zu halten“. Der dort ebenfalls vorgesehene **physische Split der `readings`-Tabelle in `readings_manual` + `telemetry`** wurde bewusst NICHT umgesetzt: 16 Backend-Module lesen `readings` direkt, und die Verbrauchslogik arbeitet auf EINER zeitsortierten Reihe – ein Split zwänge jeden Lesepfad zu UNION/Merge zweier Tabellen. Zugleich besteht die Prämisse „unbegrenzt wachsende Telemetrie“ hier nicht (MQTT ist seit v3.1.0 intervallgetaktet, die `source`-Spalte trennt bereits logisch, die Retention aus v3.20.0 begrenzt das Volumen). Ein breaking Schema-Umbau brächte damit hohes Risiko ohne realen Nutzen. Deshalb kein Major-Bump, sondern ein Minor mit dem konkreten Performance-Gewinn.
+
+---
+
 ## [3.21.0] - 2026-07-20
 
 ### Added

@@ -75,6 +75,51 @@ def compute_intervals(readings: list[dict], price: Optional[float] = None) -> li
 
 DEFAULT_SIGMA = 2.0
 
+# Ab wie vielen Punkten ein Diagramm verdichtet wird. Chart.js zeichnet darüber
+# hinaus spürbar träge, und ein Bildschirm hat ohnehin nicht mehr nutzbare
+# Pixelspalten. Die Tabelle der Ablesungen bleibt davon unberührt – verdichtet
+# wird ausschließlich die Diagramm-Reihe.
+CHART_MAX_POINTS = 600
+
+
+def downsample_enriched(enriched: list[dict], max_points: int = CHART_MAX_POINTS) -> list[dict]:
+    """Verdichtet eine lange Reihe angereicherter Ablesungen auf höchstens
+    `max_points` Diagrammpunkte, ohne Verlauf oder Summe zu verfälschen.
+
+    Verfahren: gleich große, aufeinanderfolgende Eimer über den Index. Je Eimer
+    entsteht EIN Punkt:
+      - datum/value  = Stand am Eimer-ENDE (kumulativer Zählerstand bleibt korrekt)
+      - consumption  = Summe des Eimers (Fläche bleibt erhalten)
+      - consumption_per_day = Summe/Summe-der-Tage (mengengewichteter Schnitt,
+        formtreu statt eines einfachen Mittelwerts über ungleiche Intervalle)
+      - is_outlier / meter_replaced = ODER über den Eimer (Marker gehen nicht verloren)
+
+    Reicht die Reihe (<= max_points), wird sie unverändert zurückgegeben.
+    """
+    n = len(enriched)
+    if not max_points or max_points <= 0 or n <= max_points:
+        return enriched
+    import math
+    size = math.ceil(n / max_points)
+    out: list[dict] = []
+    for i in range(0, n, size):
+        chunk = enriched[i:i + size]
+        last = chunk[-1]
+        cons_vals = [e["consumption"] for e in chunk if e.get("consumption") is not None]
+        day_vals = [e["days"] for e in chunk if e.get("days")]
+        total_cons = sum(cons_vals) if cons_vals else None
+        total_days = sum(day_vals) if day_vals else None
+        cpd = (total_cons / total_days) if (total_cons is not None and total_days) else None
+        out.append({
+            "datum": last["datum"],
+            "value": last["value"],
+            "consumption": round(total_cons, 4) if total_cons is not None else None,
+            "consumption_per_day": round(cpd, 4) if cpd is not None else None,
+            "is_outlier": any(e.get("is_outlier") for e in chunk),
+            "meter_replaced": any(e.get("meter_replaced") for e in chunk),
+        })
+    return out
+
 
 def outlier_threshold(enriched: list[dict], sigma: float = DEFAULT_SIGMA) -> Optional[float]:
     vals = [e["consumption_per_day"] for e in enriched if e["consumption_per_day"] is not None]
