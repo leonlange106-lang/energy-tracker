@@ -1,0 +1,37 @@
+name: Tests
+
+# Absicherung der Verbrauchs- und Abrechnungslogik (v3.18.0) sowie der
+# API-Verträge gegen Regressionen. Läuft bei jedem Push und Pull Request und
+# ist damit Teil des Build-Prozesses: schlägt ein Test fehl, wird der PR rot.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: zaehlwerk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Abhängigkeiten installieren (inkl. Test-Tools)
+        run: pip install -r requirements-dev.txt
+
+      - name: Frontend-Syntax prüfen
+        run: node --check frontend/app.js
+
+      - name: Test-Suite ausführen
+        # SQLITE_PATH wird von den Tests selbst auf eine temporäre Datei
+        # gesetzt (conftest.py); hier nur der Offline-Modus als Standard.
+        env:
+          OFFLINE_MODE: "true"
+        run: pytest -q
