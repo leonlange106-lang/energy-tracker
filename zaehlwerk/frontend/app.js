@@ -4,8 +4,15 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.17.1";
+const APP_VERSION = "3.18.0";
 const APP_CHANGELOG = [
+  { v: "3.18.0", d: "20.07.2026", items: [
+    "Grundpreis ist jetzt ein Jahresbetrag (€/Jahr) und wird taggenau abgerechnet – bestehende Monatswerte wurden automatisch umgerechnet",
+    "Zählertausch: optionaler Startstand des neuen Zählers – der Verbrauch ist dann die Differenz, ein Sprung auf 0 erzeugt keine negativen Werte mehr",
+    "Kostenprognose komplett neu: 5-Jahres-Schnitt fürs nächste Abrechnungsjahr statt naiver Hochrechnung über die ganze Historie",
+    "Warnung auf der Kostenprognose-Kachel, sobald die Jahresprognose den hinterlegten Abschlag übersteigt",
+    "Je System einstellbar: monatlicher Abschlag und Startmonat des Abrechnungsjahres",
+  ]},
   { v: "3.17.1", d: "20.07.2026", items: [
     "Logo/Titel oben links führt jetzt von überall zurück zur Startseite",
     "„Berichterstellung“ wieder in der unteren Navigationsleiste (jetzt fünf Ziele)",
@@ -404,6 +411,12 @@ const SYSTEM_TYPES = [
 // Felder, die es bei JEDEM System gibt (Kosten-Fallback + Fälligkeit)
 const COMMON_FIELDS = [
   { key: "preis", label: "Ø-Preis €/Einheit (für Kostenschätzung, optional)", type: "number" },
+  { key: "abschlag", label: "Monatlicher Abschlag € (für Prognose-Warnung, optional)", type: "number" },
+  { key: "abrechnungsmonat", label: "Abrechnungsjahr beginnt im Monat (leer = Januar)", type: "select",
+    options: ["", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"],
+    labels: { "": "Januar (Kalenderjahr)", "1": "Januar", "2": "Februar", "3": "März", "4": "April",
+              "5": "Mai", "6": "Juni", "7": "Juli", "8": "August", "9": "September",
+              "10": "Oktober", "11": "November", "12": "Dezember" } },
   { key: "ablese_intervall_tage", label: "Ablese-Intervall in Tagen (für Fälligkeit, optional)", type: "number" },
   { key: "ha_entity", label: "HA-Entity Zählerstand (optional, z. B. sensor.stromzaehler)", type: "text" },
   { key: "mqtt_topic", label: "MQTT-Topic (optional, z. B. tele/hichi/SENSOR)", type: "text" },
@@ -929,31 +942,37 @@ const WidgetTrend = {
   methods: { fmt },
 };
 
-/* Kostenprognose: Tagesverbrauch der jüngsten Periode auf zwölf Monate
-   hochgerechnet, bewertet mit dem Effektivpreis aus den Tarifen. */
+/* Kostenprognose fürs NÄCHSTE Abrechnungsjahr. Grundlage ist ein serverseitig
+   berechneter 5-Jahres-Rolling-Average (nicht mehr die frühere naive
+   Jahreshochrechnung über die gesamte Historie). Ist ein Abschlag hinterlegt,
+   warnt die Kachel, sobald die Prognose den Jahresabschlag übersteigt. */
 const WidgetCostForecast = {
   props: ["data", "timeframe", "rangeFrom", "rangeTo"],
   computed: {
-    calc() {
-      const d = this.data;
-      if (!d) return null;
-      const pts = sliceSeries(d.series, this.timeframe || "90d", this.rangeFrom, this.rangeTo);
-      if (!pts.length) return null;
-      const perDay = pts.reduce((s, p) => s + p.v, 0) / pts.length;
-      // Effektivpreis inklusive Grundgebühr, sonst Ø aus erfassten Kosten.
-      const price = d.total_consumption
-        ? (d.total_cost_tariff || d.total_cost || 0) / d.total_consumption : 0;
-      if (!price) return { perDay, yearly: null };
-      return { perDay, price, yearly: perDay * 365.25 * price };
+    p() { return (this.data || {}).prognosis || null; },
+    prognLabel() {
+      const p = this.p;
+      if (!p || !p.billing_year_start) return "";
+      const s = String(p.billing_year_start), e = String(p.billing_year_end);
+      const sy = s.slice(0, 4), ey = e.slice(0, 4);
+      return sy === ey ? `Abrechnungsjahr ${sy}`
+                       : `${s.slice(5, 7)}/${sy} – ${e.slice(5, 7)}/${ey}`;
     },
   },
   template: `
-    <div class="wg-body wg-metric" v-if="calc && calc.yearly">
-      <div class="wg-val num">{{ fmt(calc.yearly) }}<span class="wg-unit">€/Jahr</span></div>
-      <div class="wg-sub">{{ fmt(calc.perDay, 2) }} {{ data.einheit }}/Tag · {{ fmt(calc.price, 4) }} €/{{ data.einheit }}</div>
-      <div class="wg-sub">Hochrechnung, kein Angebot</div>
+    <div class="wg-body wg-metric" v-if="p && p.projected_cost !== null">
+      <div class="wg-val num" :class="{ 'wg-over': p.exceeds_abschlag }">{{ fmt(p.projected_cost) }}<span class="wg-unit">€</span></div>
+      <div class="wg-sub">{{ prognLabel }} · ≈ {{ fmt(p.projected_consumption) }} {{ data.einheit }}</div>
+      <div class="wg-sub">Ø {{ fmt(p.avg_per_day, 2) }} {{ data.einheit }}/Tag ({{ p.window_years }}-Jahre-Schnitt)</div>
+      <div class="wg-warn" v-if="p.exceeds_abschlag">⚠ {{ fmt(p.shortfall) }} € über dem Jahresabschlag ({{ fmt(p.abschlag_annual) }} €)</div>
+      <div class="wg-ok" v-else-if="p.abschlag_annual">✓ im Rahmen des Abschlags ({{ fmt(p.abschlag_annual) }} €)</div>
     </div>
-    <div class="wg-body wg-empty" v-else>Kein Preis hinterlegt – Tarif ergänzen</div>`,
+    <div class="wg-body wg-metric" v-else-if="p">
+      <div class="wg-val num">≈ {{ fmt(p.projected_consumption) }}<span class="wg-unit">{{ data.einheit }}</span></div>
+      <div class="wg-sub">{{ prognLabel }} · Ø {{ fmt(p.avg_per_day, 2) }}/Tag</div>
+      <div class="wg-sub">Kein Preis hinterlegt – Tarif ergänzen</div>
+    </div>
+    <div class="wg-body wg-empty" v-else>Zu wenige Werte für eine Prognose</div>`,
   methods: { fmt },
 };
 
@@ -1623,7 +1642,7 @@ const SystemDetail = {
     },
     openReading() {
       this.reading = { id: null, datum: today(), value: null, cost: null,
-                       meter_replaced: false, note: "", source: "manual" };
+                       meter_replaced: false, meter_start: "", note: "", source: "manual" };
       this.ocrHint = null;
       this.showReading = true;
       this.focusValue();
@@ -1635,6 +1654,7 @@ const SystemDetail = {
         value: r.value,
         cost: r.cost,
         meter_replaced: !!r.meter_replaced,
+        meter_start: r.meter_start === null || r.meter_start === undefined ? "" : r.meter_start,
         note: r.note || "",
       };
       this.showReading = true;
@@ -1837,6 +1857,9 @@ const SystemDetail = {
           value: Number(this.reading.value),
           cost: this.reading.cost === "" || this.reading.cost === null ? null : Number(this.reading.cost),
           meter_replaced: this.reading.meter_replaced,
+          // Startstand nur bei Tausch mitschicken; leer = neuer Zähler ab 0.
+          meter_start: this.reading.meter_replaced && this.reading.meter_start !== "" && this.reading.meter_start !== null
+            ? Number(this.reading.meter_start) : null,
           note: this.reading.note || null,
           // Herkunft: 'ha_api', wenn der Wert aus einer Home-Assistant-Entity
           // übernommen wurde, sonst Tastatureingabe. Wird der Wert danach von
@@ -2178,7 +2201,7 @@ const SystemDetail = {
           </div>
           <div class="tf-prices">
             <span><small>Arbeitspreis</small>{{ fmt(t.arbeitspreis, 4) }} €/{{ system.einheit }}</span>
-            <span><small>Grundpreis</small>{{ fmt(t.grundpreis, 2) }} €/Monat</span>
+            <span><small>Grundpreis</small>{{ fmt(t.grundpreis, 2) }} €/Jahr</span>
           </div>
           <div class="hint" v-if="t.notiz">{{ t.notiz }}</div>
         </div>
@@ -2209,7 +2232,7 @@ const SystemDetail = {
             <div class="field"><label>Arbeitspreis (€/{{ system.einheit }})</label>
               <input class="input" type="number" step="0.0001" min="0" inputmode="decimal"
                      v-model="tariffForm.arbeitspreis" placeholder="0,2950" /></div>
-            <div class="field"><label>Grundpreis (€/Monat)</label>
+            <div class="field"><label>Grundpreis (€/Jahr)</label>
               <input class="input" type="number" step="0.01" min="0" inputmode="decimal"
                      v-model="tariffForm.grundpreis" /></div>
           </div>
@@ -2331,8 +2354,9 @@ const SystemDetail = {
                  v-model="reading.cost" placeholder=" " /><span class="tf-label">Kosten € (optional)</span></label>
           <div class="field">
             <button v-if="haEntity && !reading.id" class="btn btn-tonal btn-sm" style="margin-bottom:14px" :disabled="busy" @click="fetchHaValue">⌂ Zählerstand aus Home Assistant übernehmen</button>
-            <label class="check"><input type="checkbox" v-model="reading.meter_replaced" /> Startstand NEUER Zähler (Zählertausch)</label>
-            <div class="hint" v-if="reading.meter_replaced">Vorgehen beim Tausch: <strong>1.</strong> Endstand des alten Zählers als normale Ablesung erfassen. <strong>2.</strong> Diesen Eintrag hier mit dem Startstand des neuen Zählers (meist 0) anlegen – gleiches Datum ist ok.</div>
+            <label class="check"><input type="checkbox" v-model="reading.meter_replaced" /> Zählertausch (neuer Zähler)</label>
+            <div class="hint" v-if="reading.meter_replaced">Vorgehen beim Tausch: <strong>1.</strong> Endstand des alten Zählers als normale Ablesung erfassen. <strong>2.</strong> Diesen Eintrag hier mit dem aktuellen Stand des NEUEN Zählers anlegen (gleiches Datum ist ok). Startet der neue Zähler nicht bei 0, dessen Startstand unten eintragen – der Verbrauch ist dann die Differenz.</div>
+            <label class="tf" v-if="reading.meter_replaced" style="margin-top:12px"><input class="tf-input" type="number" step="any" inputmode="decimal" autocomplete="off" v-model="reading.meter_start" placeholder=" " /><span class="tf-label">Startstand neuer Zähler (optional, meist 0)</span></label>
             <div class="hint" v-if="latestValue!==null && !reading.meter_replaced">Letzter Stand: {{ fmt(latestValue,1) }} {{ system.einheit }} – neuer Wert muss ≥ sein.</div>
           </div>
           <label class="tf"><input class="tf-input" v-model="reading.note" placeholder=" " /><span class="tf-label">Notiz (optional)</span></label>

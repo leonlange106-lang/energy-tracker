@@ -9,6 +9,28 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.18.0] - 2026-07-20
+
+### Changed
+
+- **[Backend/logic.py, models.py] Grundpreis ist jetzt ein JAHRESbetrag (zuvor Monatsbetrag).** Migration 10 multipliziert bestehende `tariffs.grundpreis`-Werte einmalig mit 12, damit der tatsächlich gemeinte Euro-Betrag erhalten bleibt (idempotent über `PRAGMA user_version` abgesichert). Die Umlage ist jetzt strikt tagesgenau: je Verbrauchstag `grundpreis / Kalendertage-des-jeweiligen-Jahres` – ein Intervall über einen Jahreswechsel zahlt für Tage in einem Schaltjahr 1/366, sonst 1/365. Ersetzt die bisherige 365,25/12-Näherung. UI-Felder und -Anzeigen auf „€/Jahr“ umgestellt; Obergrenze der Eingabe von 1000 auf 5000 angehoben.
+- **[Backend/logic.py] Kostenprognose neu ausgerichtet.** Die frühere Jahreshochrechnung über den gesamten Bestand entfällt. `rolling_prognosis()` bildet einen gleitenden Durchschnitt der letzten fünf Jahre (nie die gesamte Historie – alte Nutzungsmuster, z. B. vor einer Sanierung, sollen die Vorhersage nicht verzerren) und projiziert ihn auf genau ein kommendes Abrechnungsjahr. Reicht die Datenlage im Fenster nicht (< 30 Tage), gibt es keine Prognose.
+
+### Added
+
+- **[Backend/logic.py, models.py] Zählertausch mit Startstand.** Neue Spalte `readings.meter_start` (Migration 9): Beim Tausch kann der Startstand des neuen Zählers erfasst werden; der Verbrauch des Intervalls ist dann `Ablesewert − Startstand` (Formel: Gesamt = (Endstand_Alt − Startstand_Alt) + (Stand_Neu − Startstand_Neu)). Fehlt der Startstand, gilt weiter die 0-Annahme – Bestandsdaten bleiben unverändert korrekt. Der abrupte Rücksprung des Zählerstands erzeugt keinen negativen Verbrauch (bestehender Guard bleibt).
+- **[Backend/logic.py] Abschlags-Schwellenwarnung.** Ist am System ein monatlicher Abschlag hinterlegt, prüft die Prognose, ob die Jahreshochrechnung `12 × Abschlag` übersteigt, und meldet den Fehlbetrag.
+- **[Backend/routers] Prognose in den Endpunkten.** `GET /api/systems/{id}/dashboard` und `GET /api/dashboard/data` liefern je System ein `prognosis`-Objekt (immer aus der vollen Historie berechnet, unabhängig vom angezeigten Zeitraum).
+- **[Frontend] Je System einstellbar:** monatlicher Abschlag und Startmonat des Abrechnungsjahres (in den System-Zusatzfeldern). Die Kostenprognose-Kachel zeigt die Prognose fürs nächste Abrechnungsjahr, den zugrunde liegenden 5-Jahres-Schnitt und – bei Überschreitung – eine rote Warnung mit dem Fehlbetrag (zusätzlich per ⚠/✓ und nicht nur farblich codiert).
+- **[Frontend] Ablesedialog:** optionales Feld „Startstand neuer Zähler“ beim Zählertausch.
+
+### Hinweis
+
+- Das **tagesgenaue Splitting der Ableseperioden bei Tarifwechseln** (Dynamic Tariff Engine) existiert bereits seit v2.16.0: `apply_tariffs()` verteilt den Verbrauch tageweise und ordnet jeden Tag dem gültigen Tarif zu; die Interpolation über einen Wechsel hinweg erfolgt über den gleichmäßig verteilten Tagesverbrauch des Intervalls. Dieser Ticket-Punkt war also im Kern schon erfüllt. Beim Härten fiel ein latenter Fehler auf: In `_tariff_for` wurde ein `datetime` (Ablesedatum) mit einem `date` (Tarifgrenze) verglichen – jetzt wird der Tag vor dem Vergleich auf ein `date` normalisiert.
+- **Variable Steuersätze (MwSt.)** brauchen kein eigenes Feld: Preise werden brutto geführt, und ein zeitlich begrenzter Steuersatz wird bereits durch eine neue Tarifperiode zum neuen Bruttopreis abgebildet – das tagesgenaue Splitting greift dann automatisch.
+
+---
+
 ## [3.17.1] - 2026-07-20
 
 ### Fixed

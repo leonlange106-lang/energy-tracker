@@ -50,8 +50,21 @@ class ReadingCreate(BaseModel):
     value: float
     cost: Optional[float] = None
     meter_replaced: bool = False      # Zählertausch
+    # Startstand des neuen Zählers beim Tausch (nur mit meter_replaced=True).
+    # Ohne Angabe gilt weiter: neuer Zähler startet bei 0.
+    meter_start: Optional[float] = Field(None, ge=0)
     note: Optional[str] = None
     source: str = Field("manual", pattern="^(manual|ha_api)$")
+
+    @model_validator(mode="after")
+    def _meter_start_needs_replace(self):
+        # Ein Startstand ohne Zählertausch ist widersprüchlich – lieber früh
+        # abweisen als still ignorieren.
+        if self.meter_start is not None and not self.meter_replaced:
+            raise ValueError("meter_start ist nur bei meter_replaced=True zulässig")
+        if self.meter_start is not None and self.meter_start > self.value:
+            raise ValueError("Startstand des neuen Zählers darf nicht über dem Ablesewert liegen")
+        return self
 
 
 class ReadingRead(BaseModel):
@@ -61,6 +74,7 @@ class ReadingRead(BaseModel):
     value: float
     cost: Optional[float] = None
     meter_replaced: bool = False
+    meter_start: Optional[float] = None
     note: Optional[str] = None
     source: str = "manual"
     # abgeleitete Felder
@@ -351,10 +365,11 @@ class TariffPlanBase(BaseModel):
     anbieter: Optional[str] = Field(None, max_length=120)
     gueltig_ab: date
     gueltig_bis: Optional[date] = None
-    # Obergrenzen als Tippfehlerbremse: 100 €/Einheit und 1000 €/Monat sind
-    # weit jenseits realer Tarife, fangen aber ein verrutschtes Komma ab.
+    # Obergrenzen als Tippfehlerbremse: 100 €/Einheit und 5000 €/Jahr sind weit
+    # jenseits realer Tarife, fangen aber ein verrutschtes Komma ab. grundpreis
+    # ist seit v3.18.0 ein JAHRESbetrag (zuvor 1000 €/Monat als Grenze).
     arbeitspreis: float = Field(..., ge=0, le=100)
-    grundpreis: float = Field(0.0, ge=0, le=1000)
+    grundpreis: float = Field(0.0, ge=0, le=5000)
     notiz: Optional[str] = Field(None, max_length=500)
 
     @field_validator("name", "anbieter", "notiz", mode="before")
@@ -382,7 +397,7 @@ class TariffPlanUpdate(BaseModel):
     gueltig_ab: Optional[date] = None
     gueltig_bis: Optional[date] = None
     arbeitspreis: Optional[float] = Field(None, ge=0, le=100)
-    grundpreis: Optional[float] = Field(None, ge=0, le=1000)
+    grundpreis: Optional[float] = Field(None, ge=0, le=5000)   # €/Jahr seit v3.18.0
     notiz: Optional[str] = Field(None, max_length=500)
 
 

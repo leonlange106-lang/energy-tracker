@@ -26,7 +26,7 @@ from ..auth import current_user
 from ..database import get_session
 from ..models import System, User
 from ..schemas import DashboardLayout
-from .readings import _enriched, _sigma
+from .readings import _enriched, _sigma, system_prognosis
 
 log = logging.getLogger("zaehlwerk.dashboard")
 router = APIRouter(tags=["dashboard"])
@@ -151,6 +151,10 @@ def dashboard_data(months: int = 24, session: Session = Depends(get_session)):
             "series": [{"d": e["datum"].isoformat(),
                         "v": round(e["consumption_per_day"], 4)}
                        for e in points[-120:]],
+            # Prognose fürs nächste Abrechnungsjahr (5-Jahres-Rolling-Average).
+            # Bewusst aus der vollen Historie, nicht aus dem hier auf `months`
+            # begrenzten Fenster – das Rolling-Fenster reicht weiter zurück.
+            "prognosis": system_prognosis(session, s),
         })
     # Letzte Erfassungen über alle Systeme. Für die mobile Startseite und als
     # Grundlage der Trend-Kachel; bewusst hier und nicht als eigener Aufruf,
