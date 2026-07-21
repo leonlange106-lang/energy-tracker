@@ -9,6 +9,18 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.22.5] - 2026-07-21
+
+### Changed
+
+- **[Frontend] Versionsnummer im eingeklappten Rail sichtbar:** `.nav-foot` (die Versionsanzeige unten links im Desktop-Layout) hatte `opacity: 0` und wurde nur bei ausgeklappter Seitenleiste (`.nav-rail.expanded`) eingeblendet. Auf einer frischen Instanz startet die Leiste eingeklappt (der Ausklapp-Zustand liegt pro Browser in `localStorage`), sodass die Version dort scheinbar fehlte. Sie ist jetzt immer sichtbar – im 80px-Rail zentriert, ausgeklappt linksbündig.
+
+### Hinweis
+
+- Ergebnis eines Deep-Dive-Parity-Audits (Legacy ↔ dezentral) auf Modul-, Routen- und Komponentenebene: Backend byte-identisch, alle UI-Elemente (kombiniertes Dashboard „Auswertungen", Bericht/Export, Versionsanzeige) sind vorhanden und rendern im Standalone-Betrieb identisch. Die als „fehlend" wahrgenommenen Elemente waren durch die standardmäßig eingeklappte Seitenleiste verdeckt – kein Code-Gap.
+
+---
+
 ## [3.22.4] - 2026-07-21
 
 ### Fixed
