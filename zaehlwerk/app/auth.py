@@ -34,7 +34,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, Response
 from sqlmodel import Session, func, select
 
-from .database import engine, get_session
+from .database import get_session
 from .models import User
 
 log = logging.getLogger("zaehlwerk.auth")

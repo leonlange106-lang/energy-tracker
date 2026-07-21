@@ -133,15 +133,21 @@ def dashboard_data(months: int = 24, session: Session = Depends(get_session)):
 
     out = []
     for s in systems:
-        enriched = _enriched(session, s, since, None)
-        stats = logic.compute_stats(enriched, sigma)
-        stats.update(logic.tariff_summary(enriched))
-        points = [e for e in enriched if e.get("consumption_per_day") is not None]
+        # Genau EINE Anreicherung je System über die volle Historie. Kachel
+        # (auf `months` gefenstert) und Prognose (5-Jahres-Rolling-Average)
+        # werden beide daraus abgeleitet – früher lief _enriched zweimal je
+        # System (einmal gefenstert, einmal voll für die Prognose).
+        enriched_full = _enriched(session, s)
+        windowed = ([e for e in enriched_full if e["datum"].date() >= since]
+                    if since else enriched_full)
+        stats = logic.compute_stats(windowed, sigma)
+        stats.update(logic.tariff_summary(windowed))
+        points = [e for e in windowed if e.get("consumption_per_day") is not None]
         out.append({
             "id": s.id, "name": s.name, "typ": s.typ,
             "einheit": s.einheit, "farbe": s.farbe,
-            "latest": enriched[-1]["value"] if enriched else None,
-            "latest_datum": enriched[-1]["datum"].isoformat() if enriched else None,
+            "latest": enriched_full[-1]["value"] if enriched_full else None,
+            "latest_datum": enriched_full[-1]["datum"].isoformat() if enriched_full else None,
             "total_consumption": stats.get("total_consumption"),
             "total_cost": stats.get("total_cost"),
             "total_cost_tariff": stats.get("total_cost_tariff"),
@@ -151,10 +157,9 @@ def dashboard_data(months: int = 24, session: Session = Depends(get_session)):
             "series": [{"d": e["datum"].isoformat(),
                         "v": round(e["consumption_per_day"], 4)}
                        for e in points[-120:]],
-            # Prognose fürs nächste Abrechnungsjahr (5-Jahres-Rolling-Average).
-            # Bewusst aus der vollen Historie, nicht aus dem hier auf `months`
-            # begrenzten Fenster – das Rolling-Fenster reicht weiter zurück.
-            "prognosis": system_prognosis(session, s),
+            # Prognose aus derselben voll-historischen Anreicherung (das
+            # Rolling-Fenster reicht weiter zurück als die Kachel-Monate).
+            "prognosis": system_prognosis(session, s, enriched_full),
         })
     # Letzte Erfassungen über alle Systeme. Für die mobile Startseite und als
     # Grundlage der Trend-Kachel; bewusst hier und nicht als eigener Aufruf,
