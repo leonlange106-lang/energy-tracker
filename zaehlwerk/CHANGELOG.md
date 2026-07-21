@@ -9,6 +9,19 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.23.0] - 2026-07-21
+
+### Added
+
+- **[Dezentral] Selbst-Update & Rollback über die Oberfläche (Admin-Tools → Update).** Neuer Tab, der nur im eigenständigen Betrieb mit eingerichtetem Host-Skript erscheint (`supported`). Er zeigt installierte vs. auf GitHub verfügbare Version, prüft im Intervall (Hintergrund) **und** manuell per Button, und stößt Update bzw. Rollback an.
+  - **Sicherheitsmodell:** Die über Cloudflare erreichbare Web-App führt **niemals selbst** `git`/`docker` aus. `POST /api/update/run` bzw. `/rollback` legt nur eine Anforderung im geteilten Kontrollverzeichnis ab (`ZAEHLWERK_CONTROL_DIR`); ein separates **Host-Skript** (systemd-Timer, `deploy/host-updater/`) führt `git reset --hard origin/main` + `docker compose up -d --build` bzw. den Checkout der gemerkten Vorversion aus und schreibt das Ergebnis zurück.
+  - **Sicherheitsnetz:** Vor jedem Update erzeugt die App automatisch eine Datenbank-Sicherung; das Host-Skript merkt sich den vorherigen git-Commit für das Rollback.
+  - **Backend:** `app/updater.py` (Versionsvergleich, GitHub-Prüfung über das Outbound-Gate, Kontrolldateien, Intervall-Scheduler), Router `app/routers/update.py` (`/status`, `/check`, `/run`, `/rollback`, admin-only), neuer Outbound-Provider `github_version`.
+  - **Unter Home Assistant** ist die Funktion inaktiv/ausgeblendet – dort kommen Updates über den Add-on-Store; ein git-basierter Selbst-Update-Weg wäre dort falsch.
+  - Tests: `tests/test_updater.py`.
+
+---
+
 ## [3.22.6] - 2026-07-21
 
 ### Changed
