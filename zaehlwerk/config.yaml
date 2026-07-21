@@ -1,5 +1,5 @@
 name: "Zählwerk - Legacy"
-version: "3.22.6"
+version: "3.23.0"
 slug: "zaehlwerk"
 description: "Verbrauchs- & Zählerstands-Tracking (Strom, Gas, Wasser, PV). Standalone, nur SQLite."
 url: "https://github.com/leonlange106-lang/energy-tracker"
