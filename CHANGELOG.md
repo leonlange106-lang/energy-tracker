@@ -9,6 +9,19 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.21.0] - 2026-07-20
+
+### Added
+
+- **[Quality/tests] Unit-Test-Suite für die Abrechnungs- und Verbrauchslogik** (`tests/test_billing_logic.py`, `tests/test_prognosis.py`). Reine Funktionstests gegen `app.logic` mit den kritischen Edge-Cases: Zählertausch mit/ohne Startstand, Null-Sturz-Schutz (kein negativer Verbrauch), Zählertausch bei unterjährigem Tarifwechsel, Preissenkung mitten im Intervall (MwSt.-Senkung als neue Bruttoperiode), Zeiträume ohne Ablesung (Lücken werden taggenau verteilt), Jahresgrundpreis inkl. Schaltjahr, sowie die Prognose-Randfälle (5-Jahres-Fenster schließt Altverbrauch aus, Abrechnungsmonat-Anker, Abschlags-Schwelle, zu wenig Daten → keine Prognose, ohne Tarif nur Verbrauch). Gesamtstand der Suite: **51 Tests**.
+- **[Build/CI] GitHub-Actions-Workflow** (`.github/workflows/tests.yml`): führt Frontend-Syntaxprüfung und `pytest` bei jedem Push und Pull Request aus. Ein fehlgeschlagener Test macht den PR rot – die Suite ist damit Teil des Build-Prozesses und schlägt bei Regressionen sofort Alarm.
+
+### Hinweis
+
+- Die Tests laufen bewusst in der CI (vor dem Merge) und nicht im Add-on-Docker-Build: das Laufzeit-Image bleibt schlank (Test-Abhängigkeiten stehen getrennt in `requirements-dev.txt`), und ein fehlschlagender Test blockiert den Merge, statt erst den Image-Build in der Home-Assistant-Umgebung.
+
+---
+
 ## [3.20.0] - 2026-07-20
 
 ### Added

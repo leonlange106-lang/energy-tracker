@@ -4,8 +4,12 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.20.0";
+const APP_VERSION = "3.21.0";
 const APP_CHANGELOG = [
+  { v: "3.21.0", d: "20.07.2026", items: [
+    "Umfangreiche Testabdeckung der Verbrauchs- und Abrechnungslogik: Zählertausch bei Tarifwechsel, Preissenkungen mitten im Zeitraum, Lücken ohne Ablesung, Prognose-Randfälle",
+    "Tests laufen automatisch bei jedem Push und Pull Request (Absicherung gegen Regressionen)",
+  ]},
   { v: "3.20.0", d: "20.07.2026", items: [
     "Aufbewahrungsregel für MQTT-Telemetrie: ältere Werte lassen sich automatisch auf einen Datensatz je Monat verdünnen (einstellbar unter Admin-Tools → Datenmanagement, Standard: unbegrenzt)",
     "Von Hand erfasste, importierte und aus HA übernommene Werte bleiben immer vollständig erhalten; Gesamtverbräuche ändern sich durch die Verdünnung nicht",
