@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.22.1";
+const APP_VERSION = "3.22.2";
 const APP_CHANGELOG = [
+  { v: "3.22.2", d: "21.07.2026", items: [
+    "Mobil: die Bericht-Markierung in der unteren Navigationsleiste bleibt nicht mehr hängen, wenn der Berichtsdialog geschlossen oder ein Bericht erstellt wird",
+    "Mobil: die Tab-Leiste in der Detailansicht schneidet lange Beschriftungen (z. B. „Auswertung“) nicht mehr ab, sondern scrollt bei Bedarf horizontal",
+    "Diagramm: die Umschalter zum Überlagern anderer Systeme zeigen lange Systemnamen vollständig an und brechen sauber um",
+    "Die schwebende ＋-Schaltfläche legt im Tarife-Tab jetzt einen Tarif an (statt einer Ablesung); ihre Beschriftung folgt wieder dem aktiven Tab (Wert / Zähler / Tarif)",
+  ]},
   { v: "3.22.1", d: "21.07.2026", items: [
     "Startseite mit mehreren Systemen lädt schneller (Verbrauch wird je System nur noch einmal berechnet statt doppelt)",
     "Aufräumen: ungenutzter Code entfernt (Wartung, keine Funktionsänderung)",
@@ -1210,7 +1216,7 @@ const SystemDetail = {
   components: { EnergyChart, HoldButton },
   inject: ["notify"],
   props: { system: Object },
-  emits: ["back", "edit", "changed"],
+  emits: ["back", "edit", "changed", "tab"],
   data: () => ({
     tab: "chart",
     /* Sammelauswahl. Die Kennungen liegen in einem Set, nicht als Marke am
@@ -1432,10 +1438,16 @@ const SystemDetail = {
       if (v !== "list" && this.selectMode) { this.selectMode = false; this.clearSelection(); }
       if (v === "meters" && !this.metersLoaded) this.loadMeters();
       if (v === "tariffs" && !this.tariffsLoaded) this.loadTariffs();
+      // Nach oben melden: $refs sind nicht reaktiv, die kontextbezogene
+      // FAB-Beschriftung im Eltern-Scope hört sonst keinen Tab-Wechsel.
+      this.$emit("tab", v);
     },
     overlayIds() { this.loadOverlays(); },
   },
   async mounted() {
+    // Startwert des aktiven Tabs an den Eltern-Scope melden – sonst behält
+    // dieser den Tab eines zuvor geöffneten Systems (FAB-Kontext liefe falsch).
+    this.$emit("tab", this.tab);
     await this.loadAll();
     try { this.allSystems = await api("/api/systems"); } catch (_) {}
   },
@@ -2006,7 +2018,7 @@ const SystemDetail = {
           <div class="seg">
             <button v-for="r in [['week','Woche'],['month','Monat'],['year','Jahr'],['all','Alles']]" :key="r[0]" :class="{active: range===r[0]}" @click="range=r[0]">{{ r[1] }}</button>
           </div>
-          <div class="seg" v-if="overlayOptions.length" style="flex-wrap:wrap">
+          <div class="overlay-seg" v-if="overlayOptions.length">
             <button v-for="s in overlayOptions" :key="s.id"
                     :class="{active: overlayIds.includes(s.id)}"
                     @click="toggleOverlay(s.id)" :title="'System überlagern: ' + s.name">
@@ -2477,9 +2489,13 @@ createApp({
     mqttStatus: null,
     mqttPassword: "",
     assignTarget: {},
-    /* Pre-Export-Dialog */
-    showExportCfg: false,
+    /* Pre-Export-Dialog: expCfg ist die einzige Sichtbarkeitsquelle. Es steuert
+       zugleich die Bottom-Nav-Markierung (activeNav -> "bericht"), darum muss es
+       auf jedem Schließpfad wieder auf null gesetzt werden. */
     expCfg: null,
+    /* Vom Detail-Component gemeldeter aktiver Tab – reaktive Basis für die
+       kontextbezogene FAB-Beschriftung (statt des nicht-reaktiven $refs). */
+    detailTab: "chart",
     appVersion: APP_VERSION,
     changelog: APP_CHANGELOG,
     /* Sidebar: navExpanded = Desktop (Rail <-> Drawer), navDrawer = Mobile-Overlay */
@@ -2611,8 +2627,9 @@ createApp({
     },
     fabLabel() {
       if (this.view === "menu") return "System";
-      const d = this.$refs.detail;
-      return d && d.tab === "meters" ? "Zähler" : "Wert";
+      if (this.detailTab === "meters") return "Zähler";
+      if (this.detailTab === "tariffs") return "Tarif";
+      return "Wert";
     },
     /* Der FAB erscheint nur, wo er auch etwas anlegt: in der Systemübersicht
        (neues System) und in der Zähler-Detailansicht (neue Ablesung bzw. neuer
@@ -3027,7 +3044,6 @@ createApp({
         includeMeta: true,
         theme: t,
       };
-      this.showExportCfg = true;
     },
     expApplyPreset(p) {
       const c = this.expCfg;
@@ -3107,28 +3123,28 @@ createApp({
     runExport() {
       const c = this.expCfg;
       if (!c.systemIds.length) { this.notify("Kein System ausgewählt", "err"); return; }
-      this.showExportCfg = false;
       const stamp = today();
       const fail = (e) => this.notify(e.message, "err");
 
+      // URL zuerst bauen: expDataQuery()/expQuery() lesen this.expCfg, das gleich
+      // auf null gesetzt wird, um den Dialog (und die Bericht-Markierung) zu schließen.
+      let url, filename;
       if (c.format === "zip") {
-        fetchBlobDownload("api/export.zip", "zaehlwerk-export.zip").catch(fail);
-        return;
-      }
-      if (c.format === "csv") {
+        url = "api/export.zip"; filename = "zaehlwerk-export.zip";
+      } else if (c.format === "csv") {
         const p = this.expDataQuery();
         p.set("dialect", c.dialect);
-        fetchBlobDownload(`api/export/data.csv?${p}`, `zaehlwerk-daten_${stamp}.csv`).catch(fail);
-        return;
-      }
-      if (c.format === "json") {
+        url = `api/export/data.csv?${p}`; filename = `zaehlwerk-daten_${stamp}.csv`;
+      } else if (c.format === "json") {
         const p = this.expDataQuery();
         if (!c.includeDerived) p.set("include_derived", "false");
         if (!c.includeMeta) p.set("include_meta", "false");
-        fetchBlobDownload(`api/export/data.json?${p}`, `zaehlwerk-daten_${stamp}.json`).catch(fail);
-        return;
+        url = `api/export/data.json?${p}`; filename = `zaehlwerk-daten_${stamp}.json`;
+      } else {
+        url = `api/report.pdf${this.expQuery()}`; filename = "zaehlwerk-gesamtbericht.pdf";
       }
-      fetchBlobDownload(`api/report.pdf${this.expQuery()}`, "zaehlwerk-gesamtbericht.pdf").catch(fail);
+      this.expCfg = null;
+      fetchBlobDownload(url, filename).catch(fail);
     },
     openCombinedReport() {
       this.openExportConfig();
@@ -3152,8 +3168,10 @@ createApp({
       if (!this.canWrite || ["settings", "admin", "dashboard", "mobile-home"].includes(this.view)) return;
       const d = this.$refs.detail;
       if (this.view === "detail" && d) {
-        // Kontextbezogen: im Zähler-Tab legt der FAB einen Zähler an
-        if (d.tab === "meters") d.openMeter(null);
+        // Kontextbezogen: der FAB legt an, was zum aktiven Tab passt –
+        // im Zähler-Tab einen Zähler, im Tarife-Tab einen Tarif, sonst eine Ablesung.
+        if (this.detailTab === "meters") d.openMeter(null);
+        else if (this.detailTab === "tariffs") d.openTariff(null);
         else d.openReading();
         return;
       }
@@ -4689,6 +4707,7 @@ createApp({
       :system="selectedSystem"
       @back="back"
       @edit="editSystem"
+      @tab="detailTab = $event"
       @changed="load" />
   </div>
 
@@ -4795,8 +4814,8 @@ createApp({
   </div>
 
   <!-- MODAL: Bericht konfigurieren (Pre-Export) -->
-  <div class="overlay" v-if="showExportCfg" @click.self="showExportCfg=false">
-    <div class="modal modal-wide" v-if="expCfg">
+  <div class="overlay" v-if="expCfg" @click.self="expCfg=null">
+    <div class="modal modal-wide">
       <div class="modal-head"><h3>Bericht erstellen</h3></div>
       <div class="modal-body">
 
@@ -4923,7 +4942,7 @@ createApp({
 
       </div>
       <div class="modal-foot">
-        <button class="btn" @click="showExportCfg=false">Abbrechen</button>
+        <button class="btn" @click="expCfg=null">Abbrechen</button>
         <button class="btn btn-primary" :disabled="!expCount()" @click="runExport">
           {{ expCfg.format==='zip' ? 'ZIP herunterladen' : 'PDF erstellen' }}
         </button>
