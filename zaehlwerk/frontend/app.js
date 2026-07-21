@@ -4,8 +4,12 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.22.0";
+const APP_VERSION = "3.22.1";
 const APP_CHANGELOG = [
+  { v: "3.22.1", d: "21.07.2026", items: [
+    "Startseite mit mehreren Systemen lädt schneller (Verbrauch wird je System nur noch einmal berechnet statt doppelt)",
+    "Aufräumen: ungenutzter Code entfernt (Wartung, keine Funktionsänderung)",
+  ]},
   { v: "3.22.0", d: "20.07.2026", items: [
     "Diagramme mit sehr langer Historie werden für die Anzeige automatisch verdichtet – schnellere Darstellung ohne Verlust von Verlauf oder Summe. Die Werte-Tabelle bleibt vollständig",
   ]},
@@ -2550,16 +2554,9 @@ createApp({
     },
     /* Die drei Systeme mit dem höchsten Tagesverbrauch – das sind die, bei
        denen sich Hinsehen lohnt. Jeweils mit Trend gegen die Vorperiode. */
-    mobileTop() {
-      return this.dashData
-        .map((s) => ({ ...s, trend: this.trendOf(s) }))
-        .sort((a, b) => (b.avg_per_day || 0) - (a.avg_per_day || 0))
-        .slice(0, 3);
-    },
     /* Alle aktiven Zähler für die Schnellerfassung, meistgenutzte (höchster
        Tagesverbrauch) zuerst – der am häufigsten abgelesene Zähler steht damit
-       ohne Scrollen oben. Anders als mobileTop nicht auf drei begrenzt: die
-       Schnellerfassung braucht jeden Zähler, nicht nur die Spitzenreiter. */
+       ohne Scrollen oben. */
     mobileMeters() {
       return this.dashData
         .map((s) => ({ ...s, trend: this.trendOf(s) }))
@@ -2793,19 +2790,6 @@ createApp({
     openSystemById(id) {
       const s = this.systems.find((x) => x.id === id);
       if (s) this.open(s);
-    },
-    async mobileNewReading(withScanner) {
-      // Ohne Systemauswahl kein Dialog: bei genau einem System direkt hinein,
-      // sonst zur Übersicht, wo die Auswahl ohnehin ansteht.
-      const active = this.systems.filter((s) => s.aktiv);
-      if (!active.length) { this.notify("Erst ein System anlegen", "err"); return; }
-      if (active.length > 1) { this.back(); return; }
-      this.open(active[0]);
-      await this.$nextTick();
-      const d = this.$refs.detail;
-      if (!d) return;
-      d.openReading();
-      if (withScanner) { await this.$nextTick(); d.openScanner(); }
     },
     /* Schnellerfassung je Zähler: öffnet direkt den Ablesedialog des gewählten
        Systems – ohne den Umweg über die Übersicht und die Systemauswahl. Genau
@@ -3148,10 +3132,6 @@ createApp({
     },
     openCombinedReport() {
       this.openExportConfig();
-    },
-    _legacyCombinedReport() {
-      fetchBlobDownload("api/report.pdf", "zaehlwerk-gesamtbericht.pdf")
-        .catch((e) => this.notify("PDF fehlgeschlagen: " + e.message, "err"));
     },
     pickTheme(mode) { setTheme(mode); },
     pickPalette(key) { setPalette(key); },

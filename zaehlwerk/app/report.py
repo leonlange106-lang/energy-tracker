@@ -13,7 +13,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Flowable, PageBreak,
 )
-from reportlab.graphics.shapes import Drawing, PolyLine, Line, Circle, String, Rect
+from reportlab.graphics.shapes import Drawing, PolyLine, Line, Circle, String
 
 # Werkseinstellung. Wird über `theme=` je Aufruf überschrieben, damit der
 # Export die in der App gewählte Palette spiegeln kann.
@@ -155,7 +155,7 @@ def _system_flowables(system: dict, enriched: list[dict], stats: dict, sty: dict
                       include_table: bool = True) -> list:
     styles, h1, sub, h2 = sty["base"], sty["h1"], sty["sub"], sty["h2"]
     theme = theme or Theme()
-    soft, ink = "#" + theme.hex("ink_soft"), "#" + theme.hex("ink")
+    soft = "#" + theme.hex("ink_soft")
     chart_accent = _col(accent, "#" + theme.hex("accent")) if accent else theme.accent
     unit = system["einheit"]
     story = []

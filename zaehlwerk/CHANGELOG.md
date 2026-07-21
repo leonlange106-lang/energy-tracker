@@ -9,6 +9,23 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.22.1] - 2026-07-21
+
+### Changed
+
+- **[Backend/routers/dashboard.py] Performance:** `GET /api/dashboard/data` reichert je System jetzt nur noch EINMAL voll-historisch an, statt zweimal (einmal gefenstert für die Kachel, einmal voll für die Prognose). Kachel-Fenster und Prognose werden beide aus derselben Anreicherung abgeleitet – halbiert die Verbrauchsberechnung auf der Startseite/dem Dashboard bei mehreren Systemen. Nebeneffekt: die Kachel-Summe zählt jetzt das über die Fenstergrenze reichende erste Intervall mit (geringfügig genauer als zuvor).
+
+### Removed
+
+- **[Frontend] Toter Code entfernt:** die seit v3.17.0 ungenutzte Methode `mobileNewReading` (durch `mobileQuickRead` je Zähler ersetzt), das ungenutzte Computed `mobileTop` (durch `mobileMeters` ersetzt), die ungenutzte Methode `_legacyCombinedReport` sowie die verwaisten CSS-Regeln `.mh-actions` / `.mh-primary` / `.mh-scan`.
+- **[Backend] Tote Importe/Variablen:** ungenutztes `engine`-Import in `auth.py`, ungenutztes `Rect`-Import und die ungenutzte lokale Variable `ink` in `report.py`.
+
+### Hinweis
+
+- Ergebnis eines vollständigen QM-/Code-Reviews der WebApp. Geprüft und sauber befunden: z-index-Ebenen, Tabellen-Overflow (`.table-scroll`), kein `100vh`-Mobile-Bug, kein horizontaler Overflow, durchgängiges Error-Handling, keine doppelten Assets. Die verbliebenen pyflakes-Treffer in `ocr.py`/`mqtt_client.py`/`database.py` sind bewusste Verfügbarkeits-/Side-Effect-Importe (`# noqa`) und bleiben unverändert.
+
+---
+
 ## [3.22.0] - 2026-07-21
 
 ### Added
