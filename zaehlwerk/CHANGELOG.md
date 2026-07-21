@@ -9,6 +9,16 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.17.1] - 2026-07-20
+
+### Fixed
+
+- [Frontend/app.js] Das Logo bzw. der Titel oben links in der Kopfzeile ist jetzt auf allen Ansichten eine Schaltfläche und führt global zurück zur Startseite (auf schmalen Geräten die kompakte Startseite, sonst die Systemübersicht) – auch aus den Admin-Tools heraus. Offene Overlays (Navigationsschublade, System-Auswahl) werden dabei geschlossen. Neue Methode `goHome()`.
+- [Frontend/app.js] „Berichterstellung“ war über die untere Navigationsleiste nicht erreichbar: im Seitenrail ist der Bericht ein aufklappbarer Unterpunkt von „Auswertungen“, die schmale Bottom-Bar kennt aber keine Unterlisten. Der Bericht ist dort jetzt ein eigenes Ziel (fünf statt vier Einträge); es erscheint nur mit Export-Recht und wird hervorgehoben, solange der Berichtsdialog offen ist.
+- [Frontend/app.js] Die schwebende ＋-Schaltfläche (FAB) wurde global gerendert und lag dadurch auch auf Dashboard, Startseite, Einstellungen und Admin-Tools – dort ohne Funktion und über den Speichern-Dialogen. Sie wird jetzt nur noch dort gerendert (`showFab`), wo sie tatsächlich etwas anlegt: in der Systemübersicht (neues System) und der Zähler-Detailansicht (neue Ablesung/neuer Zähler). Betrifft sowohl die schwebende Variante als auch die im Seitenrail angedockte.
+
+---
+
 ## [3.17.0] - 2026-07-20
 
 ### Added
