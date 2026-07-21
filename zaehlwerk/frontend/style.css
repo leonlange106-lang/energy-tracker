@@ -477,8 +477,18 @@ body.nav-expanded { --rail-w: 264px; }
 .counter .clabel { display: block; font-size: 10px; font-weight: 500; letter-spacing: .5px; text-transform: uppercase; color: var(--counter-label); margin-bottom: 2px; }
 
 /* ---------- Tabs (M3 Primary Tabs) ---------- */
-.tabs { display: flex; gap: 0; margin: 22px 0 16px; border-bottom: 1px solid var(--md-outline-variant); }
+/* Auf schmalen Viewports dürfen die vier Tab-Beschriftungen nicht schrumpfen
+   (sonst wird z. B. „Auswertung" zu „Auswertun" beschnitten): die Leiste
+   scrollt stattdessen horizontal, die Scrollleiste bleibt unsichtbar. */
+.tabs {
+  display: flex; gap: 0; margin: 22px 0 16px;
+  border-bottom: 1px solid var(--md-outline-variant);
+  overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tab {
+  flex: 0 0 auto; white-space: nowrap;
   background: none; border: none; padding: 12px 18px; cursor: pointer;
   font-family: var(--sans); font-size: 14px; font-weight: 500; letter-spacing: .1px;
   color: var(--md-on-surface-variant); border-bottom: 3px solid transparent; margin-bottom: -1px;
@@ -536,6 +546,29 @@ body.nav-expanded { --rail-w: 264px; }
    beim Aktivieren zur Seite und die Spaltenbreiten wirken unruhig. */
 .seg button::before { content: ""; width: 11px; flex: 0 0 auto; font-size: 11px; }
 .seg button.active::before { content: "✓"; }
+
+/* Overlay-Umschalter (System überlagern): eigene Chip-Leiste statt Segment-
+   Control. Die Systemnamen sind unterschiedlich lang – feste Segmentbreiten
+   würden sie abschneiden. Chips umbrechen und wachsen mit ihrem Text, sehr
+   lange Namen bekommen eine Ellipse (der volle Name steht im title). */
+.overlay-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.overlay-seg button {
+  flex: 0 0 auto; max-width: 100%;
+  display: inline-flex; align-items: center; gap: 5px;
+  height: var(--seg-h); min-height: var(--tap-min); padding: 0 14px;
+  background: var(--md-surface); color: var(--md-on-surface);
+  border: 1px solid var(--md-outline); border-radius: 20px;
+  font-size: 13px; font-weight: 500; letter-spacing: .1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer; font-family: var(--sans);
+  transition: background var(--dur-short) var(--ease-standard);
+}
+.overlay-seg button:hover { background: var(--md-surface-c-high); }
+.overlay-seg button.active {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+  border-color: var(--md-secondary-container);
+}
 
 /* ---------- Tabelle ---------- */
 .table-tools { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }

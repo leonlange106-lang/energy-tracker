@@ -9,6 +9,21 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.22.2] - 2026-07-21
+
+### Fixed
+
+- **[Frontend] Bericht-Markierung bleibt mobil hängen (HIGH):** Der Export-/Berichtsdialog steuerte seine Sichtbarkeit über zwei entkoppelte Flags – die Overlay-Hülle über `showExportCfg`, der innere Dialog und die Bottom-Nav-Markierung (`activeNav` → `"bericht"`) über `expCfg`. Alle Schließpfade (Abbrechen, Backdrop, `runExport`) setzten nur `showExportCfg = false` und ließen `expCfg` gesetzt, sodass die Bericht-Markierung dauerhaft aktiv blieb und beim Wechsel auf eine andere Ansicht nicht mitsprang. `expCfg` ist jetzt die einzige Sichtbarkeitsquelle und wird auf jedem Schließpfad auf `null` gesetzt; `runExport` baut die Download-URL, bevor es `expCfg` löscht.
+- **[Frontend/style.css] Tab-Leiste beschnitt lange Labels mobil (MED):** `.tabs` (Detailansicht) ließ die vier Tab-Beschriftungen unter ~390 px schrumpfen und schnitt sie zusammen mit `.tab { overflow: hidden }` ab (z. B. „Auswertung" → „Auswertun"). Die Leiste scrollt jetzt horizontal (`overflow-x: auto`, unsichtbare Scrollleiste), die Tabs schrumpfen nicht mehr (`flex: 0 0 auto; white-space: nowrap`).
+- **[Frontend] Overlay-Umschalter schnitten Systemnamen ab (LOW):** Die „+ System“-Umschalter im Diagramm lagen in einem Segment-Control (`inline-grid`, feste Spaltenbreiten, `overflow: hidden`); das inline gesetzte `flex-wrap: wrap` blieb im Grid wirkungslos und lange Namen (z. B. „+ PV-Einspeisung“) wurden beschnitten. Sie bilden jetzt eine eigene, umbrechende Chip-Leiste (`.overlay-seg`), die mit dem Text wächst; sehr lange Namen erhalten eine Ellipse, der volle Name steht im `title`.
+- **[Frontend] FAB-Kontext im Tarife-Tab (LOW):** Die schwebende ＋-Schaltfläche öffnete im Tarife-Tab der Detailansicht einen Ablese- statt Tarif-Dialog. `fabAction` legt dort jetzt einen Tarif an. Zusätzlich behoben: `fabLabel` las den aktiven Tab über das nicht-reaktive `this.$refs.detail` und blieb dadurch auf „Wert" stehen; der Detail-Component meldet seinen aktiven Tab jetzt nach oben (`@tab`), sodass die Beschriftung wieder dem Tab folgt (Wert / Zähler / Tarif).
+
+### Hinweis
+
+- Ergebnis eines gezielten visuellen Reviews des Frontends über alle Breakpoints (Mobile 390 px / Tablet 768 px / Desktop 1280 px). Rein visuelle/DOM-/CSS-Korrekturen, keine Änderung an Datenmodell oder API.
+
+---
+
 ## [3.22.1] - 2026-07-21
 
 ### Changed
