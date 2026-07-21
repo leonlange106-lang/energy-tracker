@@ -9,6 +9,22 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.20.0] - 2026-07-20
+
+### Added
+
+- **[Backend/backup.py] Telemetrie-Aufbewahrungsregel.** Neue Einstellung `telemetry_keep_days` (Standard 0 = unbegrenzt). Ist der Wert > 0, verdünnt der tägliche Lauf MQTT-Ablesungen, die älter als diese Frist sind, auf einen Datensatz je Kalendermonat und System. Behalten wird der ÄLTESTE Datensatz je Monat, damit der Anfangsstand jeder Reihe erhalten bleibt – bei kumulativen Zählerständen ändert sich der Gesamtverbrauch dadurch nicht, nur die zeitliche Auflösung alter Telemetrie sinkt. Von Hand erfasste, importierte und aus Home Assistant übernommene Werte (`source != 'mqtt'`) werden nie angetastet.
+- **[Frontend] Einstellung** unter Admin-Tools → Datenmanagement (Sicherungs-Zeitplan), mit Erklärung und Validierung (0–36500 Tage).
+- **[Backend/backup.py] Datenpflege entkoppelt.** Protokoll-Beschneidung und Telemetrie-Verdünnung (`run_housekeeping`) laufen jetzt täglich auch dann, wenn die automatische Sicherung ausgeschaltet ist – die Datenbank soll nicht unbegrenzt wachsen, nur weil kein Backup aktiv ist.
+- **[Quality/tests] Retention-Tests** (`tests/test_retention.py`): Gesamtverbrauch bleibt erhalten, andere Quellen werden verschont, `keep_days=0` ist ein No-op, die Einstellung steht im Settings-Vertrag.
+
+### Hinweis
+
+- Die im Ticket vermutete „unendlich wachsende Telemetrie-Tabelle“ besteht in dieser Form nicht: die MQTT-Übernahme ist seit v3.1.0 intervallgetaktet und schreibt je System höchstens einen Datensatz pro Periode (Standard täglich), statt pro Nachricht. Die Retention ist daher ein Sicherheitsventil für sehr lang laufende Installationen, kein Fix für eine außer Kontrolle geratene Tabelle. Der Standard bleibt bewusst „unbegrenzt“, damit ein Update kein Verhalten still ändert.
+- Ein eigener Cron-Daemon kommt weiterhin nicht zum Einsatz (das Add-on-Image bringt keinen mit); die Bereinigung hängt am bestehenden asyncio-Tagesplaner im laufenden Prozess.
+
+---
+
 ## [3.19.0] - 2026-07-20
 
 ### Added

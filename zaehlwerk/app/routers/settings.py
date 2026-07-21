@@ -65,6 +65,13 @@ DEFAULTS: dict[str, object] = {
     # Aufbewahrung des Änderungsprotokolls. Untergrenze 30 Tage, weil der
     # Trigger jüngere Einträge ohnehin schützt.
     "audit_keep_days": 365,
+    # Aufbewahrung hochfrequenter MQTT-Telemetrie in voller Auflösung, in Tagen.
+    # 0 = unbegrenzt (nichts wird reduziert). Ist der Wert > 0, werden ältere
+    # MQTT-Ablesungen im täglichen Lauf auf einen Datensatz je Monat verdünnt;
+    # von Hand erfasste, importierte oder aus HA übernommene Werte bleiben immer
+    # unangetastet. Da Zählerstände kumulativ sind, bleiben Gesamtverbräuche
+    # dabei exakt erhalten – nur die zeitliche Auflösung alter Telemetrie sinkt.
+    "telemetry_keep_days": 0,
 }
 
 _BOOL = lambda v: str(v).lower() in {"1", "true", "ja", "yes"}  # noqa: E731
@@ -91,6 +98,7 @@ _CASTS = {
     "mqtt_watchdog_hours": int,
     "default_role": str,
     "audit_keep_days": int,
+    "telemetry_keep_days": int,
 }
 
 # Diese Schluessel verlassen den Server NIE im Klartext. Die Leseantwort meldet
