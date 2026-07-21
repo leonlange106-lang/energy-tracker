@@ -4,8 +4,11 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.22.3";
+const APP_VERSION = "3.22.4";
 const APP_CHANGELOG = [
+  { v: "3.22.4", d: "21.07.2026", items: [
+    "Kritischer Fix: nach einer Wiederherstellung aus einer Sicherung (Admin-Tools → Datenmanagement) meldete die Oberfläche fälschlich „Wiederherstellung fehlgeschlagen“, obwohl sie erfolgreich war – Ursache war ein durch die neue Datenbank ungültig gewordenes Sitzungscookie, dessen Folgefehler als Fehlschlag missverstanden wurde. Die Wiederherstellung führt jetzt sauber zur Anmeldemaske mit dem Hinweis, sich mit den Zugangsdaten aus der Sicherung neu anzumelden",
+  ]},
   { v: "3.22.3", d: "21.07.2026", items: [
     "Umbenannt in „Zählwerk - Legacy“ (Add-on-Name und Seitenleisten-Eintrag in Home Assistant), um dieses Add-on während des Parallelbetriebs eindeutig von der neuen dezentralen Zählwerk-Instanz zu unterscheiden. Funktion und Daten bleiben unverändert",
   ]},
@@ -2886,13 +2889,24 @@ createApp({
           }
           r = await res.json();
         }
-        this.notify(`Wiederhergestellt aus ${r.restored_from}`
-          + (r.safety_backup ? ` · Sicherheitskopie: ${r.safety_backup}` : ""), "ok");
         this.restoreFile = null;
         this.restoreConfirm = null;
         this.restoreConfirmText = "";
-        await this.loadBackupStatus();
-        await this.load();          // Systeme/Ablesungen: Datenbestand hat sich geändert
+        // Die wiederhergestellte Datenbank bringt ihren eigenen Signatur-
+        // schlüssel mit - die laufende Sitzung ist damit vorbei (das Backend
+        // hat das Cookie bereits gelöscht). Weitere Aufrufe mit der alten
+        // Sitzung würden nur einen 401 produzieren, der hier fälschlich als
+        // "Wiederherstellung fehlgeschlagen" ankäme, obwohl sie erfolgreich
+        // war. Stattdessen direkt sauber zur Anmeldung zurückführen.
+        this.notify(
+          `Wiederhergestellt aus ${r.restored_from}`
+          + (r.safety_backup ? ` · Sicherheitskopie: ${r.safety_backup}` : "")
+          + " – bitte mit den Zugangsdaten aus dieser Sicherung neu anmelden.",
+          "ok",
+        );
+        // /api/auth/status ist öffentlich erreichbar (auch ohne gültiges
+        // Cookie) und blendet bei authenticated:false die Anmeldemaske ein.
+        await this.checkAuth();
       } catch (e) { this.notify("Wiederherstellung fehlgeschlagen: " + e.message, "err"); }
       finally { this.restoreBusy = null; }
     },

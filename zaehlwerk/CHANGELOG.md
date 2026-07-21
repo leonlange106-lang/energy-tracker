@@ -9,6 +9,19 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.22.4] - 2026-07-21
+
+### Fixed
+
+- **[Kritisch] Falsche „Wiederherstellung fehlgeschlagen"-Meldung nach erfolgreichem Restore:** Die wiederhergestellte Datenbank bringt ihren eigenen JWT-Signaturschlüssel (`app_settings.auth_jwt_secret`) mit – das im Browser noch vorhandene Sitzungscookie wurde dadurch ungültig. Die Oberfläche rief nach einer erfolgreichen Wiederherstellung im selben Zug `loadBackupStatus()`/`load()` mit der jetzt toten Sitzung auf; der daraus resultierende 401 wurde vom globalen Interceptor als Fehler geworfen und landete im `catch`-Block der Wiederherstellung – sie erschien als fehlgeschlagen, obwohl sie es nicht war. **Backend** (`app/routers/backups.py`): `restore()` und `import_and_restore()` löschen das Sitzungscookie jetzt aktiv nach erfolgreichem Restore (`auth.clear_cookie`), statt es dem nächsten Aufruf als rätselhaften 401 zu überlassen. **Frontend**: `confirmRestore()` ruft nach einem erfolgreichen Restore keine authentifizierten Folgeaufrufe mehr auf, sondern zeigt direkt eine klare Erfolgsmeldung mit Hinweis auf die nötige Neuanmeldung und blendet über `checkAuth()` (öffentlicher Endpunkt) die Anmeldemaske ein.
+- Regressionstest ergänzt (`tests/test_backup_restore.py`): prüft, dass eine erfolgreiche Wiederherstellung das Sitzungscookie per `Set-Cookie: ...Max-Age=0` löscht.
+
+### Hinweis
+
+- Betrifft potenziell jede Wiederherstellung aus einer `.gz`-Sicherung, unabhängig vom Betrieb (HA-Add-on oder dezentral) – kein spezifisches Problem des Umzugs, sondern ein latenter Fehler im bestehenden Restore-Flow, der durch den Umzugs-Testlauf erstmals ausgelöst wurde.
+
+---
+
 ## [3.22.3] - 2026-07-21
 
 ### Changed
