@@ -9,6 +9,14 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.22.6] - 2026-07-21
+
+### Changed
+
+- **[Frontend] Versionsverlauf im Desktop-Modus neu gestaltet:** Statt einer einfachen Liste jetzt eine strukturierte Zwei-Spalten-Zeitachse (Version + Datum links, Änderungen rechts), die aktuelle Version hervorgehoben („aktuell"-Badge). Jeder Eintrag wird heuristisch einem **Modul** zugeordnet (Konten & Zugriff, Datensicherung, MQTT, Auswertung, Abrechnung, Daten & Erfassung, Oberfläche, Qualität & Tests, System & Betrieb) und über eine Chip-Leiste **filterbar**; ein Eintrag kann sein Modul optional per `{m, t}` erzwingen. Das Modal ist breiter (`modal-changelog`, 780px) und auf schmalen Viewports einspaltig.
+
+---
+
 ## [3.22.5] - 2026-07-21
 
 ### Changed
