@@ -9,6 +9,20 @@ dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [3.19.0] - 2026-07-20
+
+### Added
+
+- **[Quality/tests] Contract-Test-Suite (`tests/`).** Pytest-basierte Verträge für alle zentralen öffentlichen Endpunkte (`/api/health`, `/api/auth/status`, Systeme, Ablesungen, Statistik, System- und Gesamt-Dashboard inkl. `prognosis`, Tarife, Übersicht, persönliches Layout). Jeder Vertrag ist eine Liste der Felder, auf die `frontend/app.js` angewiesen ist; fehlt eines nach einer API-Änderung, wird der zugehörige Test rot und nennt das Feld beim Namen – der geforderte „sofortige Alarm“. Ergänzt um Eingabe-Validierungstests (ungültige Payloads → 422, ungeschützter Zugriff → 401) und Tests, die sicherstellen, dass die OpenAPI-Doku vollständig und trotz statischer Frontend-Auslieferung erreichbar bleibt. 24 Tests.
+- **[Backend/main.py] OpenAPI-Dokumentation.** FastAPI erzeugt das Schema automatisch; die interaktive Doku liegt unter `/docs` (Swagger UI) und `/redoc`, das maschinenlesbare Schema unter `/openapi.json`. App-Beschreibung ergänzt, die auf Doku und Contract-Tests hinweist.
+- **[Build] `requirements-dev.txt` und `pytest.ini`.** Test-Abhängigkeiten (pytest, httpx) sind bewusst vom Laufzeit-`requirements.txt` getrennt, damit das Add-on-Image schlank bleibt.
+
+### Hinweis
+
+- Die OpenAPI/Swagger-Dokumentation war durch FastAPI bereits vorhanden; neu ist die Absicherung, dass sie erreichbar und vollständig bleibt (der `/`-Mount für das Frontend hätte `/docs` sonst überschatten können), sowie die explizite Contract-Test-Ebene darüber.
+
+---
+
 ## [3.18.0] - 2026-07-20
 
 ### Changed
