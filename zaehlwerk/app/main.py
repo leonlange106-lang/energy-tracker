@@ -17,7 +17,17 @@ from .routers import (admin, auth as auth_router, backups, dashboard, external,
                       ha, imports, meters, mqtt, ocr as ocr_router, readings,
                       settings as settings_router, systems, tariffs)
 
-app = FastAPI(title="Zählwerk API", version=APP_VERSION)
+app = FastAPI(
+    title="Zählwerk API",
+    version=APP_VERSION,
+    description=(
+        "Verbrauchs- und Zählerstands-Tracking (Strom, Gas, Wasser, PV). "
+        "Die interaktive Dokumentation liegt unter `/docs` (Swagger UI) und "
+        "`/redoc`, das maschinenlesbare Schema unter `/openapi.json`. Die "
+        "Contract-Tests im Ordner `tests/` prüfen dieses Schema gegen die "
+        "Felder, auf die das Frontend angewiesen ist."
+    ),
+)
 
 app.add_middleware(
     CORSMiddleware,

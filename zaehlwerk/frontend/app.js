@@ -4,8 +4,12 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.18.0";
+const APP_VERSION = "3.19.0";
 const APP_CHANGELOG = [
+  { v: "3.19.0", d: "20.07.2026", items: [
+    "Automatisierte Vertragstests für alle wichtigen API-Endpunkte – schlagen Alarm, sobald ein Feld fehlt, auf das die Oberfläche angewiesen ist",
+    "Interaktive API-Dokumentation unter /docs (Swagger) und /redoc, Schema unter /openapi.json",
+  ]},
   { v: "3.18.0", d: "20.07.2026", items: [
     "Grundpreis ist jetzt ein Jahresbetrag (€/Jahr) und wird taggenau abgerechnet – bestehende Monatswerte wurden automatisch umgerechnet",
     "Zählertausch: optionaler Startstand des neuen Zählers – der Verbrauch ist dann die Differenz, ein Sprung auf 0 erzeugt keine negativen Werte mehr",
