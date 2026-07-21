@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.17.0";
+const APP_VERSION = "3.17.1";
 const APP_CHANGELOG = [
+  { v: "3.17.1", d: "20.07.2026", items: [
+    "Logo/Titel oben links führt jetzt von überall zurück zur Startseite",
+    "„Berichterstellung“ wieder in der unteren Navigationsleiste (jetzt fünf Ziele)",
+    "Die schwebende ＋-Schaltfläche erscheint nur noch dort, wo sie etwas anlegt – nicht mehr über den Speichern-Dialogen der Admin-Tools",
+  ]},
   { v: "3.17.0", d: "20.07.2026", items: [
     "Mobile Startseite: je Zähler eine eigene Karte mit großem „＋ Wert erfassen“-Knopf – ein Tipp führt direkt in die Ablesung des jeweiligen Zählers, ohne Umweg über die Auswahl",
     "Kamera-Schnellzugriff je Zähler direkt auf der Startseite",
@@ -2483,6 +2488,9 @@ createApp({
     themeContrast() { return themeStore.contrast; },
     /* aktiver Navigationspunkt (Einstellungen als Modal hat Vorrang vor der Ansicht) */
     activeNav() {
+      // Der Bericht ist ein Modal, keine eigene Ansicht: solange der
+      // Export-/Berichtsdialog offen ist, gilt dessen Bottom-Nav-Ziel als aktiv.
+      if (this.expCfg) return "bericht";
       if (this.view === "dashboard") return "auswertungen";
       if (this.view === "settings") return "einstellungen";
       if (this.view === "admin") return "admin";
@@ -2546,12 +2554,36 @@ createApp({
     navSubItems() { return this.systems.filter((s) => s.aktiv); },
     /* Die Bottom-Bar zeigt dieselben Ziele wie die Seitenleiste, gefiltert auf
        die primären. Der Rollenfilter steckt bereits in visibleNavItems – das
-       Admin-Ziel wird also gar nicht erst gerendert, nicht bloß versteckt. */
-    bottomNavItems() { return this.visibleNavItems.filter((i) => i.primary); },
+       Admin-Ziel wird also gar nicht erst gerendert, nicht bloß versteckt.
+
+       Zusätzlich bekommt „Berichterstellung“ hier ein eigenes Ziel: im Rail ist
+       der Bericht ein aufklappbarer Unterpunkt von Auswertungen, doch die
+       schmale Bottom-Bar kennt keine Unterlisten. Ohne diesen Eintrag wäre der
+       Bericht über die untere Navigation gar nicht erreichbar. Er erscheint nur
+       mit Export-Recht – ohne das öffnet der Dialog ohnehin nichts Sinnvolles. */
+    bottomNavItems() {
+      const items = this.visibleNavItems.filter((i) => i.primary);
+      if (!this.canExport) return items;
+      const out = [...items];
+      const at = out.findIndex((i) => i.key === "auswertungen");
+      out.splice(at >= 0 ? at + 1 : out.length, 0, {
+        key: "bericht", label: "Berichterstellung", short: "Bericht",
+        icon: SVG.report, action: "openCombinedReport", primary: true,
+      });
+      return out;
+    },
     fabLabel() {
       if (this.view === "menu") return "System";
       const d = this.$refs.detail;
       return d && d.tab === "meters" ? "Zähler" : "Wert";
+    },
+    /* Der FAB erscheint nur, wo er auch etwas anlegt: in der Systemübersicht
+       (neues System) und in der Zähler-Detailansicht (neue Ablesung bzw. neuer
+       Zähler). Auf Dashboard, Startseite, Einstellungen und Admin-Tools hatte er
+       keine Funktion und verdeckte dort Speicher-Dialoge – deshalb wird er auf
+       diesen Ansichten gar nicht erst gerendert, statt nur wirkungslos zu sein. */
+    showFab() {
+      return this.canWrite && (this.view === "menu" || this.view === "detail");
     },
     visibleNavItems() {
       return this.navItems.filter((i) => {
@@ -2904,6 +2936,17 @@ createApp({
       if (item.disabled || !item.action) return;
       this.closeDrawer();
       this[item.action]();
+    },
+    /* Globaler Sprung zur Startseite über das Logo/den Titel oben links.
+       Ziel ist dieselbe Startseite wie beim App-Start: auf schmalen Geräten die
+       kompakte Startseite, sonst die Systemübersicht. Offene Overlays (Drawer,
+       System-Sheet) werden dabei geschlossen, damit der Klick nicht ins Leere
+       läuft. Auf allen Ansichten erreichbar – auch aus Admin-Tools heraus. */
+    goHome() {
+      this.closeDrawer();
+      this.showSysSheet = false;
+      if (this.isMobileViewport()) this.openMobileHome();
+      else this.back();
     },
     notify(msg, type = "ok") { this.toast = { msg, type }; setTimeout(() => (this.toast = null), 3200); },
     async load() {
@@ -3562,17 +3605,18 @@ createApp({
               :aria-expanded="String(navExpanded || navDrawer)" aria-controls="zw-nav"
               aria-label="Navigation ein-/ausklappen" title="Navigation ein-/ausklappen"
               v-html="navMenuIcon"></button>
-      <div class="brand">
+      <button type="button" class="brand" @click="goHome"
+              title="Zur Startseite" aria-label="Zur Startseite">
         <span class="logo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19a9 9 0 1 1 14 0"/><path d="M12 5v2"/><path d="M5.6 8.5l1.5 1.2"/><path d="M18.4 8.5l-1.5 1.2"/><path d="M12 15l3.5-4.5"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg></span>
         <h1>{{ view==='mobile-home' ? 'Zählwerk' : view==='dashboard' ? 'Dashboard' : view==='admin' ? 'Admin-Tools' : view==='settings' ? 'Einstellungen' : (view==='detail' && selectedSystem ? selectedSystem.name : 'Zählwerk') }}</h1>
-      </div>
+      </button>
       <div class="spacer"></div>
     </div>
   </div>
 
   <!-- Sidebar: Navigation Rail (Desktop) / modaler Drawer (Mobile) -->
   <nav id="zw-nav" class="nav-rail" :class="{ expanded: navExpanded, drawer: navDrawer }" aria-label="Hauptnavigation">
-    <button class="fab rail-fab" v-if="canWrite" @click="fabAction" :title="'Neu: ' + fabLabel">
+    <button class="fab rail-fab" v-if="showFab" @click="fabAction" :title="'Neu: ' + fabLabel">
       <span class="fab-plus">＋</span><span class="fab-text">{{ fabLabel }}</span>
     </button>
     <template v-for="it in visibleNavItems" :key="it.key">
@@ -3656,8 +3700,8 @@ createApp({
     </div>
   </div>
 
-  <!-- FAB (Mobile) -->
-  <div class="fab-screen" v-if="canWrite"><button class="fab" @click="fabAction" :title="'Neu: ' + fabLabel">＋</button></div>
+  <!-- FAB (Mobile) – nur auf Ansichten, wo er auch etwas anlegt -->
+  <div class="fab-screen" v-if="showFab"><button class="fab" @click="fabAction" :title="'Neu: ' + fabLabel">＋</button></div>
 
   <div class="wrap">
     <div v-if="loading" class="center-load"><span class="spin"></span></div>

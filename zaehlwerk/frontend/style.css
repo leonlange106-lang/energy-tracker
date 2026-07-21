@@ -294,7 +294,14 @@ body {
   backdrop-filter: blur(10px);
 }
 .topbar-inner { max-width: 1080px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 12px; min-height: 64px; }
-.brand { display: flex; align-items: center; gap: 10px; }
+/* Marke = globaler Sprung zur Startseite. Als Schaltfläche zurückgesetzt,
+   damit sie sich nicht wie ein Standard-Button darstellt. */
+.brand { display: flex; align-items: center; gap: 10px;
+  background: none; border: none; cursor: pointer; color: inherit; font: inherit;
+  padding: 4px 8px; margin-left: -8px; border-radius: 10px;
+  transition: background var(--dur-short) var(--ease-standard); }
+.brand:hover { background: var(--md-surface-c); }
+.brand:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 2px; }
 .brand .logo { display: flex; color: var(--md-primary); }
 .brand h1 { font-size: 22px; line-height: 28px; font-weight: 500; margin: 0; }
 .spacer { flex: 1; }
